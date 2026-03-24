@@ -13,7 +13,8 @@
 - `npm run eval` — AI accuracy benchmark (Karpathy loop)
 - `npm run lint` — ESLint
 
-### Docker
+### Docker (preferred for testing)
+- **Always use Docker to test** — `./startup.sh` starts both the app (port 5183) and Ollama with GPU. Running `npm run dev` alone won't have Ollama and may hit `EMFILE` errors on the host.
 - `./startup.sh` — Start app + Ollama via Docker Compose (port 5183)
 - `./shutdown.sh` — Stop everything
 - App container: `docker compose exec app <command>`

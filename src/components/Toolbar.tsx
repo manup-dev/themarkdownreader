@@ -129,7 +129,7 @@ export function Toolbar() {
   }, [markdown, fileName, doClose])
 
   return (
-    <div className="border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm sticky top-0 z-10">
+    <div className="border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm sticky top-0 z-40">
       {/* Top row */}
       <div className="flex items-center justify-between px-4 py-2">
         {/* Left: back + filename + progress + save */}
@@ -292,19 +292,20 @@ export function Toolbar() {
                 {viewMode === 'read' && markdown && (
                   <>
                     <button
-                      onClick={() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' })); setShowMode(false) }}
+                      onClick={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' })); setShowMode(false) }}
                       className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                     >
                       <Maximize className="h-3.5 w-3.5" />
                       Focus mode
-                      <span className="ml-auto text-[10px] text-gray-400">Ctrl+Shift+F</span>
+                      <span className="ml-auto text-[10px] text-gray-400">F</span>
                     </button>
                     <button
-                      onClick={() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Z', shiftKey: true })); setShowMode(false) }}
+                      onClick={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' })); setShowMode(false) }}
                       className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                     >
                       <span className="text-xs font-bold w-3.5 h-3.5 flex items-center justify-center">Z</span>
                       Zen mode
+                      <span className="ml-auto text-[10px] text-gray-400">F</span>
                     </button>
                   </>
                 )}
@@ -317,7 +318,7 @@ export function Toolbar() {
                   <span className="ml-auto text-[10px] text-gray-400">P</span>
                 </button>
                 <button
-                  onClick={() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: '?' })); setShowMode(false) }}
+                  onClick={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' })); setShowMode(false) }}
                   className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
                   <span className="text-xs font-bold w-3.5 h-3.5 flex items-center justify-center">?</span>

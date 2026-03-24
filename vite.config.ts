@@ -8,6 +8,9 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5183,
   },
+  optimizeDeps: {
+    include: ['markmap-common', 'markmap-lib', 'markmap-view'],
+  },
   build: {
     sourcemap: 'hidden',
     rollupOptions: {

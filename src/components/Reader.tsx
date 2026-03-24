@@ -7,6 +7,7 @@ import rehypeHighlight from 'rehype-highlight'
 import rehypeKatex from 'rehype-katex'
 import { useStore } from '../store/useStore'
 import { extractToc, wordCount, estimateDifficulty, slugify } from '../lib/markdown'
+import { getComments, updateComment, removeComment, type Comment } from '../lib/docstore'
 
 // Delight #24: Click heading to copy anchor link
 function HeadingRenderer(level: number) {
@@ -587,6 +588,114 @@ export function Reader() {
     return () => el.removeEventListener('click', handleClick)
   }, [])
 
+  // ─── Inline comment highlights ──────────────────────────────────────────
+  const [inlineComments, setInlineComments] = useState<Comment[]>([])
+  const [commentPopover, setCommentPopover] = useState<{ comment: Comment; x: number; y: number } | null>(null)
+  const [editingCommentText, setEditingCommentText] = useState<string | null>(null)
+  const appliedCommentIdsRef = useRef<Set<number>>(new Set())
+
+  // Fetch comments when doc changes or when a comment is added/modified
+  useEffect(() => {
+    if (!activeDocId) { setInlineComments([]); appliedCommentIdsRef.current.clear(); return }
+    const refresh = () => getComments(activeDocId).then(setInlineComments)
+    refresh()
+    // Listen for immediate refresh after comment save/edit/delete
+    const onCommentChanged = () => refresh()
+    window.addEventListener('md-reader-comment-changed', onCommentChanged)
+    // Also poll every 3s as fallback
+    const interval = setInterval(refresh, 3000)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('md-reader-comment-changed', onCommentChanged)
+    }
+  }, [activeDocId])
+
+  // Apply inline highlights — only for newly added comments
+  useEffect(() => {
+    const article = contentRef.current?.querySelector('article')
+    if (!article) return
+
+    const unresolvedComments = inlineComments.filter((c) => !c.resolved)
+    const currentIds = new Set(unresolvedComments.map((c) => c.id!))
+
+    // Remove highlights for comments that no longer exist or are resolved
+    document.querySelectorAll('[data-comment-highlight]').forEach((el) => {
+      const id = Number(el.getAttribute('data-comment-highlight'))
+      if (!currentIds.has(id)) {
+        const parent = el.parentNode
+        if (parent) {
+          while (el.firstChild) parent.insertBefore(el.firstChild, el)
+          parent.removeChild(el)
+          parent.normalize()
+        }
+        appliedCommentIdsRef.current.delete(id)
+      }
+    })
+
+    // Only apply highlights for comments we haven't already applied
+    for (const comment of unresolvedComments) {
+      if (appliedCommentIdsRef.current.has(comment.id!)) continue
+
+      const searchText = comment.selectedText.trim()
+      if (!searchText || searchText.length < 3) continue
+
+      const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
+      let node: Text | null
+      let found = false
+      while ((node = walker.nextNode() as Text | null)) {
+        const idx = node.textContent?.indexOf(searchText) ?? -1
+        if (idx === -1) continue
+        if (node.parentElement?.closest('[data-comment-highlight]')) continue
+
+        const range = document.createRange()
+        range.setStart(node, idx)
+        range.setEnd(node, idx + searchText.length)
+
+        const span = document.createElement('span')
+        span.setAttribute('data-comment-highlight', String(comment.id))
+        span.style.cssText = 'background: rgba(45, 212, 191, 0.15); border-bottom: 2px solid rgb(45, 212, 191); cursor: pointer; position: relative; padding: 1px 0;'
+
+        const badge = document.createElement('span')
+        badge.setAttribute('data-comment-badge', 'true')
+        badge.style.cssText = 'display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; background: rgb(45, 212, 191); color: white; border-radius: 50%; font-size: 10px; margin-left: 2px; cursor: pointer; vertical-align: super; line-height: 1;'
+        badge.textContent = '\uD83D\uDCAC'
+        badge.title = `${comment.author}: ${comment.comment.slice(0, 60)}`
+
+        const handleClick = (e: Event) => {
+          e.stopPropagation()
+          const rect = span.getBoundingClientRect()
+          const containerRect = contentRef.current?.getBoundingClientRect()
+          setCommentPopover({
+            comment,
+            x: rect.left - (containerRect?.left ?? 0),
+            y: rect.bottom - (containerRect?.top ?? 0) + (contentRef.current?.scrollTop ?? 0),
+          })
+        }
+        span.addEventListener('click', handleClick)
+        badge.addEventListener('click', handleClick)
+
+        range.surroundContents(span)
+        span.appendChild(badge)
+        found = true
+        break
+      }
+      if (found) appliedCommentIdsRef.current.add(comment.id!)
+    }
+  }, [inlineComments])
+
+  // Dismiss comment popover on click outside
+  useEffect(() => {
+    if (!commentPopover) return
+    const dismiss = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-comment-highlight]') && !target.closest('.z-50')) {
+        setCommentPopover(null)
+      }
+    }
+    window.addEventListener('click', dismiss)
+    return () => window.removeEventListener('click', dismiss)
+  }, [commentPopover])
+
   // Delight #15: Footnote popover on hover
   const footnoteMap = useMemo(() => {
     const map = new Map<string, string>()
@@ -646,7 +755,7 @@ export function Reader() {
       const sel = window.getSelection()?.toString().trim()
       if (sel && sel.length > 1 && sel.length < 50 && !sel.includes('\n')) {
         // Dispatch Ctrl+K to open search, then fill it
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
         // Fill search after overlay opens
         setTimeout(() => {
           const input = document.querySelector('[placeholder="Search in document..."]') as HTMLInputElement
@@ -969,6 +1078,110 @@ export function Reader() {
           {markdown}
         </Markdown>
       </article>
+
+      {/* Inline comment popover */}
+      {commentPopover && (
+        <div
+          className="absolute z-50 w-72 bg-white dark:bg-gray-900 border border-teal-300 dark:border-teal-700 rounded-xl shadow-2xl p-3 space-y-2"
+          style={{ left: commentPopover.x, top: commentPopover.y + 8 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-teal-700 dark:text-teal-400">{commentPopover.comment.author}</span>
+            <button onClick={() => { setCommentPopover(null); setEditingCommentText(null) }} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>
+          </div>
+          {commentPopover.comment.selectedText && (
+            <div className="border-l-2 border-teal-400 pl-2">
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 italic line-clamp-2">
+                {commentPopover.comment.selectedText.slice(0, 80)}{commentPopover.comment.selectedText.length > 80 ? '...' : ''}
+              </p>
+            </div>
+          )}
+          {editingCommentText !== null ? (
+            <div className="space-y-1.5">
+              <textarea
+                rows={3}
+                autoFocus
+                value={editingCommentText}
+                onChange={(e) => setEditingCommentText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    if (!editingCommentText.trim()) return
+                    updateComment(commentPopover.comment.id!, { comment: editingCommentText.trim() }).then(() => {
+                      if (activeDocId) getComments(activeDocId).then(setInlineComments)
+                      setCommentPopover({ ...commentPopover, comment: { ...commentPopover.comment, comment: editingCommentText.trim() } })
+                      setEditingCommentText(null)
+                    })
+                  }
+                  if (e.key === 'Escape') setEditingCommentText(null)
+                }}
+                className="w-full text-xs px-2 py-1.5 rounded border border-teal-300 dark:border-teal-700 bg-transparent text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-teal-500 resize-none"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-gray-400">Enter to save, Esc to cancel</span>
+                <button
+                  onClick={() => {
+                    if (!editingCommentText.trim()) return
+                    updateComment(commentPopover.comment.id!, { comment: editingCommentText.trim() }).then(() => {
+                      if (activeDocId) getComments(activeDocId).then(setInlineComments)
+                      setCommentPopover({ ...commentPopover, comment: { ...commentPopover.comment, comment: editingCommentText.trim() } })
+                      setEditingCommentText(null)
+                    })
+                  }}
+                  disabled={!editingCommentText.trim()}
+                  className="text-[10px] px-2 py-0.5 bg-teal-600 text-white rounded hover:bg-teal-700 disabled:opacity-50 transition-colors"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-800 dark:text-gray-200 leading-relaxed">{commentPopover.comment.comment}</p>
+          )}
+          <div className="flex items-center justify-between pt-1 border-t border-gray-100 dark:border-gray-800">
+            <span className="text-[10px] text-gray-400">{new Date(commentPopover.comment.createdAt).toLocaleString()}</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setEditingCommentText(commentPopover.comment.comment)}
+                className="text-[10px] px-1.5 py-0.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded transition-colors"
+                title="Edit comment"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => {
+                  updateComment(commentPopover.comment.id!, { resolved: !commentPopover.comment.resolved }).then(() => {
+                    if (activeDocId) getComments(activeDocId).then(setInlineComments)
+                    appliedCommentIdsRef.current.delete(commentPopover.comment.id!)
+                    setCommentPopover(null)
+                    setEditingCommentText(null)
+                  })
+                }}
+                className="text-[10px] px-1.5 py-0.5 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-950/30 rounded transition-colors"
+                title={commentPopover.comment.resolved ? 'Unresolve' : 'Resolve'}
+              >
+                {commentPopover.comment.resolved ? 'Reopen' : 'Resolve'}
+              </button>
+              <button
+                onClick={() => {
+                  if (!window.confirm('Delete this comment?')) return
+                  removeComment(commentPopover.comment.id!).then(() => {
+                    if (activeDocId) getComments(activeDocId).then(setInlineComments)
+                    appliedCommentIdsRef.current.delete(commentPopover.comment.id!)
+                    setCommentPopover(null)
+                    setEditingCommentText(null)
+                  })
+                }}
+                className="text-[10px] px-1.5 py-0.5 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors"
+                title="Delete comment"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Key takeaways — auto-extracted from section opening sentences */}
       {toc.filter((t) => t.level === 2).length >= 3 && (

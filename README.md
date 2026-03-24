@@ -1,13 +1,19 @@
 [![CI](https://github.com/manup-dev/themarkdownreader/actions/workflows/ci.yml/badge.svg)](https://github.com/manup-dev/themarkdownreader/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
 
 # md-reader
 
 > The AI-native markdown reader. Read, understand, and explore your documents.
 
-![md-reader reader view](e2e-screenshots/round1-02-reader-view.png)
+![md-reader reader view](docs/screenshots/reader.png)
 
 **md-reader** is the first markdown tool built for **reading**, not writing. Upload any `.md` file and instantly get a beautiful reading experience with mind maps, AI-powered Q&A, visual exploration, and text-to-speech — all running locally in your browser.
+
+## Prerequisites
+
+- **Node.js >= 20** ([download](https://nodejs.org/))
+- **Docker** (optional, for GPU-accelerated AI via Ollama)
 
 ## Features
 
@@ -25,12 +31,18 @@
 - **Dyslexia-friendly font** toggle for accessible reading
 
 ### Visual Exploration
+
+![Mind map view](docs/screenshots/mindmap.png)
+
 - **Interactive mind map** from heading hierarchy (download as PNG, Ctrl+click to navigate)
 - **Treemap** showing relative section sizes with dynamic text contrast
 - **Knowledge graph** — AI-extracted concepts with deterministic fallback
 - **Summary cards** — expandable section overview with AI summaries
 
 ### AI-Powered Understanding
+
+![Chat panel](docs/screenshots/chat.png)
+
 - **Chat Q&A** — ask questions with streamed markdown responses + follow-up suggestions
 - **Chat export** — download entire Q&A session as markdown
 - **Visual coach** — AI explains sections with analogies, comprehension quizzes with mastery tracking
@@ -101,26 +113,39 @@
 
 ## Quick Start
 
-### Web App (no install)
 ```bash
 git clone https://github.com/manup-dev/themarkdownreader.git
 cd md-reader
-npm install
-npm run dev
 ```
-Open http://localhost:5183
 
-### With AI (Docker + GPU)
+### Option A: With local AI (recommended — Docker + GPU)
+
+If you have Docker and an NVIDIA GPU:
+
 ```bash
 ./startup.sh
 ```
-Or manually:
+
+This starts both the app and Ollama with GPU acceleration. Open http://localhost:5183 — AI features work immediately.
+
+> Ollama auto-pulls `qwen2.5:1.5b` (~1GB). The app is at port 5183, Ollama at 11435.
+
+### Option B: Without Docker (cloud AI)
+
 ```bash
-docker compose up -d
+npm install
+npm run dev
 ```
-This starts:
-- **md-reader** at http://localhost:5183
-- **Ollama** with GPU acceleration at http://localhost:11435 (auto-pulls qwen2.5:1.5b)
+
+Open http://localhost:5183, then configure an AI backend:
+
+1. Click the **gear icon** (top-right) to open AI Settings
+2. Get a free API key from [OpenRouter](https://openrouter.ai/keys)
+3. Paste it and click **Test** to verify
+
+![AI Settings — paste your OpenRouter key here](docs/screenshots/ai-settings.png)
+
+> Without an AI key, the reader, mind maps, treemap, and TTS still work — only Chat, Coach, and Knowledge Graph need AI.
 
 ### VS Code Extension
 

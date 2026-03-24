@@ -129,6 +129,7 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
           href="https://openrouter.ai/keys"
           target="_blank"
           rel="noopener noreferrer"
+          onMouseDown={(e) => e.stopPropagation()}
           className="inline-flex items-center gap-1 text-xs text-purple-400 hover:text-purple-300"
         >
           Get free API key

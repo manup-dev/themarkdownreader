@@ -117,8 +117,8 @@ export function SearchOverlay() {
     { label: 'Treemap', shortcut: 'Ctrl+4', action: () => { useStore.getState().setViewMode('treemap'); close() } },
     { label: 'Knowledge Graph', shortcut: '', action: () => { useStore.getState().setViewMode('knowledge-graph'); close() } },
     { label: 'Coach', shortcut: '', action: () => { useStore.getState().setViewMode('coach'); close() } },
-    { label: 'Toggle theme', shortcut: 't', action: () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 't' })); close() } },
-    { label: 'Focus mode', shortcut: 'Ctrl+Shift+F', action: () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F', ctrlKey: true, shiftKey: true })); close() } },
+    { label: 'Toggle theme', shortcut: 't', action: () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 't' })); close() } },
+    { label: 'Focus mode', shortcut: 'Ctrl+Shift+F', action: () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F', ctrlKey: true, shiftKey: true })); close() } },
     { label: 'Print / Export PDF', shortcut: 'p', action: () => { close(); setTimeout(() => window.print(), 100) } },
   ]
 

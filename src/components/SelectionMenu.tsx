@@ -3,7 +3,7 @@ import { Highlighter, Search, Bot, BookOpen, Copy, X, Loader2, Check, Quote, Fil
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
-import { addHighlight, getHighlights, removeHighlight, updateHighlightNote, addComment, type Highlight } from '../lib/docstore'
+import { addHighlight, getHighlights, removeHighlight, updateHighlightNote, addComment, addDocument, type Highlight } from '../lib/docstore'
 import { chat } from '../lib/ai'
 
 const COLORS = ['#fef08a', '#bbf7d0', '#bfdbfe', '#fbcfe8', '#fed7aa']
@@ -168,11 +168,20 @@ export function SelectionMenu() {
   }, [menu])
 
   const handleSaveComment = useCallback(async () => {
-    if (!menu || !activeDocId || !commentText.trim()) return
+    if (!menu || !commentText.trim()) return
+    let docId = activeDocId
+    // Auto-save document if not yet in library
+    if (!docId) {
+      const { markdown, fileName, setActiveDocId } = useStore.getState()
+      if (!markdown || !fileName) return
+      const result = await addDocument(fileName, markdown)
+      docId = result.docId
+      setActiveDocId(docId)
+    }
     const sectionId = useStore.getState().activeSection ?? ''
     const author = localStorage.getItem('md-reader-username') || 'You'
     await addComment({
-      docId: activeDocId,
+      docId,
       selectedText: menu.text,
       comment: commentText.trim(),
       author,
@@ -184,6 +193,8 @@ export function SelectionMenu() {
     setShowCommentInput(false)
     window.getSelection()?.removeAllRanges()
     setMenu(null)
+    // Notify Reader to refresh inline comment highlights immediately
+    window.dispatchEvent(new CustomEvent('md-reader-comment-changed'))
     // Toast notification
     const toast = document.createElement('div')
     toast.className = 'toast-notify fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-green-600 text-white text-sm rounded-lg shadow-lg'
