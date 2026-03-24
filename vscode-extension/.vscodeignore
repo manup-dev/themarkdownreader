@@ -1,0 +1,12 @@
+src/**
+webview/src/**
+webview/node_modules/**
+webview/package-lock.json
+webview/tsconfig.json
+webview/vite.config.ts
+node_modules/**
+tsconfig.json
+tsconfig.tsbuildinfo
+esbuild.mjs
+**/*.map
+.gitignore

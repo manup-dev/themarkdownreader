@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "md-reader for GitHub",
+  "version": "0.1.0",
+  "description": "Read GitHub markdown files beautifully with mind maps, AI chat, TTS, and visual exploration",
+  "permissions": ["activeTab"],
+  "icons": {
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon48.png"
+  }
+}

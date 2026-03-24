@@ -1,0 +1,71 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5183:5183"
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+      # VITE_ vars are embedded into browser JS — browser hits localhost:11435
+      - VITE_OLLAMA_URL=http://localhost:11435
+    depends_on:
+      ollama-init:
+        condition: service_completed_successfully
+    command: npm run dev -- --host 0.0.0.0
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+  # Auto-pulls model and warms it into GPU VRAM
+  ollama-init:
+    image: curlimages/curl:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ./scripts/ollama-init.sh:/init.sh:ro
+    entrypoint: ["/bin/sh", "/init.sh"]
+    environment:
+      # Inside Docker network, talk to ollama by service name
+      - OLLAMA_HOST=ollama
+    network_mode: "service:ollama"
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    environment:
+      - NODE_ENV=test
+    profiles:
+      - test
+    command: npm test
+
+volumes:
+  node_modules:
+  ollama_data:

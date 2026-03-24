@@ -1,0 +1,51 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Runtime files
+.dev-server.pid
+
+# Internal/personal docs
+EVAL_AND_MOAT_STRATEGY.md
+research.md
+e2e-user-review.md
+e2e-ux-review.md
+
+# E2E test artifacts
+e2e-screenshots/
+my-e2e-test.md
+
+# Eval run results (keep results.tsv, ignore per-run JSONs)
+scripts/eval/results/
+
+# VS Code extension build artifacts
+vscode-extension/dist/
+vscode-extension/webview/dist/
+vscode-extension/tsconfig.tsbuildinfo
+vscode-extension/*.vsix

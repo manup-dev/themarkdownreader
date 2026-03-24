@@ -1,0 +1,201 @@
+{
+  "version": 1,
+  "description": "Ground truth for md-reader evaluation. Each test case has expected outputs for different features.",
+  "testCases": [
+    {
+      "id": "simple-toc",
+      "file": "01-simple.md",
+      "feature": "toc-extraction",
+      "expected": {
+        "headingCount": 7,
+        "h1Count": 1,
+        "h2Count": 4,
+        "h3Count": 2,
+        "headings": [
+          "Introduction to Web Development",
+          "What is HTML?",
+          "Basic Elements",
+          "What is CSS?",
+          "Key Concepts",
+          "What is JavaScript?",
+          "Summary"
+        ]
+      }
+    },
+    {
+      "id": "simple-stats",
+      "file": "01-simple.md",
+      "feature": "document-stats",
+      "expected": {
+        "wordCountRange": [120, 200],
+        "readingTimeMinutes": 1,
+        "difficulty": "Beginner",
+        "codeBlockCount": 1
+      }
+    },
+    {
+      "id": "simple-summary",
+      "file": "01-simple.md",
+      "feature": "ai-summarization",
+      "expected": {
+        "mustMention": ["HTML", "CSS", "JavaScript"],
+        "mustNotMention": ["Raft", "consensus", "neural"],
+        "maxLength": 900,
+        "minLength": 50
+      }
+    },
+    {
+      "id": "simple-qa",
+      "file": "01-simple.md",
+      "feature": "ai-qa",
+      "questions": [
+        {
+          "question": "What does CSS stand for?",
+          "expectedAnswer": "Cascading Style Sheets",
+          "answerMustContain": ["Cascading Style Sheets"]
+        },
+        {
+          "question": "What are the three core web technologies?",
+          "expectedAnswer": "HTML, CSS, and JavaScript",
+          "answerMustContain": ["HTML", "CSS", "JavaScript"]
+        }
+      ]
+    },
+    {
+      "id": "complex-toc",
+      "file": "02-complex-technical.md",
+      "feature": "toc-extraction",
+      "expected": {
+        "headingCount": 10,
+        "h1Count": 1,
+        "h2Count": 6,
+        "h3Count": 3
+      }
+    },
+    {
+      "id": "complex-stats",
+      "file": "02-complex-technical.md",
+      "feature": "document-stats",
+      "expected": {
+        "wordCountRange": [400, 600],
+        "difficulty": "Expert",
+        "codeBlockCount": 1,
+        "tableCount": 2
+      }
+    },
+    {
+      "id": "complex-summary",
+      "file": "02-complex-technical.md",
+      "feature": "ai-summarization",
+      "expected": {
+        "mustMention": ["Raft", "consensus"],
+        "mustNotMention": ["HTML", "CSS"],
+        "maxLength": 1400
+      }
+    },
+    {
+      "id": "complex-concepts",
+      "file": "02-complex-technical.md",
+      "feature": "knowledge-graph",
+      "expected": {
+        "mustExtractEntities": ["Raft", "Paxos", "PBFT", "CAP theorem", "Byzantine"],
+        "minNodeCount": 5,
+        "minEdgeCount": 3,
+        "entityTypes": ["concept", "technology", "person"]
+      }
+    },
+    {
+      "id": "complex-qa",
+      "file": "02-complex-technical.md",
+      "feature": "ai-qa",
+      "questions": [
+        {
+          "question": "How many nodes does PBFT need to tolerate f faults?",
+          "expectedAnswer": "3f+1",
+          "answerMustContain": ["3f+1"]
+        },
+        {
+          "question": "What does the CAP theorem state?",
+          "answerMustContain": ["Consistency", "Availability", "Partition"]
+        }
+      ]
+    },
+    {
+      "id": "interlinked-links",
+      "files": ["03-interlinked-a.md", "03-interlinked-b.md", "03-interlinked-c.md"],
+      "feature": "collection-links",
+      "expected": {
+        "totalFiles": 3,
+        "totalLinks": 6,
+        "structure": "wiki",
+        "linksFromA": ["03-interlinked-b.md", "03-interlinked-c.md"],
+        "linksFromB": ["03-interlinked-a.md", "03-interlinked-c.md"],
+        "linksFromC": ["03-interlinked-a.md", "03-interlinked-b.md"],
+        "wikilinks": ["Support Vector Machines", "Transformers"]
+      }
+    },
+    {
+      "id": "interlinked-cross-qa",
+      "files": ["03-interlinked-a.md", "03-interlinked-b.md", "03-interlinked-c.md"],
+      "feature": "cross-document-qa",
+      "questions": [
+        {
+          "question": "What is the relationship between neural networks and transformers?",
+          "answerMustContain": ["attention", "self-attention"],
+          "answerMustReference": ["03-interlinked-b.md", "03-interlinked-c.md"]
+        },
+        {
+          "question": "What are the three types of machine learning?",
+          "answerMustContain": ["supervised", "unsupervised", "reinforcement"]
+        }
+      ]
+    },
+    {
+      "id": "mindmap-quality",
+      "file": "01-simple.md",
+      "feature": "mindmap-visual",
+      "expected": {
+        "rootNodeText": "Introduction to Web Development",
+        "branchCount": 4,
+        "maxDepth": 3,
+        "allNodesVisible": true,
+        "noOverlappingText": true
+      }
+    },
+    {
+      "id": "mindmap-large",
+      "file": "02-complex-technical.md",
+      "feature": "mindmap-visual",
+      "expected": {
+        "allNodesReadable": true,
+        "noTextCutoff": true,
+        "zoomWorking": true,
+        "collapseExpandWorking": true
+      }
+    },
+    {
+      "id": "tts-accuracy",
+      "file": "01-simple.md",
+      "feature": "tts-narration",
+      "expected": {
+        "announcesHeadings": true,
+        "skipsCodeBlocks": true,
+        "handlesListsNaturally": true,
+        "doesNotReadRawSyntax": true,
+        "pronouncesAcronyms": ["HTML", "CSS"]
+      }
+    },
+    {
+      "id": "coach-quality",
+      "file": "02-complex-technical.md",
+      "feature": "coach-explanation",
+      "expected": {
+        "usesAnalogy": true,
+        "asksQuestions": true,
+        "understandableByNonExpert": true,
+        "factuallyAccurate": true,
+        "referencesDocContent": true
+      }
+    }
+  ]
+}

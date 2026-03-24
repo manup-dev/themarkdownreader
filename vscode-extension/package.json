@@ -1,0 +1,101 @@
+{
+  "name": "md-reader",
+  "displayName": "md-reader",
+  "description": "AI-native markdown reader with mind maps, TTS, visual exploration, and AI chat",
+  "version": "0.1.0",
+  "publisher": "md-reader",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Education",
+    "Other"
+  ],
+  "keywords": [
+    "markdown",
+    "reader",
+    "mind map",
+    "tts",
+    "ai",
+    "knowledge graph"
+  ],
+  "activationEvents": [
+    "onLanguage:markdown"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "md-reader.openReader",
+        "title": "md-reader: Open Reading View",
+        "icon": "$(book)"
+      },
+      {
+        "command": "md-reader.openMindMap",
+        "title": "md-reader: Open Mind Map"
+      },
+      {
+        "command": "md-reader.readAloud",
+        "title": "md-reader: Read Aloud"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "when": "resourceLangId == markdown",
+          "command": "md-reader.openReader",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "md-reader.openReader",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "editorLangId == markdown"
+      }
+    ],
+    "configuration": {
+      "title": "md-reader",
+      "properties": {
+        "md-reader.ollamaUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Ollama API URL for AI features"
+        },
+        "md-reader.theme": {
+          "type": "string",
+          "enum": ["auto", "light", "dark", "sepia"],
+          "default": "auto",
+          "description": "Reader theme (auto follows VS Code theme)"
+        },
+        "md-reader.fontSize": {
+          "type": "number",
+          "default": 18,
+          "description": "Reader font size in pixels"
+        },
+        "md-reader.defaultView": {
+          "type": "string",
+          "enum": ["read", "mindmap", "treemap", "cards"],
+          "default": "read",
+          "description": "Default view when opening a markdown file"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs && cd webview && npm run build",
+    "watch": "node esbuild.mjs --watch",
+    "package": "vsce package",
+    "dev": "node esbuild.mjs --watch"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

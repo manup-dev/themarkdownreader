@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #1f2937;
+      background: #ffffff;
+    }
+    .header {
+      padding: 16px 20px 12px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .header h1 {
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header h1 svg { width: 20px; height: 20px; color: #2563eb; }
+    .header p {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+    .body { padding: 16px 20px; }
+    .feature {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .feature-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .feature-text { font-size: 12px; line-height: 1.4; }
+    .feature-text strong { font-weight: 600; color: #111827; }
+    .feature-text span { color: #6b7280; }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      margin-top: 8px;
+      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      transition: all 150ms;
+    }
+    .btn:hover { background: linear-gradient(135deg, #1d4ed8, #2563eb); }
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+      margin-top: 8px;
+    }
+    .btn-secondary:hover { background: #e5e7eb; }
+    .footer {
+      padding: 12px 20px;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+    }
+    .footer a {
+      font-size: 11px;
+      color: #6b7280;
+      text-decoration: none;
+    }
+    .footer a:hover { color: #2563eb; }
+    .settings {
+      padding: 12px 20px;
+      border-top: 1px solid #f3f4f6;
+    }
+    .settings label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: #6b7280;
+      cursor: pointer;
+    }
+    .settings input { width: 100%; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 11px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+      </svg>
+      md-reader
+    </h1>
+    <p>Read GitHub markdown files beautifully</p>
+  </div>
+
+  <div class="body">
+    <div class="feature">
+      <div class="feature-icon" style="background: #eff6ff;">🗺️</div>
+      <div class="feature-text">
+        <strong>Mind Maps</strong><br>
+        <span>Visualize document structure</span>
+      </div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon" style="background: #f0fdf4;">💬</div>
+      <div class="feature-text">
+        <strong>AI Chat</strong><br>
+        <span>Ask questions about any file</span>
+      </div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon" style="background: #fef3c7;">🔊</div>
+      <div class="feature-text">
+        <strong>Read Aloud</strong><br>
+        <span>Listen to docs with smart TTS</span>
+      </div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon" style="background: #fce7f3;">📝</div>
+      <div class="feature-text">
+        <strong>Comments</strong><br>
+        <span>Annotate and highlight text</span>
+      </div>
+    </div>
+
+    <a class="btn" id="openCurrent">Open Current File in md-reader</a>
+    <a class="btn btn-secondary" href="https://md-reader.netlify.app" target="_blank">Open md-reader App</a>
+  </div>
+
+  <div class="settings">
+    <label>
+      md-reader URL:
+      <input type="text" id="readerUrl" placeholder="https://md-reader.netlify.app" />
+    </label>
+  </div>
+
+  <div class="footer">
+    <a href="https://github.com/anthropics/md-reader" target="_blank">GitHub</a>
+    &nbsp;&middot;&nbsp;
+    <a href="https://github.com/anthropics/md-reader/issues" target="_blank">Report Issue</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
