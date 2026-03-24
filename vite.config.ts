@@ -10,5 +10,14 @@ export default defineConfig({
   },
   build: {
     sourcemap: 'hidden',
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes('node_modules/d3')) return 'd3'
+          if (id.includes('node_modules/markmap')) return 'markmap'
+          if (id.includes('node_modules/graphology')) return 'graphology'
+        },
+      },
+    },
   },
 })

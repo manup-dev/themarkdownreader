@@ -19,10 +19,44 @@ export function Upload() {
   useEffect(() => {
     getAllDocuments().then((docs) => setRecentDocs(docs.slice(0, 3))).catch(() => {})
   }, [])
+
+  // Browser extension support: handle #url= hash and postMessage from extension
+  useEffect(() => {
+    // Handle #url=<encoded-url> from browser extension
+    const hash = window.location.hash
+    if (hash.startsWith('#url=')) {
+      const encodedUrl = hash.slice(5)
+      try {
+        const targetUrl = decodeURIComponent(encodedUrl)
+        // Validate protocol to prevent javascript: XSS
+        if (targetUrl.startsWith('https://') || targetUrl.startsWith('http://')) {
+          setUrl(targetUrl)
+          setTimeout(() => {
+            const btn = document.querySelector('[data-fetch-btn]') as HTMLButtonElement
+            btn?.click()
+          }, 300)
+        }
+        window.history.replaceState(null, '', window.location.pathname)
+      } catch { /* invalid URL encoding */ }
+    }
+
+    // Handle postMessage from browser extension (validate origin)
+    const handleMessage = (event: MessageEvent) => {
+      // Only accept messages from same origin or GitHub
+      const trustedOrigins = [window.location.origin, 'https://github.com']
+      if (!trustedOrigins.includes(event.origin)) return
+      if (event.data?.type === 'md-reader-load' && event.data.markdown) {
+        setMarkdown(event.data.markdown, event.data.fileName || 'document.md')
+      }
+    }
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [setMarkdown])
   const [editorText, setEditorText] = useState('')
   const [dragging, setDragging] = useState(false)
   const [isFirstVisit] = useState(() => !localStorage.getItem('md-reader-visited'))
   const [error, setError] = useState<string | null>(null)
+  const [starDismissed, setStarDismissed] = useState(() => !!localStorage.getItem('md-reader-star-dismissed'))
   const fileRef = useRef<HTMLInputElement>(null)
 
   const loadFile = useCallback(
@@ -58,8 +92,46 @@ export function Upload() {
       } else if (targetUrl.startsWith('http://')) {
         targetUrl = targetUrl.replace('http://', 'https://')
       }
+      // Validate URL and block private/local hostnames (SSRF protection)
+      let parsed: URL
+      try {
+        parsed = new URL(targetUrl)
+      } catch {
+        throw new Error('Invalid URL')
+      }
+      // Strip IPv6 brackets for matching, block all private/local addresses
+      const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+      const privatePatterns = [
+        /^localhost$/,
+        /^127\.0\.0\.1$/,
+        /^0\.0\.0\.0$/,
+        /^192\.168\./,
+        /^10\./,
+        /^172\.(1[6-9]|2\d|3[01])\./,
+        /\.local$/,
+        /^::1$/,                        // IPv6 loopback
+        /^::$/,                         // IPv6 unspecified
+        /^::ffff:127\./,               // IPv4-mapped IPv6 loopback
+        /^::ffff:10\./,                // IPv4-mapped IPv6 private
+        /^::ffff:192\.168\./,          // IPv4-mapped IPv6 private
+        /^::ffff:172\.(1[6-9]|2\d|3[01])\./, // IPv4-mapped IPv6 private
+        /^fe80:/,                       // IPv6 link-local
+        /^fc00:/,                       // IPv6 unique local
+        /^fd/,                          // IPv6 unique local
+      ]
+      if (parsed.protocol === 'file:') {
+        throw new Error('file:// URLs are not allowed')
+      }
+      if (privatePatterns.some((p) => p.test(hostname))) {
+        throw new Error('URLs pointing to private/local networks are not allowed')
+      }
       const res = await fetch(targetUrl, { signal: AbortSignal.timeout(30000) })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      // Content-type check: only allow text-like responses
+      const contentType = res.headers.get('content-type') ?? ''
+      if (contentType && !contentType.includes('text') && !contentType.includes('markdown') && !contentType.includes('octet-stream')) {
+        throw new Error('URL does not appear to point to a text file')
+      }
       // Size check: reject files > 10MB
       const contentLength = res.headers.get('content-length')
       if (contentLength && parseInt(contentLength) > 10 * 1024 * 1024) {
@@ -226,7 +298,12 @@ md-reader is open source. Contributions welcome!
           >
             &larr; Back
           </button>
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Paste or write markdown</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Paste or write markdown
+            <span className="ml-2 text-[10px] text-gray-400 cursor-help" title={"# Heading\n**bold** *italic*\n- bullet list\n1. numbered\n`code` ```code block```\n[link](url)\n> quote\n| table | row |"}>
+              syntax?
+            </span>
+          </span>
           <button
             onClick={handleEditorSubmit}
             disabled={!editorText.trim()}
@@ -251,17 +328,17 @@ md-reader is open source. Contributions welcome!
 
   return (
     <div
-      className="flex flex-col items-center justify-center min-h-screen p-8 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900"
+      className="flex flex-col items-center min-h-screen p-8 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900"
       onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
     >
-      <div className="max-w-xl w-full space-y-6">
-        <div className="text-center space-y-3">
-          {/* Reading streak */}
+      <div className="max-w-xl w-full space-y-6 mt-[10vh]">
+        {/* ── Hero area (above the fold) ─────────────────────────── */}
+        <div className="text-center space-y-2">
+          {/* Reading streak — compact */}
           {(() => {
             const count = parseInt(localStorage.getItem('md-reader-docs-read') ?? '0')
-            // Reading streak
             const today = new Date().toDateString()
             const lastDate = localStorage.getItem('md-reader-streak-date')
             let streak = parseInt(localStorage.getItem('md-reader-streak') ?? '0')
@@ -271,12 +348,12 @@ md-reader is open source. Contributions welcome!
               localStorage.setItem('md-reader-streak', String(streak))
               localStorage.setItem('md-reader-streak-date', today)
             }
-            return (
-              <div className="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500">
+            return (count > 0 || streak > 0) ? (
+              <div className="flex items-center justify-center gap-3 text-xs text-gray-400 dark:text-gray-500">
                 {count > 0 && <span>{count} document{count !== 1 ? 's' : ''} read</span>}
-                {streak > 0 && <span className="text-amber-500">{streak}-day streak</span>}
+                {streak > 0 && <span className="text-amber-500">{streak > 3 ? '\u{1F525} ' : ''}{streak}-day streak</span>}
               </div>
-            )
+            ) : null
           })()}
           <h1 className="text-5xl font-bold tracking-tight text-gray-900 dark:text-gray-50">
             md-reader
@@ -286,12 +363,12 @@ md-reader is open source. Contributions welcome!
           </p>
         </div>
 
-        {/* Drop zone — only for file upload */}
+        {/* Drop zone — prominent */}
         <div
-          className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all ${
+          className={`border-2 border-dashed rounded-2xl p-14 text-center cursor-pointer transition-all ${
             dragging
               ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30 scale-[1.02]'
-              : 'border-gray-400 dark:border-gray-600 hover:border-gray-500 dark:hover:border-gray-500'
+              : 'border-gray-300 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-500 bg-white/50 dark:bg-gray-900/50'
           }`}
           onClick={() => fileRef.current?.click()}
         >
@@ -314,7 +391,6 @@ md-reader is open source. Contributions welcome!
               if (files.length === 1) {
                 loadFile(files[0])
               } else if (files.length > 1) {
-                // Multiple files → open in Library workspace
                 handleMultipleFiles(files)
               }
             }}
@@ -335,6 +411,7 @@ md-reader is open source. Contributions welcome!
             />
           </div>
           <button
+            data-fetch-btn
             onClick={fetchUrl}
             disabled={fetching}
             className="px-5 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium text-sm disabled:opacity-50"
@@ -363,38 +440,7 @@ md-reader is open source. Contributions welcome!
           ) : null
         })()}
 
-        {/* Delight #35: Recent documents with progress bars */}
-        {recentDocs.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-xs text-gray-400 flex items-center gap-1"><Clock className="h-3 w-3" /> Recent</p>
-            {recentDocs.map((doc) => {
-              const progress = parseFloat(localStorage.getItem(`md-reader-scroll-${doc.id}`) ?? '0')
-              const minsLeft = Math.max(1, Math.ceil((doc.wordCount / 230) * (1 - progress / 100)))
-              return (
-                <button
-                  key={doc.id}
-                  onClick={() => openDocument(doc.markdown, doc.fileName, doc.id!)}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-sm transition-all text-left"
-                >
-                  <FileText className="h-4 w-4 text-gray-400 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{doc.fileName}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <div className="flex-1 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${progress >= 99 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, progress)}%` }} />
-                      </div>
-                      <span className="text-[10px] text-gray-400 shrink-0 tabular-nums">
-                        {progress >= 99 ? 'Done' : `${Math.round(progress)}% · ${minsLeft}m left`}
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        )}
-
-        {/* Action buttons — outside the drop zone */}
+        {/* Action buttons */}
         <div className="grid grid-cols-4 gap-3">
           <button
             onClick={() => setMode('editor')}
@@ -425,6 +471,60 @@ md-reader is open source. Contributions welcome!
             <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Open Folder</span>
           </button>
         </div>
+
+        {/* GitHub star banner — below action buttons */}
+        {parseInt(localStorage.getItem('md-reader-docs-read') ?? '0') >= 3 && !starDismissed && (
+          <div className="flex items-center gap-3 px-4 py-2.5 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border border-amber-200 dark:border-amber-800/50 rounded-lg text-sm">
+            <span className="text-lg">&#11088;</span>
+            <span className="text-gray-700 dark:text-gray-300">
+              Enjoying md-reader? A <a href="https://github.com/manup-dev/themarkdownreader" target="_blank" rel="noopener" className="font-semibold text-amber-700 dark:text-amber-400 hover:underline">GitHub star</a> helps others find it!
+            </span>
+            <button
+              onClick={() => { localStorage.setItem('md-reader-star-dismissed', 'true'); setStarDismissed(true) }}
+              className="ml-auto text-gray-400 hover:text-gray-600 text-xs"
+            >
+              dismiss
+            </button>
+          </div>
+        )}
+
+        {/* ── Below the fold — subtle secondary content ──────────── */}
+
+        {/* Recent documents (subtle) */}
+        {recentDocs.length > 0 && (
+          <div className="space-y-1.5 opacity-70 hover:opacity-100 transition-opacity">
+            <p className="text-xs text-gray-400 flex items-center gap-1"><Clock className="h-3 w-3" /> Recent</p>
+            {recentDocs.map((doc) => {
+              const progress = parseFloat(localStorage.getItem(`md-reader-scroll-${doc.id}`) ?? '0')
+              const minsLeft = Math.max(1, Math.ceil((doc.wordCount / 230) * (1 - progress / 100)))
+              return (
+                <button
+                  key={doc.id}
+                  onClick={() => openDocument(doc.markdown, doc.fileName, doc.id!)}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-sm transition-all text-left"
+                >
+                  <FileText className="h-4 w-4 text-gray-400 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
+                      {doc.fileName}
+                      <span className="text-[9px] text-gray-400 font-normal ml-1">
+                        {(() => { const m = Math.floor((Date.now() - doc.addedAt) / 60000); return m < 60 ? `${m}m ago` : m < 1440 ? `${Math.floor(m/60)}h ago` : `${Math.floor(m/1440)}d ago` })()}
+                      </span>
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex-1 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${progress >= 99 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, progress)}%` }} />
+                      </div>
+                      <span className="text-[10px] text-gray-400 shrink-0 tabular-nums">
+                        {progress >= 99 ? '\u2713 Done' : `${Math.round(progress)}% \u00b7 ${minsLeft}m left`}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         {error && (
           <p className="text-center text-red-500 text-sm">{error}</p>

@@ -27,7 +27,11 @@ export function SummaryCardsView() {
       setCards((prev) =>
         prev.map((c) => (c.id === card.id ? { ...c, summary } : c)),
       )
-    } catch (e) { console.warn('Summary generation failed:', e) }
+    } catch {
+      setCards((prev) =>
+        prev.map((c) => (c.id === card.id ? { ...c, summary: 'Failed to generate summary.' } : c)),
+      )
+    }
     setLoadingId(null)
   }, [])
 
@@ -40,7 +44,11 @@ export function SummaryCardsView() {
         setCards((prev) =>
           prev.map((c) => (c.id === card.id ? { ...c, summary } : c)),
         )
-      } catch (e) { console.warn('Summary generation failed:', e) }
+      } catch {
+        setCards((prev) =>
+          prev.map((c) => (c.id === card.id ? { ...c, summary: 'Failed to generate summary.' } : c)),
+        )
+      }
     }
     setLoadingId(null)
   }, [cards])
@@ -72,11 +80,59 @@ export function SummaryCardsView() {
           )}
         </div>
 
+        {cards.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-4">
+            {(() => {
+              const allText = cards.map((c) => c.text).join(' ').toLowerCase()
+              const words = allText.match(/\b[a-z]{4,}\b/g) ?? []
+              const freq = new Map<string, number>()
+              const stop = new Set(['this','that','with','from','have','been','will','your','they','their','which','when','what','each','other','about','more','than','also','only','into','some','very','just','like','over','such','most','these','there','could','would','should'])
+              for (const w of words) { if (!stop.has(w)) freq.set(w, (freq.get(w) ?? 0) + 1) }
+              const top = [...freq.entries()].filter(([,c]) => c >= 2).sort((a,b) => b[1]-a[1]).slice(0, 12)
+              if (top.length === 0) return null
+              const max = top[0][1]
+              return top.map(([word, count]) => (
+                <span key={word} className="text-blue-500/60 dark:text-blue-400/60 font-medium" style={{ fontSize: `${Math.max(10, Math.round(10 + (count / max) * 8))}px` }}>{word}</span>
+              ))
+            })()}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-min">
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border border-blue-200 dark:border-blue-800 rounded-xl p-5">
+            <h3 className="font-semibold text-blue-700 dark:text-blue-300 mb-3">Document Stats</h3>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {(() => {
+                const totalWords = cards.reduce((s, c) => s + c.wordCount, 0)
+                const totalMins = Math.max(1, Math.ceil(totalWords / 230))
+                const codeBlocks = Math.floor((markdown.match(/```/g) ?? []).length / 2)
+                const tables = (markdown.match(/^\|[-:| ]+\|$/gm) ?? []).length
+                const links = (markdown.match(/\[([^\]]+)\]\([^)]+\)/g) ?? []).length
+                const images = (markdown.match(/!\[/g) ?? []).length
+                return [
+                  { label: 'Words', value: totalWords.toLocaleString() },
+                  { label: 'Reading time', value: `${totalMins} min` },
+                  { label: 'Sections', value: String(cards.length) },
+                  { label: 'Code blocks', value: String(codeBlocks) },
+                  { label: 'Tables', value: String(tables) },
+                  { label: 'Links', value: String(links) },
+                  ...(images > 0 ? [{ label: 'Images', value: String(images) }] : []),
+                ].map((stat) => (
+                  <div key={stat.label} className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">{stat.label}</span>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">{stat.value}</span>
+                  </div>
+                ))
+              })()}
+            </div>
+          </div>
           {cards.map((card) => (
             <div
               key={card.id}
+              role="button"
+              tabIndex={0}
               onClick={() => expandedId === card.id ? setExpandedId(null) : setExpandedId(card.id)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedId(expandedId === card.id ? null : card.id) } }}
               className={`bg-white dark:bg-gray-900 border rounded-xl p-5 cursor-pointer hover:shadow-md transition-all group ${
                 expandedId === card.id ? 'border-blue-400 dark:border-blue-600 shadow-md col-span-1 md:col-span-2 lg:col-span-3' : 'border-gray-200 dark:border-gray-800 hover:border-blue-300 dark:hover:border-blue-700'
               }`}
@@ -118,6 +174,9 @@ export function SummaryCardsView() {
                   <Clock className="h-3 w-3" />
                   {card.readingTime} min
                 </span>
+                <div className="flex-1 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden ml-2">
+                  <div className="h-full bg-blue-400 rounded-full" style={{ width: `${Math.round((card.wordCount / Math.max(1, cards.reduce((s, c) => s + c.wordCount, 0))) * 100)}%` }} />
+                </div>
                 {aiReady && !card.summary && (
                   <button
                     onClick={(e) => {

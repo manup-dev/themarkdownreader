@@ -70,7 +70,7 @@ async function readDirectoryRecursive(
   for await (const entry of (dirHandle as unknown as FSHandle).values()) {
     const entryPath = basePath ? `${basePath}/${entry.name}` : entry.name
 
-    if (entry.kind === 'file' && /\.(md|markdown)$/i.test(entry.name)) {
+    if (entry.kind === 'file' && /\.(md|markdown|excalidraw)$/i.test(entry.name)) {
       const fileHandle = entry as FileSystemFileHandle
       const file = await fileHandle.getFile()
       const content = await file.text()
@@ -145,7 +145,7 @@ export function hasDirectoryAccess(): boolean {
 export function readFileList(files: FileList): Promise<DirectoryFile[]> {
   return Promise.all(
     Array.from(files)
-      .filter((f) => /\.(md|markdown)$/i.test(f.name))
+      .filter((f) => /\.(md|markdown|excalidraw)$/i.test(f.name))
       .map(async (f) => ({
         path: (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name,
         content: await f.text(),

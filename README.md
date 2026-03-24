@@ -1,6 +1,11 @@
+[![CI](https://github.com/manup-dev/themarkdownreader/actions/workflows/ci.yml/badge.svg)](https://github.com/manup-dev/themarkdownreader/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 # md-reader
 
 > The AI-native markdown reader. Read, understand, and explore your documents.
+
+![md-reader reader view](e2e-screenshots/round1-02-reader-view.png)
 
 **md-reader** is the first markdown tool built for **reading**, not writing. Upload any `.md` file and instantly get a beautiful reading experience with mind maps, AI-powered Q&A, visual exploration, and text-to-speech — all running locally in your browser.
 
@@ -51,13 +56,25 @@
 - **Duplicate detection** — SimHash fingerprinting catches near-duplicates
 - **Export/import** library as JSON backup
 
+### Comments & Annotations
+- **Inline comments** — select text, add comments with author names
+- **Comments panel** — view, resolve, export, and jump to all comments
+- **5-color highlights** with notes and export as markdown
+- **Glossary** — auto-detect and define terms from your highlights
+
 ### Power User Features
 - **Command palette** (`Ctrl+K`) — switch views, toggle theme, print, all in one
 - **Vim navigation** — `j`/`k` sections, `gg` top, `G` bottom
+- **Bionic reading** (`b`) — bold first half of words for faster scanning
+- **Word heatmap** (`h`) — visualize word frequency with color intensity
+- **TL;DR mode** (`d`) — collapse to headings only, click to expand
+- **Quick glance** (hold `Space`) — preview next section without scrolling
 - **Print/PDF export** — `p` key or toolbar button with clean print stylesheet
-- **Double-click to search** — double-click any word to find it in the document
-- **Copy stats** — click the stats bar to copy word count/reading time
-- **Code blocks** — language labels, syntax highlighting, one-click copy with language feedback
+- **Section difficulty badges** — green/amber/red dots in TOC showing content density
+- **Reading speed calibration** — personalized time estimates based on your WPM
+- **Code blocks** — language labels, syntax highlighting, one-click copy
+- **VS Code extension** — read markdown inside your editor with CodeLens, Outline, sync scroll
+- **GitHub extension** — one-click "Open in md-reader" on any GitHub `.md` file
 
 ### Keyboard Shortcuts
 | Key | Action |
@@ -75,13 +92,18 @@
 | `Ctrl+Shift+F` | Toggle focus mode |
 | `1-4` | Select quiz answer in Coach mode |
 | `Esc` | Close panel / exit mode |
+| `b` | Bionic reading (bold first half of words) |
+| `h` | Word frequency heatmap |
+| `d` | TL;DR mode (headings only) |
+| `s` | Auto-scroll |
+| `Space` (hold) | Quick glance at next section |
 | `Ctrl+V` | Paste markdown to open (on upload screen) |
 
 ## Quick Start
 
 ### Web App (no install)
 ```bash
-git clone https://github.com/anthropics/md-reader.git
+git clone https://github.com/manup-dev/themarkdownreader.git
 cd md-reader
 npm install
 npm run dev
@@ -100,10 +122,54 @@ This starts:
 - **md-reader** at http://localhost:5183
 - **Ollama** with GPU acceleration at http://localhost:11435 (auto-pulls qwen2.5:1.5b)
 
+### VS Code Extension
+
+Use md-reader directly inside VS Code — open any `.md` file and read it with mind maps, TTS, and all visualizations.
+
+```bash
+cd vscode-extension
+npm install
+npm run build
+```
+Then in VS Code: `Ctrl+Shift+P` → **"Install from VSIX"** → select `vscode-extension/md-reader-0.1.0.vsix`
+
+Or install from source:
+```bash
+cd vscode-extension && npx @vscode/vsce package --no-dependencies
+code --install-extension md-reader-0.1.0.vsix
+```
+
+**Usage:** Open any `.md` file → press `Ctrl+Shift+R` (or click the book icon in the editor title bar)
+
+**VS Code features:**
+- Reading time CodeLens on headings
+- Outline view with section word counts
+- Hover preview for markdown links
+- Sync scroll between editor and reader
+- Session summary on close
+- Status bar reading progress
+
+### GitHub Browser Extension
+
+Read any markdown file on GitHub with the full md-reader experience — mind maps, AI chat, highlights, and more.
+
+```bash
+# Chrome / Edge / Brave
+1. Open chrome://extensions (or edge://extensions)
+2. Enable "Developer mode" (toggle in top-right)
+3. Click "Load unpacked"
+4. Select the browser-extension/ folder from this repo
+```
+
+**Usage:** Navigate to any `.md` file on GitHub → click **"Open in md-reader"** in the file toolbar.
+
+By default it opens the hosted version. To use your local dev server instead, click the extension icon and set the URL to `http://localhost:5183`.
+
 ### Development
+
 ```bash
 npm run dev          # Vite dev server (port 5183)
-npm run test         # Unit tests (vitest, 22 tests)
+npm run test         # Unit tests (vitest)
 npm run eval         # AI accuracy benchmark (15 tests, ~95/100)
 npm run typecheck    # TypeScript check
 npm run build        # Production build
@@ -129,34 +195,45 @@ npm run lint         # ESLint
 
 ```
 src/
-├── components/          # 22 React components
-│   ├── Reader.tsx       # Markdown reading view (4 themes, WPM, progress)
-│   ├── MindMap.tsx      # Interactive mind map (markmap, Ctrl+click nav)
-│   ├── TreemapView.tsx  # D3 treemap with dynamic contrast
-│   ├── Chat.tsx         # AI Q&A (streaming, export, follow-ups, section badges)
-│   ├── Coach.tsx        # Visual coach + quiz + mastery tracking
+├── components/            # React components
+│   ├── Reader.tsx         # Reading view (4 themes, WPM, progress, footnotes)
+│   ├── MindMap.tsx        # Interactive mind map (depth control, sync highlight)
+│   ├── TreemapView.tsx    # D3 treemap with dynamic contrast
+│   ├── Chat.tsx           # AI Q&A (streaming, follow-ups, section badges)
+│   ├── Coach.tsx          # Visual coach + quiz + mastery tracking
+│   ├── CommentsPanel.tsx  # Document annotations & comments
 │   ├── KnowledgeGraph.tsx # AI concept graph + deterministic fallback
-│   ├── SummaryCards.tsx  # Expandable section cards
-│   ├── TtsPlayer.tsx    # Teacher-like TTS with section titles
-│   ├── SelectionMenu.tsx # Text selection (ELI5, cite, visualize, highlight)
-│   ├── SearchOverlay.tsx # Search + command palette (Ctrl+K)
-│   ├── Workspace.tsx    # Multi-doc library (sort, queue, graph, correlations)
+│   ├── SummaryCards.tsx   # Expandable section cards
+│   ├── TtsPlayer.tsx      # Teacher-like TTS with section titles
+│   ├── SelectionMenu.tsx  # Text selection (ELI5, cite, highlight, comment)
+│   ├── SearchOverlay.tsx  # Search + command palette (Ctrl+K)
+│   ├── Workspace.tsx      # Multi-doc library (sort, queue, graph)
 │   └── ...
 ├── lib/
-│   ├── ai.ts            # 3-backend AI (OpenRouter/Ollama/WebLLM, streaming)
-│   ├── prompts.ts       # AI prompt templates (optimized for 1.5B models)
-│   ├── markdown.ts      # Parsing, chunking (800-char cap), TOC, stats
-│   ├── tts.ts           # Teacher-like TTS engine (heading announce, code describe)
-│   ├── docstore.ts      # IndexedDB with SimHash, TF-IDF, BM25
+│   ├── ai.ts              # 3-backend AI (OpenRouter/Ollama/WebLLM, streaming)
+│   ├── prompts.ts         # AI prompt templates (optimized for 1.5B models)
+│   ├── markdown.ts        # Parsing, chunking (800-char cap), TOC, stats
+│   ├── docstore.ts        # IndexedDB with SimHash, TF-IDF, BM25, comments
+│   ├── telemetry.ts       # Optional anonymous usage analytics (opt-in)
 │   └── ...
-├── store/useStore.ts    # Zustand state (devtools in dev mode)
-└── test/                # Vitest unit tests (22 tests)
+├── store/useStore.ts      # Zustand state (devtools in dev mode)
+└── test/                  # Vitest unit tests
 
-scripts/eval/            # AI accuracy benchmark system
-├── runner.ts            # Eval harness (15 tests, 96/100 avg)
-├── ground-truth.json    # Expected outputs
-├── test-corpus/         # 5 test markdown files
-└── results.tsv          # Experiment log (23 experiments)
+vscode-extension/          # VS Code extension
+├── src/extension.ts       # Commands, CodeLens, Outline, hover, sync scroll
+├── src/ReaderPanel.ts     # Webview panel management
+└── webview/               # React webview (shares main app components)
+
+browser-extension/         # Chrome/Edge extension for GitHub
+├── manifest.json          # Manifest V3
+├── content.js             # Injects "Open in md-reader" on GitHub .md files
+└── popup.html             # Extension popup with settings
+
+scripts/eval/              # AI accuracy benchmark system
+├── runner.ts              # Eval harness (15 tests, 96/100 avg)
+├── ground-truth.json      # Expected outputs
+├── test-corpus/           # 5 test markdown files
+└── results.tsv            # Experiment log
 ```
 
 ## Eval System (Karpathy Loop)
@@ -186,8 +263,8 @@ MIT
 
 ## Contributing
 
-Contributions welcome! Please open an issue first to discuss what you'd like to change.
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guidelines.
 
 ---
 
-*Built with 105+ UX micro-improvements across 11 rounds of systematic polish.*
+*Built with 220+ features across 11 rounds of systematic polish. Available as a web app, VS Code extension, and GitHub browser extension.*

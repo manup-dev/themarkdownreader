@@ -77,7 +77,7 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
       lines.push('---\n')
     }
     lines.push('\n---')
-    lines.push('*Exported with [md-reader](https://github.com/anthropics/md-reader)*')
+    lines.push('*Exported with [md-reader](https://github.com/manup-dev/themarkdownreader)*')
     const blob = new Blob([lines.join('\n')], { type: 'text/markdown' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)

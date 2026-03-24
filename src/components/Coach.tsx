@@ -4,7 +4,7 @@ import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
 import { chunkMarkdown } from '../lib/markdown'
-import { generateCoachExplanation, generateQuiz, detectBestBackend } from '../lib/ai'
+import { generateCoachExplanation, generateQuiz, detectBestBackend, summarizeSection } from '../lib/ai'
 
 interface QuizQuestion {
   question: string
@@ -24,7 +24,11 @@ export function CoachView() {
   const [loadingCoach, setLoadingCoach] = useState(false)
   const [loadingQuiz, setLoadingQuiz] = useState(false)
   const [quizError, setQuizError] = useState<string | null>(null)
+  const [sectionSummary, setSectionSummary] = useState<string | null>(null)
   const [aiReady, setAiReady] = useState(false)
+  const [simplified, setSimplified] = useState<string | null>(null)
+  const [teachBack, setTeachBack] = useState<{input: string; feedback: string | null; loading: boolean}>({input: '', feedback: null, loading: false})
+  const [showMoreActions, setShowMoreActions] = useState(false)
   const [completedSections, setCompletedSections] = useState<Set<number>>(new Set())
   const [sectionScores, setSectionScores] = useState<Record<number, number>>(() => {
     const saved = localStorage.getItem('md-reader-coach-scores')
@@ -45,6 +49,10 @@ export function CoachView() {
     setSelectedAnswers({})
     setShowExplanations(false)
     setQuizError(null)
+    setSectionSummary(null)
+    setSimplified(null)
+    setTeachBack({input: '', feedback: null, loading: false})
+    setShowMoreActions(false)
   }, [sectionIndex])
 
   const currentChunk = chunks[sectionIndex]
@@ -129,6 +137,22 @@ export function CoachView() {
     ? Object.entries(selectedAnswers).filter(([qi, ans]) => quiz[Number(qi)]?.correct === ans).length
     : 0
 
+  const relatedSections = useMemo(() => {
+    if (!currentChunk || chunks.length <= 3) return []
+    const currentWords = new Set(currentChunk.text.toLowerCase().match(/\b[a-z]{4,}\b/g) ?? [])
+    return chunks
+      .map((c, i) => {
+        if (i === sectionIndex) return { i, score: -1 }
+        const words = new Set(c.text.toLowerCase().match(/\b[a-z]{4,}\b/g) ?? [])
+        let overlap = 0
+        for (const w of currentWords) { if (words.has(w)) overlap++ }
+        return { i, score: overlap }
+      })
+      .filter((s) => s.score > 2)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+  }, [currentChunk, sectionIndex, chunks])
+
   if (!aiReady) {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
@@ -153,6 +177,7 @@ export function CoachView() {
             onClick={() => setSectionIndex(Math.max(0, sectionIndex - 1))}
             disabled={sectionIndex === 0}
             className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 text-gray-600 dark:text-gray-400"
+            aria-label="Previous section"
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
@@ -184,6 +209,7 @@ export function CoachView() {
             onClick={() => setSectionIndex(Math.min(chunks.length - 1, sectionIndex + 1))}
             disabled={sectionIndex === chunks.length - 1}
             className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 text-gray-600 dark:text-gray-400"
+            aria-label="Next section"
           >
             <ChevronRight className="h-5 w-5" />
           </button>
@@ -197,6 +223,20 @@ export function CoachView() {
           />
         </div>
 
+        {/* Overall mastery */}
+        {Object.keys(sectionScores).length > 0 && (
+          <div className="flex items-center justify-center gap-2 text-[10px] text-gray-400">
+            <span>Overall mastery:</span>
+            <span className={`font-semibold ${(() => {
+              const avg = Math.round(Object.values(sectionScores).reduce((s, v) => s + v, 0) / Object.values(sectionScores).length)
+              return avg >= 80 ? 'text-green-500' : avg >= 50 ? 'text-amber-500' : 'text-red-400'
+            })()}`}>
+              {Math.round(Object.values(sectionScores).reduce((s, v) => s + v, 0) / Object.values(sectionScores).length)}%
+            </span>
+            <span>({Object.keys(sectionScores).length} quizzed)</span>
+          </div>
+        )}
+
         {/* Section Content */}
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-6">
           <article className="prose prose-sm dark:prose-invert max-w-none prose-headings:text-base">
@@ -207,7 +247,7 @@ export function CoachView() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-3 justify-center">
+        <div className="flex items-center gap-3 justify-center flex-wrap">
           <button
             onClick={handleCoach}
             disabled={loadingCoach}
@@ -224,11 +264,96 @@ export function CoachView() {
             {loadingQuiz ? <Loader2 className="h-4 w-4 animate-spin" /> : <HelpCircle className="h-4 w-4" />}
             Test my understanding
           </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowMoreActions(!showMoreActions)}
+              className="inline-flex items-center gap-1 px-3 py-2 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-all text-sm"
+              aria-label="More actions"
+            >
+              More
+              <ChevronRight className={`h-3 w-3 transition-transform ${showMoreActions ? 'rotate-90' : ''}`} />
+            </button>
+            {showMoreActions && (
+              <div className="absolute top-full mt-1 left-0 z-10 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-1.5 min-w-[160px] animate-pop-in">
+                <button
+                  onClick={async () => { setShowMoreActions(false); if (!currentChunk) return; const s = await summarizeSection(currentChunk.text.slice(0, 1500)); setSectionSummary(s) }}
+                  className="w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-green-500" /> Quick summary
+                </button>
+                <button
+                  onClick={async () => { setShowMoreActions(false); if (!currentChunk) return; const { PROMPTS } = await import('../lib/prompts'); const { chat: chatFn } = await import('../lib/ai'); const result = await chatFn([{ role: 'system', content: PROMPTS.eli5 }, { role: 'user', content: currentChunk.text.slice(0, 1000) }]); setSimplified(result) }}
+                  className="w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                >
+                  <GraduationCap className="h-3.5 w-3.5 text-cyan-500" /> Simplify (ELI5)
+                </button>
+                <button
+                  onClick={() => { setShowMoreActions(false); setTeachBack({input: '', feedback: null, loading: false}) }}
+                  className="w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                >
+                  <HelpCircle className="h-3.5 w-3.5 text-pink-500" /> Teach back
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {quizError && (
           <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-xl p-4 text-sm text-red-600 dark:text-red-400">
             {quizError}
+          </div>
+        )}
+
+        {sectionSummary && (
+          <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-xl p-4">
+            <p className="text-sm text-green-800 dark:text-green-200">{sectionSummary}</p>
+          </div>
+        )}
+
+        {simplified && (
+          <div className="bg-cyan-50 dark:bg-cyan-950/20 border border-cyan-200 dark:border-cyan-800 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <GraduationCap className="h-4 w-4 text-cyan-600" />
+              <span className="text-xs font-semibold text-cyan-700 dark:text-cyan-300">Simplified Version</span>
+            </div>
+            <p className="text-sm text-cyan-800 dark:text-cyan-200">{simplified}</p>
+          </div>
+        )}
+
+        {teachBack.input !== undefined && !teachBack.feedback && (
+          <div className="bg-pink-50 dark:bg-pink-950/20 border border-pink-200 dark:border-pink-800 rounded-xl p-4 space-y-3">
+            <p className="text-sm font-medium text-pink-700 dark:text-pink-300">Explain this section in your own words:</p>
+            <textarea
+              value={teachBack.input}
+              onChange={(e) => setTeachBack(prev => ({...prev, input: e.target.value}))}
+              placeholder="Write your explanation here..."
+              className="w-full p-3 text-sm rounded-lg border border-pink-200 dark:border-pink-700 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-400 min-h-[80px]"
+            />
+            <button
+              onClick={async () => {
+                if (!teachBack.input.trim() || !currentChunk) return
+                setTeachBack(prev => ({...prev, loading: true}))
+                try {
+                  const { chat: chatFn } = await import('../lib/ai')
+                  const feedback = await chatFn([
+                    { role: 'system', content: 'You are evaluating a student\'s explanation. Score 1-10 and give brief feedback (under 50 words). Format: "Score: X/10\nFeedback: ..."' },
+                    { role: 'user', content: `Original text: ${currentChunk.text.slice(0, 500)}\n\nStudent explanation: ${teachBack.input}` },
+                  ])
+                  setTeachBack(prev => ({...prev, feedback, loading: false}))
+                } catch {
+                  setTeachBack(prev => ({...prev, feedback: 'Could not evaluate. Try again.', loading: false}))
+                }
+              }}
+              disabled={!teachBack.input.trim() || teachBack.loading}
+              className="px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 text-sm font-medium disabled:opacity-50"
+            >
+              {teachBack.loading ? 'Evaluating...' : 'Submit for feedback'}
+            </button>
+          </div>
+        )}
+        {teachBack.feedback && (
+          <div className="bg-pink-50 dark:bg-pink-950/20 border border-pink-200 dark:border-pink-800 rounded-xl p-4">
+            <p className="text-sm text-pink-800 dark:text-pink-200 whitespace-pre-line">{teachBack.feedback}</p>
           </div>
         )}
 
@@ -319,8 +444,33 @@ export function CoachView() {
                 <p className="text-sm text-gray-400 mt-1">
                   {score === quiz.length ? 'Perfect! You nailed it.' : score >= quiz.length / 2 ? 'Good job! Review the explanations above.' : 'Keep going! Re-read the section and try again.'}
                 </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${score === quiz.length ? 'bg-green-500' : score >= quiz.length / 2 ? 'bg-amber-500' : 'bg-red-400'}`} style={{ width: `${Math.round((score / quiz.length) * 100)}%` }} />
+                  </div>
+                  <span className="text-[10px] text-gray-400">{Math.round((score / quiz.length) * 100)}% mastery</span>
+                </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Related sections — "backlinks" for readers */}
+        {relatedSections.length > 0 && (
+          <div className="border-t border-gray-200 dark:border-gray-800 pt-4">
+            <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-2">Related sections</p>
+            <div className="flex flex-wrap gap-1.5">
+              {relatedSections.map((s) => (
+                <button
+                  key={s.i}
+                  onClick={() => setSectionIndex(s.i)}
+                  className="text-[10px] px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 hover:text-blue-600 transition-colors truncate max-w-[200px]"
+                  title={chunks[s.i].sectionPath}
+                >
+                  {chunks[s.i].sectionPath.split(' > ').pop()}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>

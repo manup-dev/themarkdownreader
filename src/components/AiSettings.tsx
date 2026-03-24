@@ -62,11 +62,11 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Settings className="h-4 w-4 text-neutral-400" />
-          <span className="font-semibold text-neutral-200">AI Settings</span>
+          <Settings className="h-4 w-4 text-gray-400" />
+          <span className="font-semibold text-gray-800 dark:text-gray-200">AI Settings</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-neutral-400">Active:</span>
+          <span className="text-xs text-gray-400">Active:</span>
           <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-white ${meta.color}`}>
             <Zap className="h-3 w-3" />
             {meta.label}
@@ -74,11 +74,11 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
-      <hr className="border-neutral-700" />
+      <hr className="border-gray-200 dark:border-gray-700" />
 
       {/* OpenRouter API Key */}
       <div className="flex flex-col gap-2">
-        <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-300">
+        <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
           <Key className="h-3.5 w-3.5" />
           OpenRouter API Key
         </label>
@@ -90,12 +90,12 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
               onChange={(e) => { setApiKeyState(e.target.value); setTestResult(null) }}
               placeholder="sk-or-..."
               autoFocus
-              className="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-1.5 pr-8 text-xs text-neutral-200 placeholder-neutral-500 outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+              className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 pr-8 text-xs text-gray-800 dark:text-gray-200 placeholder-gray-400 outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
             />
             <button
               type="button"
               onClick={() => setShowKey(!showKey)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-300"
               aria-label={showKey ? 'Hide API key' : 'Show API key'}
             >
               {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -105,7 +105,7 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={handleTestConnection}
             disabled={!apiKey.trim() || testing}
-            className="flex items-center gap-1 rounded-md border border-neutral-700 bg-neutral-800 px-2.5 py-1.5 text-xs text-neutral-300 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-2.5 py-1.5 text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {testing ? (
               <span className="h-3 w-3 animate-spin rounded-full border-2 border-neutral-500 border-t-purple-400" />
@@ -136,11 +136,11 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
         </a>
       </div>
 
-      <hr className="border-neutral-700" />
+      <hr className="border-gray-200 dark:border-gray-700" />
 
       {/* Ollama */}
       <div className="flex flex-col gap-2">
-        <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-300">
+        <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
           <Server className="h-3.5 w-3.5" />
           Ollama
         </label>
@@ -150,7 +150,7 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
               ollamaReachable === null ? 'bg-neutral-500' : ollamaReachable ? 'bg-green-500' : 'bg-red-500'
             }`}
           />
-          <span className="text-xs text-neutral-400">
+          <span className="text-xs text-gray-400 dark:text-gray-500">
             {ollamaReachable === null
               ? 'Checking...'
               : ollamaReachable
@@ -163,8 +163,8 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
           value={ollamaUrl}
           onChange={(e) => setOllamaUrl(e.target.value)}
           placeholder="http://localhost:11434"
-          className={`w-full rounded-md border bg-neutral-800 px-3 py-1.5 text-xs text-neutral-200 placeholder-neutral-500 outline-none ${
-            ollamaUrl && !ollamaUrl.match(/^https?:\/\/.+/) ? 'border-red-500 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-neutral-700 focus:border-green-500 focus:ring-1 focus:ring-green-500'
+          className={`w-full rounded-md border bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-xs text-gray-800 dark:text-gray-200 placeholder-gray-400 outline-none ${
+            ollamaUrl && !ollamaUrl.match(/^https?:\/\/.+/) ? 'border-red-500 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-gray-200 dark:border-gray-700 focus:border-green-500 focus:ring-1 focus:ring-green-500'
           }`}
         />
         {ollamaUrl && !ollamaUrl.match(/^https?:\/\/.+/) && (
@@ -178,13 +178,13 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
             setOllamaReachable(ok)
           }}
           disabled={!ollamaUrl.match(/^https?:\/\/.+/)}
-          className="self-start rounded-md border border-neutral-700 bg-neutral-800 px-2.5 py-1 text-xs text-neutral-300 hover:bg-neutral-700 disabled:opacity-40"
+          className="self-start rounded-md border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40"
         >
           Re-check
         </button>
       </div>
 
-      <hr className="border-neutral-700" />
+      <hr className="border-gray-200 dark:border-gray-700" />
 
       {/* Save & Close */}
       <button

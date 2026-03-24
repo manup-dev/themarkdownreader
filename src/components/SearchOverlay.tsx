@@ -144,6 +144,7 @@ export function SearchOverlay() {
             if (e.key === 'Escape') close()
           }}
           placeholder={viewMode === 'read' ? 'Search or type > for commands...' : 'Search in document...'}
+          aria-label="Search document"
           className="flex-1 text-sm bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none"
         />
         {matches.length > 0 && (
@@ -154,13 +155,13 @@ export function SearchOverlay() {
         {matches.length === 0 && query.length >= 2 && !query.startsWith('>') && (
           <span className="text-[10px] text-gray-400 shrink-0">No matches</span>
         )}
-        <button onClick={() => navigateMatch('prev')} className="p-0.5 text-gray-400 hover:text-gray-600 transition-colors">
+        <button onClick={() => navigateMatch('prev')} aria-label="Previous match" className="p-0.5 text-gray-400 hover:text-gray-600 transition-colors">
           <ChevronUp className="h-3.5 w-3.5" />
         </button>
-        <button onClick={() => navigateMatch('next')} className="p-0.5 text-gray-400 hover:text-gray-600 transition-colors">
+        <button onClick={() => navigateMatch('next')} aria-label="Next match" className="p-0.5 text-gray-400 hover:text-gray-600 transition-colors">
           <ChevronDown className="h-3.5 w-3.5" />
         </button>
-        <button onClick={close} className="p-0.5 text-gray-300 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-300 transition-colors">
+        <button onClick={close} aria-label="Close search" className="p-0.5 text-gray-300 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-300 transition-colors">
           <X className="h-3.5 w-3.5" />
         </button>
       </div>

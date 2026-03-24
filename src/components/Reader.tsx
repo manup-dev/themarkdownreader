@@ -6,7 +6,7 @@ import remarkMath from 'remark-math'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeKatex from 'rehype-katex'
 import { useStore } from '../store/useStore'
-import { extractToc, estimateReadingTime, wordCount, estimateDifficulty, slugify } from '../lib/markdown'
+import { extractToc, wordCount, estimateDifficulty, slugify } from '../lib/markdown'
 
 // Delight #24: Click heading to copy anchor link
 function HeadingRenderer(level: number) {
@@ -78,29 +78,16 @@ function CodeBlockRenderer({ children, className, ...props }: React.HTMLAttribut
   )
 }
 
-// Delight #21: Image lightbox on click
+// Delight #21: Image lazy loading + zoom cursor (lightbox handled by useEffect click handler)
 function ImageRenderer({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) {
-  const [expanded, setExpanded] = useState(false)
-
   return (
-    <>
-      <img
-        src={src}
-        alt={alt}
-        loading="lazy"
-        {...props}
-        className="cursor-zoom-in rounded-lg hover:shadow-lg transition-shadow"
-        onClick={() => setExpanded(true)}
-      />
-      {expanded && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8 cursor-zoom-out"
-          onClick={() => setExpanded(false)}
-        >
-          <img src={src} alt={alt} className="max-w-full max-h-full rounded-lg shadow-2xl" />
-        </div>
-      )}
-    </>
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      {...props}
+      className="cursor-zoom-in rounded-lg hover:shadow-lg transition-shadow"
+    />
   )
 }
 
@@ -120,6 +107,28 @@ const markdownComponents = {
   h5: HeadingRenderer(5),
   h6: HeadingRenderer(6),
   a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
+    // Same-file anchor links — smooth scroll to heading
+    if (href?.startsWith('#')) {
+      return (
+        <a
+          href={href}
+          {...props}
+          onClick={(e) => {
+            e.preventDefault()
+            const id = href.slice(1)
+            const el = document.getElementById(id)
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              el.style.transition = 'background 300ms'
+              el.style.background = 'rgba(59,130,246,0.15)'
+              setTimeout(() => { el.style.background = '' }, 1500)
+            }
+          }}
+        >
+          {children}
+        </a>
+      )
+    }
     const isExternal = href?.startsWith('http://') || href?.startsWith('https://')
     return <a href={href} {...(isExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})} {...props}>{children}</a>
   },
@@ -167,8 +176,23 @@ export function Reader() {
   const setActiveSection = useStore((s) => s.setActiveSection)
   const toc = useStore((s) => s.toc)
   const readingProgress = useStore((s) => s.readingProgress)
+  const fileName = useStore((s) => s.fileName)
   const contentRef = useRef<HTMLDivElement>(null)
-  const [resumeToast, setResumeToast] = useState<string | null>(null)
+
+  // Feature 17: URL fragment sharing state
+  const [linkCopied, setLinkCopied] = useState(false)
+
+  // Feature 18: Ambient background hue
+  const [ambientHue, setAmbientHue] = useState(0)
+
+  // Feature 20: Diff viewer state
+  const prevMarkdownRef = useRef<string | null>(null)
+  const [diffChanges, setDiffChanges] = useState<Set<number>>(new Set())
+  const [showDiffHighlight, setShowDiffHighlight] = useState(false)
+  const [hasChanges, setHasChanges] = useState(false)
+
+  const [resumeToast, setResumeToast] = useState<{ text: string; scrollTop: number } | null>(null)
+  const [statsExpanded, setStatsExpanded] = useState(false)
   const [firstTimeTip, setFirstTimeTip] = useState(() => !localStorage.getItem('md-reader-tip-shown'))
   useEffect(() => {
     if (firstTimeTip) {
@@ -182,14 +206,158 @@ export function Reader() {
     setToc(entries)
   }, [markdown, setToc])
 
+  // Feature 17: Parse URL hash on load and scroll to section
+  useEffect(() => {
+    const hash = window.location.hash
+    const match = hash.match(/#read\/section=(.+)/)
+    if (match) {
+      const sectionId = decodeURIComponent(match[1])
+      requestAnimationFrame(() => {
+        const el = document.getElementById(sectionId)
+        if (el) el.scrollIntoView({ behavior: 'smooth' })
+      })
+    }
+  }, [markdown])
+
+  // Feature 17: Update URL hash as user reads
+  useEffect(() => {
+    if (activeSection) {
+      const newHash = `#read/section=${encodeURIComponent(activeSection)}`
+      if (window.location.hash !== newHash) {
+        window.history.replaceState(null, '', newHash)
+      }
+    }
+  }, [activeSection])
+
+  // Feature 18: Ambient hue shift based on top-level section index
+  useEffect(() => {
+    if (!activeSection || theme === 'dark' || theme === 'high-contrast') {
+      setAmbientHue(0)
+      return
+    }
+    const topLevelSections = toc.filter((t) => t.level <= 2)
+    // Find which top-level section the active section belongs to
+    const activeIdx = toc.findIndex((t) => t.id === activeSection)
+    let topIdx = 0
+    for (let i = activeIdx; i >= 0; i--) {
+      if (toc[i].level <= 2) {
+        topIdx = topLevelSections.findIndex((t) => t.id === toc[i].id)
+        break
+      }
+    }
+    setAmbientHue(topIdx * 30)
+  }, [activeSection, toc, theme])
+
+  // Feature 20: Detect changes when markdown updates for same fileName
+  useEffect(() => {
+    if (!fileName) return
+    const storageKey = `md-reader-prev-content-${fileName}`
+    const prevContent = sessionStorage.getItem(storageKey)
+
+    if (prevContent && prevContent !== markdown) {
+      const changedIndices = new Set<number>()
+
+      // Find changed/added paragraph blocks by comparing paragraphs
+      const prevParagraphs = prevContent.split(/\n\n+/)
+      const newParagraphs = markdown.split(/\n\n+/)
+
+      for (let i = 0; i < newParagraphs.length; i++) {
+        if (i >= prevParagraphs.length || newParagraphs[i] !== prevParagraphs[i]) {
+          changedIndices.add(i)
+        }
+      }
+
+      if (changedIndices.size > 0) {
+        setDiffChanges(changedIndices)
+        setHasChanges(true)
+        prevMarkdownRef.current = prevContent
+      }
+    }
+
+    // Store current content for next comparison
+    sessionStorage.setItem(storageKey, markdown)
+  }, [markdown, fileName])
+
+  const words = useMemo(() => wordCount(markdown), [markdown])
+  const [calibratedWpm, setCalibratedWpm] = useState(() => parseInt(localStorage.getItem('md-reader-wpm') ?? '230') || 230)
+  const readTime = useMemo(() => Math.max(1, Math.ceil(markdown.split(/\s+/).filter(Boolean).length / calibratedWpm)), [markdown, calibratedWpm])
+  const difficulty = useMemo((): string => estimateDifficulty(markdown), [markdown])
+  const codeBlockCount = useMemo(() => Math.floor((markdown.match(/```/g) ?? []).length / 2), [markdown])
+  const hasMath = useMemo(() => /\$\$|\\\(|\\\[/.test(markdown), [markdown])
+  const contentType = useMemo(() => {
+    const hasSteps = /^\d+\.\s/m.test(markdown) && (markdown.match(/^\d+\.\s/gm) ?? []).length >= 3
+    const hasApi = /\b(API|endpoint|request|response|GET|POST|PUT|DELETE|status code)\b/i.test(markdown)
+    const hasCode = (markdown.match(/```/g) ?? []).length >= 4
+    const hasTables = (markdown.match(/^\|/gm) ?? []).length >= 4
+    if (hasApi && hasCode) return 'API Docs'
+    if (hasSteps && hasCode) return 'Tutorial'
+    if (hasTables && !hasSteps) return 'Reference'
+    if (hasCode) return 'Technical'
+    return 'Narrative'
+  }, [markdown])
+  const keyTerm = useMemo(() => {
+    const text = markdown.toLowerCase()
+    const wordList = text.match(/\b[a-z]{4,}\b/g) ?? []
+    const freq = new Map<string, number>()
+    const stop = new Set(['this','that','with','from','have','been','will','your','they','their','which','when','what','each','other','about','more','than','also','only','into','some','very','just','like','over','such','most','these','there','could','would','should','using','where','after','before','because','through','between','under','above','within','without','during','following','along','across','behind','beyond','every','another','those','being','while','since','until','however','although','either','neither','whether','among','around','against','though','still','already','rather','often','never','always','sometimes','usually','perhaps','quite','really','actually','certainly','definitely','probably','possibly','maybe'])
+    for (const w of wordList) { if (!stop.has(w)) freq.set(w, (freq.get(w) ?? 0) + 1) }
+    const top = [...freq.entries()].filter(([,c]) => c >= 3).sort((a,b) => b[1]-a[1])[0]
+    return top ?? null
+  }, [markdown])
+  const quotableSentence = useMemo(() => {
+    const sentences = markdown.split(/[.!?]\s+/).filter((s) => s.length > 30 && s.length < 200)
+    const scored = sentences.map((s) => ({
+      text: s.replace(/[#*`\[\]()]/g, '').trim(),
+      score: (s.match(/\*\*[^*]+\*\*/g) ?? []).length + (s.match(/\*[^*]+\*/g) ?? []).length
+    })).filter((s) => s.score > 0 && s.text.length > 20)
+    return scored.sort((a, b) => b.score - a.score)[0] ?? null
+  }, [markdown])
+
   // Dynamic page title with progress
   useEffect(() => {
     const name = useStore.getState().fileName ?? 'Document'
-    document.title = readingProgress > 1
-      ? `${name} (${Math.round(readingProgress)}%) — md-reader`
-      : `${name} — md-reader`
+    if (readingProgress > 5) {
+      const minsLeft = Math.max(1, Math.ceil(readTime * (1 - readingProgress / 100)))
+      document.title = `(${minsLeft}m left) ${name} — md-reader`
+    } else {
+      document.title = `${name} — md-reader`
+    }
     return () => { document.title = 'md-reader — AI Markdown Reader' }
-  }, [readingProgress])
+  }, [readingProgress, readTime])
+
+  // Dynamic favicon showing reading progress
+  const progressBucket = Math.round(readingProgress / 5) * 5
+  useEffect(() => {
+    if (readingProgress < 1) return
+    const canvas = document.createElement('canvas')
+    canvas.width = 32
+    canvas.height = 32
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    // Background
+    ctx.fillStyle = '#2563eb'
+    ctx.beginPath()
+    ctx.arc(16, 16, 15, 0, Math.PI * 2)
+    ctx.fill()
+    // Progress arc
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.arc(16, 16, 12, -Math.PI / 2, -Math.PI / 2 + (readingProgress / 100) * Math.PI * 2)
+    ctx.stroke()
+    // Percentage text
+    ctx.fillStyle = '#ffffff'
+    ctx.font = 'bold 11px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(`${Math.round(readingProgress)}`, 16, 17)
+    // Set as favicon
+    const link = document.querySelector('link[rel="icon"]') as HTMLLinkElement
+    if (link) link.href = canvas.toDataURL()
+    return () => {
+      if (link) link.href = '/favicon.svg'
+    }
+  }, [progressBucket]) // Update every 5%
 
   // Delight #9: Restore scroll position from localStorage
   useEffect(() => {
@@ -203,8 +371,21 @@ export function Reader() {
           if (!el) return
           const target = (el.scrollHeight - el.clientHeight) * (pct / 100)
           el.scrollTo({ top: target })
-          setResumeToast(`Resuming from ${Math.round(pct)}%`)
-          setTimeout(() => setResumeToast(null), 2000)
+          // Find the active section at this scroll position
+          const currentToc = useStore.getState().toc
+          let sectionName = ''
+          for (let i = currentToc.length - 1; i >= 0; i--) {
+            const heading = document.getElementById(currentToc[i].id)
+            if (heading && heading.offsetTop <= target + 100) {
+              sectionName = currentToc[i].text
+              break
+            }
+          }
+          const label = sectionName
+            ? `Resuming at "${sectionName}" (${Math.round(pct)}%)`
+            : `Resuming from ${Math.round(pct)}%`
+          setResumeToast({ text: label, scrollTop: target })
+          setTimeout(() => setResumeToast(null), 4000)
         })
       }
     }
@@ -218,11 +399,7 @@ export function Reader() {
     }
   }, [])
 
-  const words = useMemo(() => wordCount(markdown), [markdown])
-  const readTime = useMemo(() => estimateReadingTime(markdown), [markdown])
-  const difficulty = useMemo((): string => estimateDifficulty(markdown), [markdown])
-  const codeBlockCount = useMemo(() => Math.floor((markdown.match(/```/g) ?? []).length / 2), [markdown])
-  const hasMath = useMemo(() => /\$\$|\\\(|\\\[/.test(markdown), [markdown])
+
 
   const lastSaveRef = useRef(0)
 
@@ -255,6 +432,12 @@ export function Reader() {
     if (activeDocId && Date.now() - lastSaveRef.current > 500) {
       localStorage.setItem(`md-reader-scroll-${activeDocId}`, String(progress))
       lastSaveRef.current = Date.now()
+      // Track daily words read
+      const today = new Date().toDateString()
+      const todayKey = `md-reader-words-today-${today}`
+      const wordsRead = Math.round(words * (progress / 100))
+      const prev = parseInt(localStorage.getItem(todayKey) ?? '0')
+      if (wordsRead > prev) localStorage.setItem(todayKey, String(wordsRead))
     }
 
     let active: string | null = null
@@ -266,6 +449,16 @@ export function Reader() {
       }
     }
     setActiveSection(active)
+
+    // Track sections read for analytics
+    if (active && activeDocId) {
+      const key = `md-reader-sections-read-${activeDocId}`
+      const read = JSON.parse(localStorage.getItem(key) ?? '[]') as string[]
+      if (!read.includes(active)) {
+        read.push(active)
+        localStorage.setItem(key, JSON.stringify(read))
+      }
+    }
   }, [toc, setReadingProgress, setActiveSection, words, activeDocId])
 
   useEffect(() => {
@@ -275,18 +468,43 @@ export function Reader() {
     return () => el.removeEventListener('scroll', handleScroll)
   }, [handleScroll])
 
+  // Track time per section for analytics
+  const sectionTimerRef = useRef<{ section: string | null; start: number }>({ section: null, start: Date.now() })
+  useEffect(() => {
+    const prev = sectionTimerRef.current
+    if (prev.section && activeDocId) {
+      const elapsed = Math.round((Date.now() - prev.start) / 1000)
+      if (elapsed > 2 && elapsed < 600) { // Only track 2s-10min per section
+        const key = `md-reader-section-time-${activeDocId}`
+        const times = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, number>
+        times[prev.section] = (times[prev.section] ?? 0) + elapsed
+        localStorage.setItem(key, JSON.stringify(times))
+      }
+    }
+    sectionTimerRef.current = { section: activeSection, start: Date.now() }
+  }, [activeSection, activeDocId])
+
   const [sessionMinutes, setSessionMinutes] = useState(0)
   useEffect(() => {
+    localStorage.setItem('md-reader-session-start', String(Date.now()))
     const start = Date.now()
     const interval = setInterval(() => {
       setSessionMinutes(Math.floor((Date.now() - start) / 60000))
     }, 60000)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      const elapsed = Math.floor((Date.now() - start) / 60000)
+      if (elapsed > 0) {
+        const total = parseInt(localStorage.getItem('md-reader-total-reading-mins') ?? '0')
+        localStorage.setItem('md-reader-total-reading-mins', String(total + elapsed))
+      }
+    }
   }, [markdown])
 
   // Reading speed calibration — track actual WPM
   const [liveWpm, setLiveWpm] = useState<number | null>(null)
   const lastScrollRef = useRef({ time: Date.now(), top: 0 })
+  const [calibrationToast, setCalibrationToast] = useState<number | null>(null)
 
   useEffect(() => {
     if (readingProgress < 20 || readingProgress > 95) return
@@ -296,6 +514,10 @@ export function Reader() {
       const actualWpm = Math.round(wordsRead / elapsed)
       if (actualWpm > 50 && actualWpm < 600) {
         localStorage.setItem('md-reader-wpm', String(actualWpm))
+      }
+      // Delight #12: One-time calibration prompt after 2 min of reading
+      if (!localStorage.getItem('md-reader-wpm-calibrated') && actualWpm >= 100 && actualWpm <= 500) {
+        setCalibrationToast(actualWpm)
       }
     }
   }, [sessionMinutes, readingProgress, words])
@@ -321,6 +543,8 @@ export function Reader() {
       container.className = 'confetti-burst'
       document.body.appendChild(container)
       setTimeout(() => container.remove(), 3000)
+      // Show reading report card after confetti settles
+      setTimeout(() => setShowReport(true), 2000)
     }
   }, [readingProgress])
 
@@ -338,6 +562,15 @@ export function Reader() {
   }, [sessionMinutes])
 
   const scrollToTop = () => contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  const [showScrollHint, setShowScrollHint] = useState(true)
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el) return
+    const hide = () => setShowScrollHint(false)
+    el.addEventListener('scroll', hide, { once: true, passive: true })
+    return () => el.removeEventListener('scroll', hide)
+  }, [markdown])
+  const [showReport, setShowReport] = useState(false)
   const [zoomedImage, setZoomedImage] = useState<string | null>(null)
 
   // Click handler for images — open in lightbox
@@ -353,6 +586,57 @@ export function Reader() {
     el.addEventListener('click', handleClick)
     return () => el.removeEventListener('click', handleClick)
   }, [])
+
+  // Delight #15: Footnote popover on hover
+  const footnoteMap = useMemo(() => {
+    const map = new Map<string, string>()
+    const regex = /^\[\^(\w+)\]:\s*(.+)$/gm
+    let match
+    while ((match = regex.exec(markdown)) !== null) {
+      map.set(match[1], match[2].trim())
+    }
+    return map
+  }, [markdown])
+
+  const [footnotePopover, setFootnotePopover] = useState<{ content: string; x: number; y: number } | null>(null)
+
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el || footnoteMap.size === 0) return
+    const handleOver = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      // Match rendered footnote ref links like [^1] which become <sup><a href="#...">
+      if (target.tagName === 'A' && target.closest('sup')) {
+        const href = target.getAttribute('href') ?? ''
+        const fnId = href.replace(/^#.*fn-?/, '').replace(/^#.*footnote-?/, '').replace(/^#/, '')
+        const content = footnoteMap.get(fnId)
+        if (content) {
+          const rect = target.getBoundingClientRect()
+          setFootnotePopover({ content, x: rect.left + rect.width / 2, y: rect.top })
+        }
+      }
+      // Also match raw text like [^1] that hasn't been rendered as links
+      if (target.tagName === 'SUP' || (target.textContent?.match(/^\[\^\w+\]$/) && target.closest('article'))) {
+        const fnId = target.textContent?.match(/\[\^(\w+)\]/)?.[1]
+        if (fnId) {
+          const content = footnoteMap.get(fnId)
+          if (content) {
+            const rect = target.getBoundingClientRect()
+            setFootnotePopover({ content, x: rect.left + rect.width / 2, y: rect.top })
+          }
+        }
+      }
+    }
+    const handleOut = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (target.tagName === 'A' && target.closest('sup') || target.tagName === 'SUP') {
+        setFootnotePopover(null)
+      }
+    }
+    el.addEventListener('mouseover', handleOver)
+    el.addEventListener('mouseout', handleOut)
+    return () => { el.removeEventListener('mouseover', handleOver); el.removeEventListener('mouseout', handleOut) }
+  }, [footnoteMap])
 
   // Double-click word to search
   useEffect(() => {
@@ -380,6 +664,16 @@ export function Reader() {
       className={`flex-1 overflow-y-auto ${tc.container} relative`}
       style={{ scrollBehavior: 'smooth' }}
     >
+      {/* Feature 18: Ambient background color shift (light/sepia themes only) */}
+      {(theme === 'light' || theme === 'sepia') && ambientHue > 0 && (
+        <div
+          className="ambient-section-overlay"
+          style={{
+            background: `linear-gradient(135deg, hsla(${ambientHue}, 60%, 70%, 0.04), hsla(${ambientHue + 60}, 60%, 70%, 0.03))`,
+          }}
+        />
+      )}
+
       {/* Reading progress bar */}
       <div className={`sticky top-0 z-20 h-1 ${tc.progressBg} flex`}>
         {toc.filter((t) => t.level <= 2).length > 1 ? (
@@ -417,10 +711,44 @@ export function Reader() {
         </div>
       )}
 
+      {/* Calibration toast */}
+      {calibrationToast && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-xl bg-gray-800 text-white text-xs shadow-lg flex items-center gap-3 animate-fade-in">
+          <span>Your reading speed: ~{calibrationToast} WPM. Calibrate for better time estimates?</span>
+          <button
+            onClick={() => {
+              localStorage.setItem('md-reader-wpm', String(calibrationToast))
+              localStorage.setItem('md-reader-wpm-calibrated', 'true')
+              setCalibratedWpm(calibrationToast)
+              setCalibrationToast(null)
+              showToast('Reading speed calibrated!')
+            }}
+            className="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 rounded text-white whitespace-nowrap"
+          >
+            Save
+          </button>
+          <button
+            onClick={() => { setCalibrationToast(null); localStorage.setItem('md-reader-wpm-calibrated', 'true') }}
+            className="text-gray-400 hover:text-white"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Resume toast */}
       {resumeToast && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 rounded-full bg-gray-800 text-white text-xs shadow-lg">
-          {resumeToast}
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 rounded-full bg-gray-800 text-white text-xs shadow-lg flex items-center gap-2">
+          <span>{resumeToast.text}</span>
+          <button
+            onClick={() => {
+              contentRef.current?.scrollTo({ top: resumeToast.scrollTop, behavior: 'smooth' })
+              setResumeToast(null)
+            }}
+            className="text-blue-300 hover:text-blue-100 underline whitespace-nowrap"
+          >
+            Jump there &darr;
+          </button>
         </div>
       )}
 
@@ -430,7 +758,23 @@ export function Reader() {
           className="fixed bottom-20 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs shadow-lg animate-slide-down cursor-pointer max-w-sm text-center"
           onClick={() => setFirstTimeTip(false)}
         >
-          Press <kbd className="px-1 py-0.5 bg-blue-500 rounded text-[10px]">?</kbd> for shortcuts &middot; Try the tabs above to explore &middot; Click the chat icon to ask AI
+          {(() => {
+            const hasCode = (markdown.match(/```/g) ?? []).length >= 4
+            const hasSteps = /^\d+\.\s/m.test(markdown)
+            if (hasCode && hasSteps) return 'Tutorial detected — follow the steps in order. Press ? for shortcuts.'
+            if (hasCode) return 'Technical doc — try the Mind Map tab for an overview. Press ? for shortcuts.'
+            if (toc.length > 10) return 'Long document — use j/k keys to jump between sections. Press ? for shortcuts.'
+            return 'Press ? for shortcuts · Try the tabs above · Click the chat icon to ask AI'
+          })()}
+        </div>
+      )}
+
+      {/* Scroll hint for long documents */}
+      {showScrollHint && readTime >= 3 && readingProgress < 5 && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-10 animate-bounce text-gray-300 dark:text-gray-600">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 5v14M5 12l7 7 7-7"/>
+          </svg>
         </div>
       )}
 
@@ -457,57 +801,159 @@ export function Reader() {
         }
         if (crumbs.length <= 1) return null
         return (
-          <div className={`max-w-3xl mx-auto px-8 pt-6 pb-0 text-[11px] ${tc.stats}`}>
-            {crumbs.map((c, i) => (
-              <span key={i}>
-                {i > 0 && <span className="mx-1 opacity-40">/</span>}
-                <span className={i === crumbs.length - 1 ? 'font-medium opacity-70' : 'opacity-40'}>{c}</span>
-              </span>
-            ))}
+          <div className={`max-w-3xl mx-auto px-8 pt-6 pb-0 text-[11px] ${tc.stats} flex items-center gap-2`}>
+            <span className="flex items-center gap-0.5 flex-wrap">
+              {crumbs.map((c, i) => (
+                <span key={i} className="flex items-center">
+                  {i > 0 && <span className="mx-1 text-gray-300 dark:text-gray-600">/</span>}
+                  <span className={i === crumbs.length - 1 ? 'px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 font-medium' : 'text-gray-500 dark:text-gray-400'}>{c}</span>
+                </span>
+              ))}
+            </span>
+            {/* Feature 17: Copy link to here */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                const url = `${window.location.origin}${window.location.pathname}#read/section=${encodeURIComponent(activeSection)}`
+                navigator.clipboard.writeText(url)
+                setLinkCopied(true)
+                setTimeout(() => setLinkCopied(false), 1500)
+              }}
+              className="opacity-40 hover:opacity-80 transition-opacity shrink-0"
+              title="Copy link to this section"
+            >
+              {linkCopied ? (
+                <span className="text-green-500 text-[10px] font-medium">Link copied!</span>
+              ) : (
+                <svg className="w-3 h-3 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
+              )}
+            </button>
           </div>
         )
       })()}
 
-      {/* Document stats */}
-      <div
-        className={`max-w-3xl mx-auto px-8 ${activeSection ? 'pt-2' : 'pt-8'} pb-2 flex items-center gap-4 text-xs ${tc.stats} cursor-pointer hover:opacity-70 transition-opacity`}
-        onClick={() => {
-          const stats = `${words.toLocaleString()} words | ${readTime} min read | ${difficulty}`
-          navigator.clipboard.writeText(stats)
-          showToast('Stats copied!')
-        }}
-        title="Click to copy stats"
-      >
-        <span>{words.toLocaleString()} words</span>
-        {/* Delight #29: Reading time countdown */}
-        <span>
-          {readingProgress > 5
-            ? (() => {
-                const minsLeft = Math.max(1, Math.ceil(readTime * (1 - readingProgress / 100)))
-                const finishTime = new Date(Date.now() + minsLeft * 60000)
-                return `~${minsLeft} min left (${finishTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})`
-              })()
-            : `${readTime} min read`}
-        </span>
-        {sessionMinutes > 0 && (
-          <span className="text-[10px] text-gray-400">{sessionMinutes}m reading</span>
-        )}
-        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
-          { Beginner: 'bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400',
-            Intermediate: 'bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400',
-            Advanced: 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400',
-            Expert: 'bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400',
-          }[difficulty]
-        }`}>
-          {difficulty}
-        </span>
-        {codeBlockCount > 0 && (
-          <span className="text-[10px] text-gray-400">{Math.floor(codeBlockCount)} code blocks</span>
-        )}
-        {hasMath && (
-          <span className="text-[10px] text-gray-400">has math</span>
-        )}
+      {/* Document stats — collapsed by default, showing only read time */}
+      <div className={`max-w-3xl mx-auto px-8 ${activeSection ? 'pt-2' : 'pt-8'} pb-2 text-xs ${tc.stats}`}>
+        <div className="inline">
+          <button
+            onClick={() => setStatsExpanded((v) => !v)}
+            className="cursor-pointer hover:opacity-70 transition-opacity inline-flex items-center gap-1"
+            title="Click to expand stats"
+          >
+            <span>
+              {readingProgress > 5
+                ? (() => {
+                    const minsLeft = Math.max(1, Math.ceil(readTime * (1 - readingProgress / 100)))
+                    const finishTime = new Date(Date.now() + minsLeft * 60000)
+                    return `~${minsLeft} min left (${finishTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})`
+                  })()
+                : `${readTime} min read`}
+            </span>
+            {(() => {
+              const avgWpm = parseInt(localStorage.getItem('md-reader-wpm') ?? '230')
+              const trend = liveWpm ? (liveWpm > avgWpm * 1.15 ? '\u2191' : liveWpm < avgWpm * 0.85 ? '\u2193' : '') : ''
+              return trend ? <span className={`text-[9px] ${trend === '\u2191' ? 'text-green-500' : 'text-amber-500'}`} title={`${trend === '\u2191' ? 'Reading faster' : 'Reading slower'} than your ${avgWpm} WPM average`}>{trend}</span> : null
+            })()}
+            {sessionMinutes > 0 && (
+              <span className="text-[10px] text-gray-400">
+                · {sessionMinutes}m reading
+                {sessionMinutes >= 3 && readingProgress > 5 && readingProgress < 95 && (() => {
+                  const pacePerMin = readingProgress / sessionMinutes
+                  const minsToFinish = Math.round((100 - readingProgress) / pacePerMin)
+                  return minsToFinish <= 10 ? <span className="text-green-500 ml-1">· finishing soon!</span> : null
+                })()}
+              </span>
+            )}
+            <svg className={`w-3 h-3 inline ml-1 opacity-40 transition-transform ${statsExpanded ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          {statsExpanded && <div className="flex items-center gap-4 mt-1 text-xs">
+            <span
+              className="cursor-pointer hover:opacity-70"
+              onClick={() => {
+                const stats = `${words.toLocaleString()} words | ${readTime} min read | ${difficulty}`
+                navigator.clipboard.writeText(stats)
+                showToast('Stats copied!')
+              }}
+              title="Click to copy stats"
+            >
+              {words.toLocaleString()} words
+            </span>
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
+              { Beginner: 'bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400',
+                Intermediate: 'bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400',
+                Advanced: 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400',
+                Expert: 'bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400',
+              }[difficulty]
+            }`}>
+              {difficulty}
+            </span>
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400`}>
+              {contentType}
+            </span>
+            {codeBlockCount > 0 && (
+              <span className="text-[10px] text-gray-400">{Math.floor(codeBlockCount)} code blocks</span>
+            )}
+            {hasMath && (
+              <span className="text-[10px] text-gray-400">has math</span>
+            )}
+          </div>}
+        </div>
       </div>
+
+      {/* Featured term — only shown before user scrolls past 25% */}
+      {readingProgress < 25 && keyTerm && (
+        <div className="max-w-3xl mx-auto px-8 pb-2">
+          <p className="text-[10px] text-gray-400 inline-flex items-center gap-1.5">
+            Key term: <span className="px-1.5 py-0.5 bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 rounded font-medium">{keyTerm[0]}</span>
+            <span className="text-gray-300">({keyTerm[1]}× in document)</span>
+          </p>
+        </div>
+      )}
+
+      {/* Feature 20: "What changed?" badge */}
+      {hasChanges && (
+        <div className="max-w-3xl mx-auto px-8 pb-2">
+          <button
+            onClick={() => {
+              setShowDiffHighlight((s) => {
+                const next = !s
+                // Apply or remove diff highlights on article children
+                requestAnimationFrame(() => {
+                  const article = contentRef.current?.querySelector('article')
+                  if (!article) return
+                  const children = Array.from(article.children) as HTMLElement[]
+                  if (next) {
+                    // Map paragraph indices in rendered output to markdown paragraph indices
+                    let paraIdx = 0
+                    for (const child of children) {
+                      if (/^H[1-6]$/.test(child.tagName)) continue
+                      if (diffChanges.has(paraIdx)) {
+                        child.classList.add('diff-changed')
+                      }
+                      paraIdx++
+                    }
+                  } else {
+                    children.forEach((c) => c.classList.remove('diff-changed'))
+                  }
+                })
+                return next
+              })
+            }}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+              showDiffHighlight
+                ? 'bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400'
+                : 'bg-green-50 dark:bg-green-950/20 text-green-600 dark:text-green-500 hover:bg-green-100 dark:hover:bg-green-950/40'
+            }`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+            {showDiffHighlight ? 'Hide changes' : 'What changed?'}
+            <span className="text-[9px] text-green-400">({diffChanges.size})</span>
+          </button>
+        </div>
+      )}
 
       {/* Markdown content */}
       <article
@@ -523,6 +969,45 @@ export function Reader() {
           {markdown}
         </Markdown>
       </article>
+
+      {/* Key takeaways — auto-extracted from section opening sentences */}
+      {toc.filter((t) => t.level === 2).length >= 3 && (
+        <div className="max-w-3xl mx-auto px-8 pb-8">
+          <details className="border border-gray-200 dark:border-gray-800 rounded-xl p-4">
+            <summary className="text-sm font-semibold text-gray-600 dark:text-gray-400 cursor-pointer hover:text-gray-800 dark:hover:text-gray-200">
+              Key Takeaways ({toc.filter((t) => t.level === 2).length} sections)
+            </summary>
+            <ul className="mt-3 space-y-2 text-sm text-gray-600 dark:text-gray-400">
+              {toc.filter((t) => t.level === 2).map((entry) => {
+                const sectionStart = markdown.indexOf(`## ${entry.text}`)
+                if (sectionStart < 0) return null
+                const afterHeading = markdown.slice(sectionStart).replace(/^##[^\n]+\n+/, '')
+                const firstSentence = afterHeading.match(/^[^\n.!?]+[.!?]/)?.[0] ?? afterHeading.split('\n')[0]?.slice(0, 120)
+                if (!firstSentence?.trim()) return null
+                return (
+                  <li key={entry.id} className="flex gap-2">
+                    <span className="text-blue-400 shrink-0">&bull;</span>
+                    <span><strong className="text-gray-700 dark:text-gray-300">{entry.text}:</strong> {firstSentence.replace(/\*\*/g, '').replace(/`/g, '').trim()}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          </details>
+        </div>
+      )}
+
+      {/* Most quotable sentence */}
+      {quotableSentence && (
+        <div className="max-w-3xl mx-auto px-8 pb-4">
+          <blockquote
+            className="border-l-4 border-blue-400 dark:border-blue-600 pl-4 py-2 italic text-gray-600 dark:text-gray-400 text-sm cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950/20 rounded transition-colors"
+            onClick={() => { navigator.clipboard.writeText(quotableSentence.text); const t = document.createElement('div'); t.className = 'toast-notify'; t.textContent = 'Quote copied!'; document.body.appendChild(t); setTimeout(() => t.remove(), 2000) }}
+            title="Click to copy this quote"
+          >
+            <p>"{quotableSentence.text.slice(0, 150)}"</p>
+          </blockquote>
+        </div>
+      )}
 
       {/* Delight #25: Minibar outline on right edge */}
       {toc.length > 2 && (
@@ -557,6 +1042,77 @@ export function Reader() {
         >
           <ArrowUp className="h-4 w-4" />
         </button>
+      )}
+
+      {/* Reading completion report card */}
+      {showReport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowReport(false)}>
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center animate-scale-in" onClick={(e) => e.stopPropagation()}>
+            <p className="text-4xl mb-3">🎓</p>
+            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-1">Reading Complete!</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{useStore.getState().fileName}</p>
+            <div className="grid grid-cols-2 gap-3 text-left mb-4">
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                <p className="text-[10px] text-gray-400 uppercase">Words</p>
+                <p className="text-lg font-bold text-gray-700 dark:text-gray-300">{words.toLocaleString()}</p>
+              </div>
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                <p className="text-[10px] text-gray-400 uppercase">Time</p>
+                <p className="text-lg font-bold text-gray-700 dark:text-gray-300">{sessionMinutes > 0 ? `${sessionMinutes}m` : '<1m'}</p>
+              </div>
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                <p className="text-[10px] text-gray-400 uppercase">Speed</p>
+                <p className="text-lg font-bold text-gray-700 dark:text-gray-300">{sessionMinutes > 0 ? `${Math.round(words / sessionMinutes)}` : '\u2014'} <span className="text-xs font-normal">WPM</span></p>
+              </div>
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                <p className="text-[10px] text-gray-400 uppercase">Level</p>
+                <p className="text-lg font-bold text-gray-700 dark:text-gray-300">{difficulty}</p>
+              </div>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] text-gray-400 uppercase">Focus</p>
+                <p className="text-sm font-bold text-gray-700 dark:text-gray-300">
+                  {(() => {
+                    const docId = useStore.getState().activeDocId
+                    const sections = docId ? JSON.parse(localStorage.getItem(`md-reader-sections-read-${docId}`) ?? '[]') : []
+                    const coverage = toc.length > 0 ? Math.round((sections.length / toc.length) * 100) : 0
+                    return coverage >= 80 ? 'Deep reader' : coverage >= 50 ? 'Skimmer' : 'Scanner'
+                  })()}
+                </p>
+              </div>
+              <div className="w-16 h-16">
+                <svg viewBox="0 0 36 36" className="w-full h-full">
+                  <circle cx="18" cy="18" r="16" fill="none" stroke="currentColor" className="text-gray-200 dark:text-gray-700" strokeWidth="3" />
+                  <circle cx="18" cy="18" r="16" fill="none" stroke="currentColor" className="text-blue-500" strokeWidth="3"
+                    strokeDasharray={`${Math.round(readingProgress)} 100`}
+                    strokeLinecap="round" transform="rotate(-90 18 18)" />
+                </svg>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowReport(false)}
+              className="w-full py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Footnote popover */}
+      {footnotePopover && (
+        <div
+          className="fixed z-50 max-w-xs px-3 py-2 rounded-lg bg-gray-900 text-white text-xs shadow-xl pointer-events-none"
+          style={{
+            left: `${Math.min(footnotePopover.x, window.innerWidth - 280)}px`,
+            top: `${footnotePopover.y - 8}px`,
+            transform: 'translate(-50%, -100%)',
+          }}
+        >
+          {footnotePopover.content}
+          <div className="absolute left-1/2 -translate-x-1/2 top-full w-2 h-2 bg-gray-900 rotate-45 -mt-1" />
+        </div>
       )}
 
       {/* Image lightbox */}

@@ -1,12 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Highlighter, Search, Bot, BookOpen, Copy, X, Loader2, Check, Quote, FileText } from 'lucide-react'
+import { Highlighter, Search, Bot, BookOpen, Copy, X, Loader2, Check, Quote, FileText, MessageSquare } from 'lucide-react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
-import { addHighlight, getHighlights, removeHighlight, updateHighlightNote, type Highlight } from '../lib/docstore'
+import { addHighlight, getHighlights, removeHighlight, updateHighlightNote, addComment, type Highlight } from '../lib/docstore'
 import { chat } from '../lib/ai'
 
 const COLORS = ['#fef08a', '#bbf7d0', '#bfdbfe', '#fbcfe8', '#fed7aa']
+const COLOR_NAMES: Record<string, string> = {
+  '#fef08a': 'yellow',
+  '#bbf7d0': 'green',
+  '#bfdbfe': 'blue',
+  '#fbcfe8': 'pink',
+  '#fed7aa': 'orange',
+}
 
 interface MenuPos {
   x: number
@@ -24,6 +31,8 @@ export function SelectionMenu() {
   const [copied, setCopied] = useState(false)
   const [showCopyMenu, setShowCopyMenu] = useState(false)
   const [showGlossary, setShowGlossary] = useState(false)
+  const [showCommentInput, setShowCommentInput] = useState(false)
+  const [commentText, setCommentText] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
 
   const refreshHighlights = useCallback(async () => {
@@ -87,9 +96,11 @@ export function SelectionMenu() {
       span.style.background = color
       span.style.transition = 'background 800ms ease-out'
       span.style.borderRadius = '2px'
-      range.surroundContents(span)
-      setTimeout(() => { span.style.background = 'transparent' }, 100)
-      setTimeout(() => { span.replaceWith(...span.childNodes) }, 1000)
+      try {
+        range.surroundContents(span)
+        setTimeout(() => { span.style.background = 'transparent' }, 100)
+        setTimeout(() => { span.replaceWith(...span.childNodes) }, 1000)
+      } catch { /* selection spans multiple elements — skip visual flash */ }
     }
     window.getSelection()?.removeAllRanges()
     setMenu(null)
@@ -156,6 +167,31 @@ export function SelectionMenu() {
     setMenu(null)
   }, [menu])
 
+  const handleSaveComment = useCallback(async () => {
+    if (!menu || !activeDocId || !commentText.trim()) return
+    const sectionId = useStore.getState().activeSection ?? ''
+    const author = localStorage.getItem('md-reader-username') || 'You'
+    await addComment({
+      docId: activeDocId,
+      selectedText: menu.text,
+      comment: commentText.trim(),
+      author,
+      sectionId,
+      createdAt: Date.now(),
+      resolved: false,
+    })
+    setCommentText('')
+    setShowCommentInput(false)
+    window.getSelection()?.removeAllRanges()
+    setMenu(null)
+    // Toast notification
+    const toast = document.createElement('div')
+    toast.className = 'toast-notify fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-green-600 text-white text-sm rounded-lg shadow-lg'
+    toast.textContent = 'Comment saved'
+    document.body.appendChild(toast)
+    setTimeout(() => toast.remove(), 2000)
+  }, [menu, activeDocId, commentText])
+
   const handleRemoveHighlight = useCallback(async (id: number) => {
     await removeHighlight(id)
     await refreshHighlights()
@@ -175,6 +211,8 @@ export function SelectionMenu() {
       if (h.note) lines.push(`\n*Note: ${h.note}*`)
       lines.push('')
     }
+    lines.push('---')
+    lines.push('*Exported with [md-reader](https://github.com/manup-dev/themarkdownreader)*')
     const blob = new Blob([lines.join('\n')], { type: 'text/markdown' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
@@ -208,6 +246,20 @@ export function SelectionMenu() {
             </div>
           )}
 
+          {/* Auto-show glossary match if selected text matches a saved term */}
+          {(() => {
+            const docId = activeDocId ?? 'unsaved'
+            const glossary = JSON.parse(localStorage.getItem(`md-reader-glossary-${docId}`) ?? '{}')
+            const selected = menu?.text.toLowerCase().trim() ?? ''
+            const match = Object.entries(glossary).find(([term]) => term.toLowerCase() === selected || selected.includes(term.toLowerCase()))
+            if (!match) return null
+            return (
+              <div className="px-3 py-1.5 text-[10px] text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 rounded-lg mb-1 max-w-64">
+                <span className="font-semibold">{match[0]}:</span> {String(match[1]).slice(0, 100)}
+              </div>
+            )
+          })()}
+
           {/* Action buttons */}
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-1.5 flex items-center gap-0.5">
             {/* Highlight colors */}
@@ -217,9 +269,20 @@ export function SelectionMenu() {
                 onClick={() => handleHighlight(c)}
                 className="w-6 h-6 rounded-full border-2 border-transparent hover:border-gray-400 transition-all hover:scale-110"
                 style={{ background: c }}
-                title="Highlight"
+                title={`Highlight ${COLOR_NAMES[c] ?? c}`}
+                aria-label={`Highlight ${COLOR_NAMES[c] ?? c}`}
               />
             ))}
+
+            <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
+
+            <button
+              onClick={() => { setShowCommentInput(!showCommentInput); setCommentText('') }}
+              className="p-1.5 text-gray-500 hover:text-teal-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+              title="Add comment"
+            >
+              <MessageSquare className="h-4 w-4" />
+            </button>
 
             <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
 
@@ -261,6 +324,30 @@ export function SelectionMenu() {
               title="Find in document"
             >
               <Search className="h-4 w-4" />
+            </button>
+
+            <button
+              onClick={() => {
+                if (!menu) return
+                const chatFab = document.querySelector('.fixed.bottom-6.right-6') as HTMLButtonElement
+                if (chatFab) chatFab.click()
+                setTimeout(() => {
+                  const input = document.querySelector('[placeholder*="Ask a question"]') as HTMLInputElement
+                  if (input) {
+                    input.value = `Explain this passage: "${menu.text.slice(0, 200)}"`
+                    input.dispatchEvent(new Event('input', { bubbles: true }))
+                    input.focus()
+                  }
+                }, 200)
+                setMenu(null)
+              }}
+              className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              title="Ask about this in Chat"
+            >
+              <div className="flex items-center gap-0.5">
+                <Bot className="h-3.5 w-3.5" />
+                <span className="text-[8px]">Chat</span>
+              </div>
             </button>
 
             <button
@@ -325,6 +412,36 @@ export function SelectionMenu() {
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
+
+          {/* Inline comment input */}
+          {showCommentInput && (
+            <div className="mt-1.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-2 w-72">
+              <textarea
+                rows={2}
+                autoFocus
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSaveComment()
+                  }
+                }}
+                placeholder="Add a comment..."
+                className="w-full text-xs px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-teal-500 resize-none"
+              />
+              <div className="flex items-center justify-between mt-1">
+                <span className="text-[10px] text-gray-400">Enter to save, Shift+Enter for newline</span>
+                <button
+                  onClick={handleSaveComment}
+                  disabled={!commentText.trim()}
+                  className="text-xs px-2 py-0.5 bg-teal-600 text-white rounded hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

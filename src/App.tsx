@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
-import { MessageSquare, PanelLeftClose, PanelLeftOpen, Loader2 } from 'lucide-react'
-import { useStore } from './store/useStore'
+import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
+import { MessageSquare, MessageSquareText, PanelLeftClose, PanelLeftOpen, Loader2, Menu, Volume2, X } from 'lucide-react'
+import { useStore, type ViewMode } from './store/useStore'
+import { getCommentCount } from './lib/docstore'
 import { Upload } from './components/Upload'
 import { Reader } from './components/Reader'
 import { Toolbar } from './components/Toolbar'
@@ -11,9 +12,11 @@ import { SearchOverlay } from './components/SearchOverlay'
 import { ResizeHandle } from './components/ResizeHandle'
 import { KeyboardShortcuts } from './components/KeyboardShortcuts'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { OnboardingOverlay } from './components/OnboardingOverlay'
 
 // Lazy load heavy/optional components
 const Chat = lazy(() => import('./components/Chat').then((m) => ({ default: m.Chat })))
+const CommentsPanel = lazy(() => import('./components/CommentsPanel').then((m) => ({ default: m.CommentsPanel })))
 const MindMapView = lazy(() => import('./components/MindMap').then((m) => ({ default: m.MindMapView })))
 const SummaryCardsView = lazy(() => import('./components/SummaryCards').then((m) => ({ default: m.SummaryCardsView })))
 const TreemapView = lazy(() => import('./components/TreemapView').then((m) => ({ default: m.TreemapView })))
@@ -33,10 +36,9 @@ function LazyFallback() {
   )
 }
 
-// Track whether a state change came from popstate (back/forward) to avoid re-pushing
-let isPopState = false
-
 function App() {
+  // Track whether a state change came from popstate (back/forward) to avoid re-pushing
+  const isPopStateRef = useRef(false)
   const markdown = useStore((s) => s.markdown)
   const theme = useStore((s) => s.theme)
   const viewMode = useStore((s) => s.viewMode)
@@ -47,16 +49,45 @@ function App() {
   const setChatWidth = useStore((s) => s.setChatWidth)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [chatOpen, setChatOpen] = useState(false)
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [commentCount, setCommentCount] = useState(0)
   const [focusMode, setFocusMode] = useState(false)
+  const [fabMenuOpen, setFabMenuOpen] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [mobileTocOpen, setMobileTocOpen] = useState(false)
+  const activeDocId = useStore((s) => s.activeDocId)
+
+  // Trigger onboarding on first document load
+  useEffect(() => {
+    if (markdown && !localStorage.getItem('md-reader-onboarding-done')) {
+      // Small delay so the UI renders first
+      const t = setTimeout(() => setShowOnboarding(true), 800)
+      return () => clearTimeout(t)
+    }
+  }, [markdown])
+
+  // Track previous view for directional transitions
+  const [prevViewMode, setPrevViewMode] = useState(viewMode)
+  if (viewMode !== prevViewMode) {
+    // React pattern: update state during render for derived state (no extra re-render)
+    setPrevViewMode(viewMode)
+  }
+  const viewDirection = (() => {
+    const views: ViewMode[] = ['read', 'summary-cards', 'mindmap', 'treemap', 'knowledge-graph', 'coach']
+    const prev = views.indexOf(prevViewMode)
+    const curr = views.indexOf(viewMode)
+    return curr > prev ? 'right' : curr < prev ? 'left' : 'none'
+  })()
+
+  // Close mobile TOC when view changes
+  useEffect(() => { setMobileTocOpen(false) }, [viewMode]) // Intentional: reset on view switch
 
   // ─── Browser history integration ────────────────────────────────────
   // Push to history when view changes so back/forward navigates between views
   useEffect(() => {
-    if (isPopState) { isPopState = false; return }
+    if (isPopStateRef.current) { isPopStateRef.current = false; return }
     const state = { viewMode, workspaceMode, fileName: useStore.getState().fileName }
-    const url = viewMode === 'read' && !workspaceMode
-      ? `#${viewMode}`
-      : `#${viewMode}`
+    const url = `#${viewMode}`
     // Replace on first load, push on subsequent changes
     if (!window.history.state?.viewMode) {
       window.history.replaceState(state, '', url)
@@ -69,7 +100,7 @@ function App() {
   useEffect(() => {
     const handlePopState = (e: PopStateEvent) => {
       if (!e.state?.viewMode) return
-      isPopState = true
+      isPopStateRef.current = true
       const s = useStore.getState()
       if (e.state.workspaceMode !== s.workspaceMode) {
         s.setWorkspaceMode(e.state.workspaceMode)
@@ -90,10 +121,26 @@ function App() {
     if (theme === 'high-contrast') root.classList.add('high-contrast')
   }, [theme])
 
+  // Refresh comment count periodically and on doc change
+  useEffect(() => {
+    if (!activeDocId) {
+      setCommentCount(0)
+      return undefined  // explicit return for cleanup consistency
+    }
+    let cancelled = false
+    const fetchCount = () => {
+      if (cancelled) return
+      getCommentCount(activeDocId).then((c) => { if (!cancelled) setCommentCount(c) })
+    }
+    fetchCount()
+    const interval = setInterval(fetchCount, 3000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [activeDocId])
+
   // Keyboard shortcuts: Escape closes chat/focus, Ctrl+Shift+F toggles focus mode
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setChatOpen(false); setFocusMode(false) }
+      if (e.key === 'Escape') { setChatOpen(false); setCommentsOpen(false); setFocusMode(false); setFabMenuOpen(false) }
       if (e.ctrlKey && e.shiftKey && e.key === 'F') { e.preventDefault(); setFocusMode((f) => !f) }
     }
     window.addEventListener('keydown', handleKey)
@@ -119,6 +166,7 @@ function App() {
   const isWorkspaceView = viewMode === 'workspace' || viewMode === 'cross-doc-graph' || viewMode === 'correlation' || viewMode === 'similarity-map' || viewMode === 'collection'
   const showSidebar = sidebarOpen && markdown && (viewMode === 'read' || viewMode === 'coach')
   const showChat = chatOpen && markdown && !isWorkspaceView
+  const showComments = commentsOpen && markdown && !isWorkspaceView
   const showTts = !!markdown && !isWorkspaceView
 
   return (
@@ -165,7 +213,7 @@ function App() {
           )}
 
           {/* Views — fade transition on switch, ErrorBoundary + Suspense for lazy loads */}
-          <div key={viewMode} className="flex-1 flex min-h-0 animate-scale-in">
+          <div key={viewMode} className={`flex-1 flex min-h-0 ${viewDirection === 'right' ? 'animate-slide-in-right' : viewDirection === 'left' ? 'animate-slide-in-left' : 'animate-scale-in'}`}>
             <Suspense fallback={<LazyFallback />}>
               {isWorkspaceView && viewMode === 'workspace' && <ErrorBoundary name="Workspace"><Workspace /></ErrorBoundary>}
               {isWorkspaceView && viewMode === 'cross-doc-graph' && <ErrorBoundary name="Doc Graph"><CrossDocGraph /></ErrorBoundary>}
@@ -202,6 +250,23 @@ function App() {
               </aside>
             </>
           )}
+
+          {/* Comments panel (slide-out sidebar) */}
+          {showComments && !showChat && (
+            <>
+              <ResizeHandle onResize={handleChatResize} />
+              <aside
+                className="shrink-0 border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900"
+                style={{ width: chatWidth }}
+              >
+                <Suspense fallback={<LazyFallback />}>
+                  <ErrorBoundary name="Comments">
+                    <CommentsPanel onClose={() => setCommentsOpen(false)} />
+                  </ErrorBoundary>
+                </Suspense>
+              </aside>
+            </>
+          )}
         </div>
       </div>
 
@@ -214,20 +279,92 @@ function App() {
       {/* In-document search (Ctrl+K or /) */}
       <SearchOverlay />
 
-      {/* Chat toggle FAB */}
+      {/* Unified FAB with expandable menu */}
       {markdown && !isWorkspaceView && (
+        <div className="fixed bottom-6 right-6 z-20 flex flex-col items-center gap-2">
+          {/* Mini menu items — slide up when open */}
+          <div className={`flex flex-col items-center gap-2 transition-all duration-200 ${fabMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
+            {/* TTS */}
+            <button
+              onClick={() => { setFabMenuOpen(false); document.querySelector<HTMLButtonElement>('[data-tts-player]')?.click() }}
+              className="p-2.5 rounded-full bg-emerald-600 text-white shadow-md hover:bg-emerald-700 hover:scale-110 transition-all"
+              title="Read Aloud (TTS)"
+            >
+              <Volume2 className="h-4 w-4" />
+            </button>
+            {/* Comments */}
+            <button
+              onClick={() => { setFabMenuOpen(false); setCommentsOpen(!commentsOpen); if (!commentsOpen) setChatOpen(false) }}
+              className={`p-2.5 rounded-full shadow-md hover:scale-110 transition-all relative ${
+                commentsOpen ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300' : 'bg-teal-600 text-white hover:bg-teal-700'
+              }`}
+              title={commentsOpen ? 'Close comments' : 'View comments'}
+            >
+              <MessageSquareText className="h-4 w-4" />
+            </button>
+            {/* Chat */}
+            <button
+              onClick={() => { setFabMenuOpen(false); setChatOpen(!chatOpen); if (!chatOpen) setCommentsOpen(false) }}
+              className={`p-2.5 rounded-full shadow-md hover:scale-110 transition-all ${
+                chatOpen ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300' : 'bg-blue-500 text-white hover:bg-blue-600'
+              }`}
+              title={chatOpen ? 'Close chat' : 'Chat with document'}
+            >
+              <MessageSquare className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Main FAB */}
+          <button
+            data-chat-fab
+            onClick={() => setFabMenuOpen(!fabMenuOpen)}
+            className={`p-3.5 rounded-full shadow-lg transition-all focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none relative ${
+              fabMenuOpen
+                ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rotate-0'
+                : 'bg-blue-600 text-white hover:bg-blue-700 animate-pulse-once hover:scale-110'
+            }`}
+            title={fabMenuOpen ? 'Close menu (Esc)' : 'Tools menu'}
+          >
+            {fabMenuOpen ? <X className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
+            {!fabMenuOpen && commentCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-white text-blue-600 text-[10px] font-bold min-w-[1.1rem] h-[1.1rem] px-0.5 rounded-full flex items-center justify-center shadow-sm">
+                {commentCount}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Mobile TOC hamburger button (visible < 768px only) */}
+      {markdown && (viewMode === 'read' || viewMode === 'coach') && (
         <button
-          onClick={() => setChatOpen(!chatOpen)}
-          className={`fixed bottom-6 right-6 p-3.5 rounded-full shadow-lg transition-all z-20 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none ${
-            chatOpen
-              ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:scale-110'
-              : 'bg-blue-600 text-white hover:bg-blue-700 animate-pulse-once hover:scale-110'
-          }`}
-          title={chatOpen ? 'Close chat (Esc)' : 'Ask about this document'}
+          onClick={() => setMobileTocOpen(!mobileTocOpen)}
+          className="mobile-toc-hamburger fixed top-2 left-2 z-30 p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+          title="Table of Contents"
         >
-          <MessageSquare className="h-5 w-5" />
+          <Menu className="h-4 w-4" />
         </button>
       )}
+
+      {/* Mobile TOC slide-in panel */}
+      {mobileTocOpen && (
+        <div className="mobile-toc-panel fixed inset-0 z-40" onClick={() => setMobileTocOpen(false)}>
+          <div
+            className="absolute left-0 top-0 h-full w-72 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 p-4 overflow-y-auto shadow-xl animate-slide-in-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm font-bold text-gray-700 dark:text-gray-200">Table of Contents</span>
+              <button onClick={() => setMobileTocOpen(false)} className="p-1 text-gray-400 hover:text-gray-600">&times;</button>
+            </div>
+            <TableOfContents />
+          </div>
+          <div className="absolute inset-0 bg-black/30" />
+        </div>
+      )}
+
+      {/* Onboarding overlay for first-time users */}
+      {showOnboarding && <OnboardingOverlay onComplete={() => setShowOnboarding(false)} />}
     </div>
   )
 }

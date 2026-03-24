@@ -48,10 +48,8 @@ export function Chat() {
   const chunks = useMemo(() => chunkMarkdown(markdown), [markdown])
   const abortRef = useRef<AbortController | null>(null)
 
-  const handleSend = useCallback(async () => {
-    const question = input.trim()
-    if (!question || loading) return
-
+  const sendQuestion = useCallback(async (question: string) => {
+    if (loading) return
     setInput('')
     setMessages((prev) => [...prev, { role: 'user', content: question, timestamp: Date.now() }])
     setLoading(true)
@@ -77,7 +75,13 @@ export function Chat() {
       setLoading(false)
       setBackend(getActiveBackend())
     }
-  }, [input, loading, chunks])
+  }, [loading, chunks])
+
+  const handleSend = useCallback(async () => {
+    const question = input.trim()
+    if (!question) return
+    sendQuestion(question)
+  }, [input, sendQuestion])
 
   const handleSummarize = useCallback(async () => {
     if (loading) return
@@ -106,41 +110,23 @@ export function Chat() {
   }, [loading, markdown])
 
   const sendDirect = useCallback(async (question: string) => {
-    if (loading) return
-    setInput('')
-    setMessages((prev) => [...prev, { role: 'user', content: question, timestamp: Date.now() }])
-    setLoading(true)
-    setStreamingText('')
-    abortRef.current?.abort()
-    abortRef.current = new AbortController()
-    try {
-      const relevant = searchChunks(question, chunks, 5)
-      const contextTexts = relevant.map((c) => `[${c.sectionPath}]\n${c.text}`)
-      const answer = await askAboutDocument(question, contextTexts, abortRef.current.signal, (token) => {
-        setStreamingText((prev) => prev + token)
-      })
-      setMessages((prev) => [...prev, { role: 'assistant', content: answer, timestamp: Date.now() }])
-      setStreamingText('')
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error'
-      if (!msg.includes('abort')) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${msg}`, timestamp: Date.now() }])
-      }
-      setStreamingText('')
-    } finally {
-      setLoading(false)
-      setBackend(getActiveBackend())
-    }
-  }, [loading, chunks])
+    sendQuestion(question)
+  }, [sendQuestion])
 
   const isReady = backend === 'webllm' || backend === 'ollama' || backend === 'openrouter'
 
   // Delight #31: Suggested questions from document headings
   const toc = useStore((s) => s.toc)
-  const suggestedQuestions = toc
-    .filter((t) => t.level === 2)
-    .slice(0, 3)
-    .map((t) => `What is "${t.text}" about?`)
+  const suggestedQuestions = (() => {
+    const h2s = toc.filter((t) => t.level === 2)
+    if (h2s.length === 0) return []
+    const questions = []
+    if (h2s[0]) questions.push(`What is "${h2s[0].text}" about?`)
+    if (h2s.length >= 2) questions.push(`How does "${h2s[0].text}" relate to "${h2s[h2s.length - 1].text}"?`)
+    if (h2s.length >= 3) questions.push(`What are the key differences between the topics covered?`)
+    else if (h2s[1]) questions.push(`Summarize "${h2s[1].text}" in one sentence`)
+    return questions
+  })()
 
   return (
     <div className="flex flex-col h-full">
@@ -149,6 +135,11 @@ export function Chat() {
           <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400">
             Ask about this document
           </h3>
+          {messages.length > 0 && (
+            <p className="text-[9px] text-gray-400 mt-0.5 truncate max-w-[180px]">
+              Topic: {messages.find((m) => m.role === 'user')?.content.slice(0, 40) ?? 'General'}
+            </p>
+          )}
           <div className="flex items-center gap-1">
           {messages.length > 0 && (
             <>
@@ -157,7 +148,7 @@ export function Chat() {
                 const fileName = useStore.getState().fileName ?? 'document'
                 const md = `# Q&A: ${fileName}\n\n` + messages.map((m) =>
                   m.role === 'user' ? `**Q:** ${m.content}` : `**A:** ${m.content}`
-                ).join('\n\n') + `\n\n---\n*Exported from md-reader on ${new Date().toLocaleDateString()}*`
+                ).join('\n\n') + `\n\n---\n*Generated with [md-reader](https://github.com/manup-dev/themarkdownreader) — the AI-native markdown reader*`
                 const blob = new Blob([md], { type: 'text/markdown' })
                 const a = document.createElement('a')
                 a.href = URL.createObjectURL(blob)
@@ -167,6 +158,7 @@ export function Chat() {
               }}
               className="p-1 text-gray-300 hover:text-blue-400 transition-colors rounded"
               title="Export chat as markdown"
+              aria-label="Export chat"
             >
               <Download className="h-3 w-3" />
             </button>
@@ -174,6 +166,7 @@ export function Chat() {
               onClick={() => setMessages([])}
               className="p-1 text-gray-300 hover:text-red-400 transition-colors rounded"
               title="Clear chat"
+              aria-label="Clear chat"
             >
               <Trash2 className="h-3 w-3" />
             </button>
@@ -193,6 +186,13 @@ export function Chat() {
             {backend === 'ollama' && <><Cpu className="h-2.5 w-2.5" /> Ollama</>}
             {backend === 'none' && 'No AI'}
             {backend === 'detecting...' && 'Detecting...'}
+          </span>
+          <span className="text-[9px] text-gray-400 ml-1" title="Approximate context usage">
+            {(() => {
+              const totalChars = messages.reduce((s, m) => s + m.content.length, 0) + (streamingText?.length ?? 0)
+              const pct = Math.min(100, Math.round((totalChars / 4000) * 100))
+              return pct > 50 ? `${pct}% ctx` : null
+            })()}
           </span>
           </div>
         </div>
@@ -226,9 +226,10 @@ export function Chat() {
                   className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-950/60 transition-colors disabled:opacity-50"
                 >
                   <Sparkles className="h-3 w-3" />
-                  Summarize document
+                  {(markdown.match(/```/g) ?? []).length >= 4 ? 'Summarize code & concepts' : (markdown.match(/^\|/gm) ?? []).length >= 4 ? 'Summarize data & tables' : 'Summarize document'}
                 </button>
                 {suggestedQuestions.length > 0 && (
+                  <>
                   <div className="flex flex-wrap gap-1.5 justify-center mt-2">
                     {suggestedQuestions.map((q, i) => (
                       <button
@@ -240,6 +241,37 @@ export function Chat() {
                       </button>
                     ))}
                   </div>
+                  <div className="flex gap-1.5 justify-center mt-1">
+                    <button
+                      onClick={() => sendDirect('List the main concepts in this document as a bulleted list')}
+                      className="text-[10px] px-2.5 py-1 rounded-full bg-purple-50 dark:bg-purple-950/30 text-purple-500 dark:text-purple-400 hover:bg-purple-100 transition-colors"
+                    >
+                      List concepts
+                    </button>
+                    <button
+                      onClick={() => sendDirect('What prerequisites do I need to understand this document?')}
+                      className="text-[10px] px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/30 text-amber-500 dark:text-amber-400 hover:bg-amber-100 transition-colors"
+                    >
+                      Prerequisites
+                    </button>
+                    <button
+                      onClick={() => {
+                        const docId = useStore.getState().activeDocId
+                        const tocEntries = useStore.getState().toc
+                        const read = docId ? JSON.parse(localStorage.getItem(`md-reader-sections-read-${docId}`) ?? '[]') as string[] : []
+                        const unread = tocEntries.filter((t) => t.level <= 2 && !read.includes(t.id)).map((t) => t.text)
+                        if (unread.length === 0) {
+                          sendDirect('I\'ve read all sections. What are the key takeaways from the entire document?')
+                        } else {
+                          sendDirect(`I haven't read these sections yet: ${unread.slice(0, 3).join(', ')}. Give me a brief preview of what they cover.`)
+                        }
+                      }}
+                      className="text-[10px] px-2.5 py-1 rounded-full bg-red-50 dark:bg-red-950/30 text-red-500 dark:text-red-400 hover:bg-red-100 transition-colors"
+                    >
+                      What did I miss?
+                    </button>
+                  </div>
+                  </>
                 )}
               </>
             )}
@@ -270,6 +302,7 @@ export function Chat() {
                   data-copy-idx={i}
                   className="absolute -right-1 -top-1 p-1 rounded bg-white dark:bg-gray-700 shadow-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 opacity-0 group-hover:opacity-100 transition-opacity text-[10px]"
                   title="Copy message"
+                  aria-label="Copy message"
                 >
                   <Copy className="h-3 w-3" />
                 </button>
@@ -366,6 +399,24 @@ export function Chat() {
             >
               What else should I know?
             </button>
+            <button
+              onClick={() => sendDirect('Draw a simple ASCII diagram showing how the main concepts relate to each other. Use boxes and arrows.')}
+              className="text-[10px] px-2 py-1 rounded-full bg-purple-50 dark:bg-purple-950/30 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors"
+            >
+              Show diagram
+            </button>
+            <button
+              onClick={() => sendDirect('Compare and contrast the first section and the last section of this document. What changed?')}
+              className="text-[10px] px-2 py-1 rounded-full bg-green-50 dark:bg-green-950/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors"
+            >
+              Compare sections
+            </button>
+            <button
+              onClick={() => sendDirect('Explain your last answer in exactly 280 characters or less — tweet-length, punchy, no fluff.')}
+              className="text-[10px] px-2 py-1 rounded-full bg-cyan-50 dark:bg-cyan-950/30 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-900/40 transition-colors"
+            >
+              Tweet-length
+            </button>
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -388,10 +439,16 @@ export function Chat() {
             onClick={handleSend}
             disabled={!input.trim() || loading || !isReady}
             className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Send message"
           >
             <Send className="h-4 w-4" />
           </button>
         </div>
+        {input.length > 100 && (
+          <p className={`text-[10px] mt-1 ${input.length > 400 ? 'text-red-400' : 'text-gray-400'}`}>
+            {input.length}/500 chars {input.length > 400 ? '— long queries may reduce answer quality' : ''}
+          </p>
+        )}
       </div>
     </div>
   )

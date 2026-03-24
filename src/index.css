@@ -53,7 +53,7 @@ html, body, #root {
 .sepia .hljs-built_in { color: #b45309; }
 
 /* Smooth transitions */
-* { transition-property: background-color, border-color, color; transition-duration: 150ms; }
+button, a, input, select, textarea, nav, [role="button"] { transition-property: background-color, border-color, color; transition-duration: 150ms; }
 article *, article *::before, article *::after { transition: none; }
 
 /* View fade-in animation */
@@ -105,6 +105,11 @@ article *, article *::before, article *::after { transition: none; }
 .zen-mode [class*="sticky"] { display: none !important; }
 .zen-mode [class*="border-b"] { border: none !important; }
 
+/* Focus paragraph mode — dims all content except the paragraph nearest viewport center */
+.focus-paragraph article > * { opacity: 0.25; transition: opacity 300ms ease; }
+.focus-paragraph article > .fp-active { opacity: 1; }
+.focus-paragraph article > .fp-adjacent { opacity: 0.5; }
+
 /* Search match highlight pulse */
 @keyframes searchPulse {
   0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.6); }
@@ -113,20 +118,39 @@ article *, article *::before, article *::after { transition: none; }
 }
 [data-search-highlight] { animation: searchPulse 1s ease-out; border-radius: 2px; }
 
+/* Mobile TOC: hidden by default on desktop */
+.mobile-toc-hamburger { display: none !important; }
+.mobile-toc-panel { display: none !important; }
+
 /* Mobile responsive */
 @media (max-width: 768px) {
+  /* Show mobile TOC hamburger */
+  .mobile-toc-hamburger { display: flex !important; }
+  .mobile-toc-panel { display: block !important; }
+
   /* Hide sidebar on mobile by default */
   aside { display: none !important; }
   /* Resize handles invisible on mobile */
   .cursor-col-resize { display: none !important; }
-  /* Reader content full width */
-  article { padding-left: 1rem !important; padding-right: 1rem !important; }
-  /* Toolbar compact */
-  /* Stagger FABs so they don't overlap */
+  /* Reader content full width with reduced padding */
+  article { padding-left: 0.75rem !important; padding-right: 0.75rem !important; }
+  /* FABs: ensure they don't overflow and are reachable */
   .fixed.bottom-6.right-6 { bottom: 1rem; right: 1rem; }
-  .fixed.bottom-6.left-6 { bottom: 1rem; left: 1rem; transform: scale(0.9); }
+  .fixed.bottom-6.right-\[5\.5rem\] { bottom: 1rem; right: 4rem; }
   /* Selection menu respects viewport */
   .fixed.z-50 { max-width: calc(100vw - 2rem); }
+  /* FAB menu: constrain to viewport */
+  [data-chat-fab] ~ div { max-width: calc(100vw - 2rem); right: 0.5rem; }
+
+  /* Stats bar: stack vertically on mobile */
+  .flex.items-center.justify-between.text-\[10px\] {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  /* Upload grid: 2 columns on mobile */
+  .grid.grid-cols-4 { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* Dyslexia-friendly font — uses system fonts with dyslexia-optimized properties */
@@ -159,6 +183,25 @@ article table tbody tr:hover { background: rgba(59, 130, 246, 0.05); }
   0% { top: -10%; opacity: 1; transform: rotate(0deg) scale(1); }
   100% { top: 80%; opacity: 0; transform: rotate(720deg) scale(0.3); }
 }
+
+/* Feature 16: Subtle opacity pulse for live countdown */
+@keyframes pulseSubtle { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+.animate-pulse-subtle { animation: pulseSubtle 2s ease-in-out infinite; }
+
+/* Feature 18: Ambient background color shift */
+.ambient-section-overlay {
+  position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  transition: background 500ms ease;
+}
+
+/* Feature 19: Quick glance preview card */
+@keyframes glanceFadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes glanceFadeOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(12px); } }
+.glance-preview-in { animation: glanceFadeIn 200ms ease-out forwards; }
+.glance-preview-out { animation: glanceFadeOut 150ms ease-in forwards; }
+
+/* Feature 20: Diff highlight for changed paragraphs */
+.diff-changed { border-left: 3px solid #22c55e; padding-left: 8px; transition: border-color 300ms; }
 
 /* Print stylesheet */
 @media print {

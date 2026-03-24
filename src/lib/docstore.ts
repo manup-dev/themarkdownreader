@@ -50,6 +50,17 @@ export interface Highlight {
   createdAt: number
 }
 
+export interface Comment {
+  id?: number
+  docId: number
+  selectedText: string    // the text the user selected when commenting
+  comment: string         // the user's comment
+  author: string          // author name (default "You", but configurable)
+  sectionId: string       // which TOC section this is in
+  createdAt: number
+  resolved: boolean       // can mark comments as resolved
+}
+
 export interface SearchIndexBlob {
   id: string // always 'main'
   data: string // JSON serialized MiniSearch
@@ -58,7 +69,7 @@ export interface SearchIndexBlob {
 // ─── Database Schema (v2: compound indexes, highlights, search cache) ──────
 
 export interface CollectionCache {
-  id: string // always 'last'
+  id: string // project slug (e.g., 'iot-fundamentals') or 'last' for active pointer
   name: string
   files: Array<{ path: string; content: string }>
   currentFileIndex: number
@@ -70,6 +81,7 @@ class MdReaderDB extends Dexie {
   chunks!: Table<StoredChunk>
   docLinks!: Table<DocLink>
   highlights!: Table<Highlight>
+  comments!: Table<Comment>
   searchCache!: Table<SearchIndexBlob>
   collectionCache!: Table<CollectionCache>
 
@@ -83,6 +95,15 @@ class MdReaderDB extends Dexie {
       searchCache: 'id',
       collectionCache: 'id',
     })
+    this.version(4).stores({
+      documents: '++id, fileName, addedAt, contentHash, simhash, communityId',
+      chunks: '++id, docId, [docId+index], docFileName, headingLevel',
+      docLinks: '++id, sourceDocId, targetDocId, [sourceDocId+targetDocId]',
+      highlights: '++id, docId, createdAt',
+      comments: '++id, docId, sectionId, createdAt, resolved',
+      searchCache: 'id',
+      collectionCache: 'id',
+    })
   }
 }
 
@@ -90,27 +111,44 @@ export const db = new MdReaderDB()
 
 // ─── Collection cache (persist directory sessions across reloads) ──────────
 
+function projectId(name: string): string {
+  return name.toLowerCase().replace(/[^\w]+/g, '-').replace(/-+/g, '-').slice(0, 50)
+}
+
 export async function saveCollectionCache(
   name: string,
   files: Array<{ path: string; content: string }>,
   currentFileIndex: number,
 ): Promise<void> {
-  await db.collectionCache.put({
-    id: 'last',
-    name,
-    files,
-    currentFileIndex,
-    savedAt: Date.now(),
-  })
+  const id = projectId(name)
+  const entry: CollectionCache = { id, name, files, currentFileIndex, savedAt: Date.now() }
+  // Save the project itself
+  await db.collectionCache.put(entry)
+  // Also save as "last" active pointer
+  await db.collectionCache.put({ ...entry, id: 'last' })
 }
 
-export async function loadCollectionCache(): Promise<CollectionCache | null> {
-  const cached = await db.collectionCache.get('last')
+export async function loadCollectionCache(id?: string): Promise<CollectionCache | null> {
+  const cached = await db.collectionCache.get(id ?? 'last')
   return cached ?? null
 }
 
 export async function clearCollectionCache(): Promise<void> {
   await db.collectionCache.delete('last')
+}
+
+/** List all saved projects (excluding the 'last' pointer) */
+export async function listProjects(): Promise<Array<{ id: string; name: string; fileCount: number; savedAt: number }>> {
+  const all = await db.collectionCache.toArray()
+  return all
+    .filter((c) => c.id !== 'last')
+    .sort((a, b) => b.savedAt - a.savedAt)
+    .map((c) => ({ id: c.id, name: c.name, fileCount: c.files.length, savedAt: c.savedAt }))
+}
+
+/** Delete a saved project */
+export async function deleteProject(id: string): Promise<void> {
+  await db.collectionCache.delete(id)
 }
 
 // ─── Request persistent storage on first load ──────────────────────────────
@@ -165,31 +203,6 @@ async function loadOrRebuildIndex() {
 
 // ─── SimHash for near-duplicate detection ──────────────────────────────────
 
-function computeSimhash(text: string): number {
-  const tokens = tokenize(text)
-  const shingles = new Set<string>()
-  for (let i = 0; i < tokens.length - 2; i++) {
-    shingles.add(`${tokens[i]} ${tokens[i + 1]} ${tokens[i + 2]}`)
-  }
-
-  const bits = 32
-  const v = new Int32Array(bits)
-
-  for (const shingle of shingles) {
-    const hash = murmur.murmur3(shingle, 42)
-    for (let i = 0; i < bits; i++) {
-      if ((hash >> i) & 1) v[i]++
-      else v[i]--
-    }
-  }
-
-  let fingerprint = 0
-  for (let i = 0; i < bits; i++) {
-    if (v[i] > 0) fingerprint |= (1 << i)
-  }
-  return fingerprint
-}
-
 function hammingDistance(a: number, b: number): number {
   let xor = a ^ b
   let count = 0
@@ -200,7 +213,15 @@ function hammingDistance(a: number, b: number): number {
   return count
 }
 
-export async function findNearDuplicates(simhash: number): Promise<StoredDocument[]> {
+export async function findNearDuplicates(simhash: number, skip = false): Promise<StoredDocument[]> {
+  if (skip) return []
+  // For large libraries, only scan recent docs to avoid full-table scan
+  const count = await db.documents.count()
+  if (count > 500) {
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
+    const recentDocs = await db.documents.where('addedAt').above(cutoff).toArray()
+    return recentDocs.filter((d) => hammingDistance(d.simhash, simhash) <= 3)
+  }
   const allDocs = await db.documents.toArray()
   return allDocs.filter((d) => hammingDistance(d.simhash, simhash) <= 3)
 }
@@ -235,10 +256,49 @@ function tokenize(text: string): string[] {
 function computeTermFrequency(text: string): Map<string, number> {
   const tokens = tokenize(text)
   const freq = new Map<string, number>()
-  for (const t of tokens) freq.set(t, (freq.get(t) ?? 0) + 1)
-  const max = Math.max(...freq.values(), 1)
+  let max = 1
+  for (const t of tokens) {
+    const c = (freq.get(t) ?? 0) + 1
+    freq.set(t, c)
+    if (c > max) max = c
+  }
   for (const [k, v] of freq) freq.set(k, v / max)
   return freq
+}
+
+/** Compute TF from pre-tokenized tokens (avoids re-tokenizing) */
+function computeTermFrequencyFromTokens(tokens: string[]): Map<string, number> {
+  const freq = new Map<string, number>()
+  let max = 1
+  for (const t of tokens) {
+    const c = (freq.get(t) ?? 0) + 1
+    freq.set(t, c)
+    if (c > max) max = c
+  }
+  for (const [k, v] of freq) freq.set(k, v / max)
+  return freq
+}
+
+/** Compute simhash from pre-tokenized tokens */
+function computeSimhashFromTokens(tokens: string[]): number {
+  const shingles = new Set<string>()
+  for (let i = 0; i < tokens.length - 2; i++) {
+    shingles.add(`${tokens[i]} ${tokens[i + 1]} ${tokens[i + 2]}`)
+  }
+  const bits = 32
+  const v = new Int32Array(bits)
+  for (const shingle of shingles) {
+    const hash = murmur.murmur3(shingle, 42)
+    for (let i = 0; i < bits; i++) {
+      if ((hash >> i) & 1) v[i]++
+      else v[i]--
+    }
+  }
+  let fingerprint = 0
+  for (let i = 0; i < bits; i++) {
+    if (v[i] > 0) fingerprint |= (1 << i)
+  }
+  return fingerprint
 }
 
 function cosineSimilarity(a: Map<string, number>, b: Map<string, number>): number {
@@ -332,26 +392,41 @@ export interface AddDocumentResult {
   isExactDuplicate: boolean
 }
 
-export async function addDocument(fileName: string, markdown: string): Promise<AddDocumentResult> {
-  const contentHash = await sha256(markdown)
-  const simhash = computeSimhash(markdown)
+// Yield to browser main thread to prevent page-unresponsive
+const yieldToMain = () => new Promise<void>((r) => setTimeout(r, 0))
 
-  // Check exact duplicate
+export async function addDocument(fileName: string, markdown: string, opts?: { skipPostProcessing?: boolean }): Promise<AddDocumentResult> {
+  const contentHash = await sha256(markdown)
+
+  // Check exact duplicate (fast indexed lookup, no full scan)
   const exactDup = await db.documents.where('contentHash').equals(contentHash).first()
   if (exactDup) {
     return { docId: exactDup.id!, nearDuplicates: [], isExactDuplicate: true }
   }
 
-  // Check near-duplicates (SimHash Hamming distance <= 3)
-  const nearDups = await findNearDuplicates(simhash)
+  await yieldToMain()
 
-  // Remove old version if same filename
+  // Tokenize once, reuse for both simhash and TF (avoids double-processing large text)
+  const tokens = tokenize(markdown)
+  const simhash = computeSimhashFromTokens(tokens)
+  const docTf = computeTermFrequencyFromTokens(tokens)
+
+  await yieldToMain()
+
+  // Skip near-duplicate check during batch imports (expensive full-table scan)
+  const nearDups = await findNearDuplicates(simhash, !!opts?.skipPostProcessing)
+
+  // Remove old version if same filename (inside check, actual removal deferred until new doc is ready)
   const existing = await db.documents.where('fileName').equals(fileName).first()
-  if (existing) await removeDocument(existing.id!)
+  const existingId = existing?.id
 
   const toc = extractToc(markdown)
   const chunks = chunkMarkdown(markdown)
-  const docTf = computeTermFrequency(markdown)
+
+  await yieldToMain()
+
+  // Remove old version AFTER new data is prepared (atomic: old removed + new added together)
+  if (existingId) await removeDocument(existingId, !!opts?.skipPostProcessing)
 
   const docId = await db.documents.add({
     fileName,
@@ -365,55 +440,98 @@ export async function addDocument(fileName: string, markdown: string): Promise<A
     termVectorJson: JSON.stringify(Object.fromEntries(docTf)),
   })
 
-  // Store chunks in batches with heading level metadata
-  const storedChunks: Omit<StoredChunk, 'id'>[] = chunks.map((c) => {
-    const headingMatch = c.text.match(/^(#{1,6})\s/)
-    return {
-      docId,
-      docFileName: fileName,
-      text: c.text,
-      sectionPath: c.sectionPath,
-      headingLevel: headingMatch ? headingMatch[1].length : 0,
-      index: c.index,
-      termVectorJson: JSON.stringify(Object.fromEntries(computeTermFrequency(c.text))),
-    }
-  })
-  // Batch in groups of 200
-  for (let i = 0; i < storedChunks.length; i += 200) {
-    await db.chunks.bulkAdd(storedChunks.slice(i, i + 200))
+  // Store chunks in batches with heading level metadata + yield between batches
+  const CHUNK_BATCH = 50
+  for (let i = 0; i < chunks.length; i += CHUNK_BATCH) {
+    const batch = chunks.slice(i, i + CHUNK_BATCH).map((c) => {
+      const headingMatch = c.text.match(/^(#{1,6})\s/)
+      return {
+        docId,
+        docFileName: fileName,
+        text: c.text,
+        sectionPath: c.sectionPath,
+        headingLevel: headingMatch ? headingMatch[1].length : 0,
+        index: c.index,
+        termVectorJson: JSON.stringify(Object.fromEntries(computeTermFrequency(c.text))),
+      }
+    })
+    await db.chunks.bulkAdd(batch)
+    await yieldToMain()
   }
 
-  // Compute cross-doc similarity links
-  const allDocs = await db.documents.toArray()
-  const linksToAdd: Omit<DocLink, 'id'>[] = []
-  for (const other of allDocs) {
-    if (other.id === docId) continue
-    const otherTf = new Map<string, number>(Object.entries(JSON.parse(other.termVectorJson)))
-    const sim = cosineSimilarity(docTf, otherTf)
-    if (sim > 0.05) {
-      linksToAdd.push({
-        sourceDocId: docId,
-        targetDocId: other.id!,
-        strength: sim,
-        sharedTerms: JSON.stringify(findSharedTopTerms(docTf, otherTf)),
-      })
+  if (!opts?.skipPostProcessing) {
+    // Compute cross-doc similarity links
+    const allDocs = await db.documents.toArray()
+    const linksToAdd: Omit<DocLink, 'id'>[] = []
+    for (const other of allDocs) {
+      if (other.id === docId) continue
+      const otherTf = new Map<string, number>(Object.entries(JSON.parse(other.termVectorJson)))
+      const sim = cosineSimilarity(docTf, otherTf)
+      if (sim > 0.05) {
+        linksToAdd.push({
+          sourceDocId: docId,
+          targetDocId: other.id!,
+          strength: sim,
+          sharedTerms: JSON.stringify(findSharedTopTerms(docTf, otherTf)),
+        })
+      }
     }
-  }
-  if (linksToAdd.length > 0) await db.docLinks.bulkAdd(linksToAdd)
+    if (linksToAdd.length > 0) await db.docLinks.bulkAdd(linksToAdd)
 
-  await rebuildIndex()
+    await rebuildIndex()
+  }
   return { docId, nearDuplicates: nearDups, isExactDuplicate: false }
 }
 
-export async function removeDocument(docId: number) {
-  await db.transaction('rw', [db.chunks, db.docLinks, db.documents, db.highlights], async () => {
+/**
+ * Finalize a batch import: rebuild search index + compute all cross-doc similarity links.
+ * Call once after adding multiple documents with skipPostProcessing: true.
+ */
+export async function finalizeImport(): Promise<void> {
+  // Rebuild all cross-doc similarity links
+  const allDocs = await db.documents.toArray()
+  const tfVectors = allDocs.map((d) => ({
+    id: d.id!,
+    tf: new Map<string, number>(Object.entries(JSON.parse(d.termVectorJson))),
+  }))
+
+  // Clear existing links and recompute, yielding periodically
+  await db.docLinks.clear()
+  const linksToAdd: Omit<DocLink, 'id'>[] = []
+  for (let i = 0; i < tfVectors.length; i++) {
+    for (let j = i + 1; j < tfVectors.length; j++) {
+      const sim = cosineSimilarity(tfVectors[i].tf, tfVectors[j].tf)
+      if (sim > 0.05) {
+        linksToAdd.push({
+          sourceDocId: tfVectors[i].id,
+          targetDocId: tfVectors[j].id,
+          strength: sim,
+          sharedTerms: JSON.stringify(findSharedTopTerms(tfVectors[i].tf, tfVectors[j].tf)),
+        })
+      }
+    }
+    // Yield every 10 docs to keep UI responsive
+    if (i % 10 === 9) await yieldToMain()
+  }
+  if (linksToAdd.length > 0) {
+    for (let i = 0; i < linksToAdd.length; i += 200) {
+      await db.docLinks.bulkAdd(linksToAdd.slice(i, i + 200))
+    }
+  }
+
+  await rebuildIndex()
+}
+
+export async function removeDocument(docId: number, skipRebuild = false) {
+  await db.transaction('rw', [db.chunks, db.docLinks, db.documents, db.highlights, db.comments], async () => {
     await db.chunks.where('docId').equals(docId).delete()
     await db.docLinks.where('sourceDocId').equals(docId).delete()
     await db.docLinks.where('targetDocId').equals(docId).delete()
     await db.highlights.where('docId').equals(docId).delete()
+    await db.comments.where('docId').equals(docId).delete()
     await db.documents.delete(docId)
   })
-  await rebuildIndex()
+  if (!skipRebuild) await rebuildIndex()
 }
 
 export async function getAllDocuments(): Promise<StoredDocument[]> {
@@ -483,6 +601,28 @@ export async function updateHighlightNote(id: number, note: string) {
   return db.highlights.update(id, { note })
 }
 
+// ─── Comments / Annotations ─────────────────────────────────────────────
+
+export async function addComment(c: Omit<Comment, 'id'>): Promise<number> {
+  return db.comments.add(c)
+}
+
+export async function getComments(docId: number): Promise<Comment[]> {
+  return db.comments.where('docId').equals(docId).sortBy('createdAt')
+}
+
+export async function updateComment(id: number, updates: Partial<Pick<Comment, 'comment' | 'resolved'>>): Promise<void> {
+  await db.comments.update(id, updates)
+}
+
+export async function removeComment(id: number): Promise<void> {
+  await db.comments.delete(id)
+}
+
+export async function getCommentCount(docId: number): Promise<number> {
+  return db.comments.where('docId').equals(docId).count()
+}
+
 // ─── Louvain community detection ───────────────────────────────────────────
 
 export async function computeCommunities(): Promise<Map<number, number>> {
@@ -506,13 +646,15 @@ export async function computeCommunities(): Promise<Map<number, number>> {
 
   const communities = louvain(graph, { resolution: 1.0 })
 
-  // Persist community assignments
+  // Persist community assignments in a single transaction
   const communityMap = new Map<number, number>()
-  for (const [nodeId, communityId] of Object.entries(communities)) {
-    const docId = parseInt(nodeId)
-    communityMap.set(docId, communityId as number)
-    await db.documents.update(docId, { communityId: communityId as number })
-  }
+  await db.transaction('rw', db.documents, async () => {
+    for (const [nodeId, communityId] of Object.entries(communities)) {
+      const docId = parseInt(nodeId)
+      communityMap.set(docId, communityId as number)
+      await db.documents.update(docId, { communityId: communityId as number })
+    }
+  })
 
   return communityMap
 }
@@ -582,13 +724,14 @@ export async function getDocStats(): Promise<{
 export async function exportLibrary(): Promise<string> {
   const docs = await db.documents.toArray()
   const highlights = await db.highlights.toArray()
-  return JSON.stringify({ version: 2, exportedAt: Date.now(), docs, highlights })
+  const comments = await db.comments.toArray()
+  return JSON.stringify({ version: 3, exportedAt: Date.now(), docs, highlights, comments })
 }
 
 export async function importLibrary(json: string) {
   const data = JSON.parse(json)
   if (!data.docs || !Array.isArray(data.docs)) throw new Error('Invalid export file: missing docs array')
-  // Validate each document has required fields and reasonable sizes
+  // Validate all documents before making any changes
   for (const doc of data.docs) {
     if (typeof doc.fileName !== 'string' || typeof doc.markdown !== 'string') {
       throw new Error(`Invalid document: missing fileName or markdown`)
@@ -597,24 +740,52 @@ export async function importLibrary(json: string) {
       throw new Error(`Document "${doc.fileName}" exceeds 10MB limit`)
     }
   }
-  await clearAllData()
-  for (const doc of data.docs) {
-    await addDocument(doc.fileName, doc.markdown)
+  // Backup existing data before clearing, so we can restore on failure
+  let backup: string
+  try {
+    backup = await exportLibrary()
+  } catch {
+    throw new Error('Failed to create backup before import. Import aborted — your data is safe.')
   }
-  if (data.highlights && Array.isArray(data.highlights)) {
-    for (const h of data.highlights) {
-      if (typeof h.text !== 'string' || typeof h.docId !== 'number') continue // skip invalid
-      await db.highlights.add({ ...h, id: undefined })
+  try {
+    await clearAllData()
+    for (const doc of data.docs) {
+      await addDocument(doc.fileName, doc.markdown)
     }
+    if (data.highlights && Array.isArray(data.highlights)) {
+      for (const h of data.highlights) {
+        if (typeof h.text !== 'string' || typeof h.docId !== 'number') continue
+        await db.highlights.add({ ...h, id: undefined })
+      }
+    }
+    if (data.comments && Array.isArray(data.comments)) {
+      for (const c of data.comments) {
+        if (typeof c.selectedText !== 'string' || typeof c.docId !== 'number') continue
+        await db.comments.add({ ...c, id: undefined })
+      }
+    }
+  } catch (e) {
+    // Restore from backup on failure
+    console.error('Import failed, restoring backup:', e)
+    try {
+      await clearAllData()
+      const backupData = JSON.parse(backup)
+      for (const doc of backupData.docs) {
+        await addDocument(doc.fileName, doc.markdown, { skipPostProcessing: true })
+      }
+      await finalizeImport()
+    } catch { /* best effort restore */ }
+    throw e
   }
 }
 
 export async function clearAllData() {
-  await db.transaction('rw', [db.chunks, db.docLinks, db.documents, db.highlights, db.searchCache], async () => {
+  await db.transaction('rw', [db.chunks, db.docLinks, db.documents, db.highlights, db.comments, db.searchCache], async () => {
     await db.chunks.clear()
     await db.docLinks.clear()
     await db.documents.clear()
     await db.highlights.clear()
+    await db.comments.clear()
     await db.searchCache.clear()
   })
   searchIndex = null

@@ -22,7 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.claude/*
 
+docs/features/**
 # Environment files
 .env
 .env.*
@@ -32,8 +34,8 @@ dist-ssr
 .dev-server.pid
 
 # Internal/personal docs
-EVAL_AND_MOAT_STRATEGY.md
 research.md
+EVAL_*.md
 e2e-user-review.md
 e2e-ux-review.md
 
@@ -41,7 +43,8 @@ e2e-ux-review.md
 e2e-screenshots/
 my-e2e-test.md
 
-# Eval run results (keep results.tsv, ignore per-run JSONs)
+# Eval run results
+scripts/eval/results.tsv
 scripts/eval/results/
 
 # VS Code extension build artifacts

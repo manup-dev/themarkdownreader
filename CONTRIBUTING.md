@@ -5,7 +5,7 @@ Thanks for your interest in contributing! Here's how to get started.
 ## Setup
 
 ```bash
-git clone https://github.com/anthropics/md-reader.git
+git clone https://github.com/manup-dev/themarkdownreader.git
 cd md-reader
 npm install
 npm run dev

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
+import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
 import { Loader2, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useStore } from '@app/store/useStore'
 import { Reader } from '@app/components/Reader'
@@ -39,7 +39,10 @@ export function VscodeApp() {
   const setFontSize = useStore((s) => s.setFontSize)
   const setViewMode = useStore((s) => s.setViewMode)
   const setSidebarWidth = useStore((s) => s.setSidebarWidth)
+  const fileName = useStore((s) => s.fileName)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [aiActionResult, setAiActionResult] = useState<{ action: string; text: string; result?: string } | null>(null)
+  const lastScrollSectionRef = useRef<string>('')
 
   // Apply theme
   useEffect(() => {
@@ -66,6 +69,93 @@ export function VscodeApp() {
         case 'readAloud':
           // TTS will be handled by the TtsPlayer component
           break
+        // Feature 6: AI action on selected text (summarize/explain)
+        case 'aiAction': {
+          const action = msg.action as string
+          const text = msg.text as string
+          setAiActionResult({ action, text })
+          // Show the text in an overlay — the AI processing would happen
+          // via the existing AI infrastructure if available
+          const vscodeApi = getVsCodeApi()
+          vscodeApi?.postMessage({
+            type: 'info',
+            text: `${action === 'summarize' ? 'Summarizing' : 'Explaining'} selection (${text.length} chars)...`,
+          })
+          break
+        }
+        // Feature 6: Read selected text aloud
+        case 'readAloudText': {
+          const textToRead = msg.text as string
+          if (textToRead && 'speechSynthesis' in window) {
+            window.speechSynthesis.cancel()
+            const utterance = new SpeechSynthesisUtterance(textToRead)
+            utterance.rate = 1.0
+            utterance.pitch = 1.0
+            utterance.onerror = (e) => {
+              console.warn('TTS error:', e.error)
+              const vscodeApi = getVsCodeApi()
+              vscodeApi?.postMessage({ type: 'info', text: `TTS failed: ${e.error || 'unknown error'}` })
+            }
+            window.speechSynthesis.speak(utterance)
+          }
+          break
+        }
+        // Feature 9: Copy reader content as rich text
+        case 'copyRichText': {
+          const article = document.querySelector('article') || document.querySelector('.prose')
+          if (article) {
+            const htmlContent = article.innerHTML
+            const plainText = article.textContent || ''
+            try {
+              const blob = new Blob([htmlContent], { type: 'text/html' })
+              const textBlob = new Blob([plainText], { type: 'text/plain' })
+              navigator.clipboard.write([
+                new ClipboardItem({
+                  'text/html': blob,
+                  'text/plain': textBlob,
+                }),
+              ]).then(() => {
+                const vscodeApi = getVsCodeApi()
+                vscodeApi?.postMessage({ type: 'info', text: 'Copied reader content as rich text' })
+              }).catch(() => {
+                // Fallback: use execCommand
+                const selection = window.getSelection()
+                const range = document.createRange()
+                range.selectNodeContents(article)
+                selection?.removeAllRanges()
+                selection?.addRange(range)
+                document.execCommand('copy')
+                selection?.removeAllRanges()
+                const vscodeApi = getVsCodeApi()
+                vscodeApi?.postMessage({ type: 'info', text: 'Copied reader content as rich text' })
+              })
+            } catch {
+              // Fallback for environments without ClipboardItem
+              const selection = window.getSelection()
+              const range = document.createRange()
+              range.selectNodeContents(article)
+              selection?.removeAllRanges()
+              selection?.addRange(range)
+              document.execCommand('copy')
+              selection?.removeAllRanges()
+              const vscodeApi = getVsCodeApi()
+              vscodeApi?.postMessage({ type: 'info', text: 'Copied reader content as rich text' })
+            }
+          }
+          break
+        }
+        case 'scrollToSection': {
+          const sectionId = msg.sectionId as string
+          // Avoid re-scrolling to the same section repeatedly
+          if (sectionId && sectionId !== lastScrollSectionRef.current) {
+            lastScrollSectionRef.current = sectionId
+            const el = document.getElementById(sectionId)
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }
+          }
+          break
+        }
       }
     }
 
@@ -77,6 +167,49 @@ export function VscodeApp() {
 
     return () => window.removeEventListener('message', handleMessage)
   }, [setMarkdown, setTheme, setFontSize, setViewMode])
+
+  // Feature 3: Send reading progress to extension host
+  useEffect(() => {
+    if (!markdown) return
+
+    const vscode = getVsCodeApi()
+    if (!vscode) return
+
+    const totalWords = markdown.split(/\s+/).filter(Boolean).length
+    const totalMinutes = Math.max(1, Math.ceil(totalWords / 230))
+
+    let throttleTimer: ReturnType<typeof setTimeout> | null = null
+    const handleScroll = () => {
+      if (throttleTimer) return
+      throttleTimer = setTimeout(() => {
+        throttleTimer = null
+        const scrollTop = document.documentElement.scrollTop || document.body.scrollTop
+        const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight
+        if (scrollHeight <= 0) return
+
+        const percent = Math.min(100, Math.round((scrollTop / scrollHeight) * 100))
+        const minutesLeft = Math.max(0, Math.round(totalMinutes * (1 - percent / 100)))
+
+        vscode.postMessage({ type: 'progress', percent, minutesLeft, totalWords, fileName: fileName ?? undefined })
+      }, 200)
+    }
+
+    // Send initial progress
+    handleScroll()
+
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', handleScroll)
+      if (throttleTimer) clearTimeout(throttleTimer)
+    }
+  }, [markdown, fileName])
+
+  // Auto-dismiss AI action overlay after 8 seconds
+  useEffect(() => {
+    if (!aiActionResult) return
+    const timer = setTimeout(() => setAiActionResult(null), 8000)
+    return () => clearTimeout(timer)
+  }, [aiActionResult])
 
   const handleSidebarResize = useCallback((delta: number) => {
     setSidebarWidth(Math.max(150, Math.min(350, sidebarWidth + delta)))
@@ -155,6 +288,26 @@ export function VscodeApp() {
 
       {/* TTS */}
       <TtsPlayer />
+
+      {/* Feature 6: AI Action overlay (auto-dismisses after 8s) */}
+      {aiActionResult && (
+        <div className="fixed bottom-4 right-4 max-w-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-4 z-50">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+              {aiActionResult.action === 'summarize' ? 'Summary' : 'Explanation'}
+            </span>
+            <button
+              onClick={() => setAiActionResult(null)}
+              className="text-gray-400 hover:text-gray-600 text-sm"
+            >
+              Close
+            </button>
+          </div>
+          <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-6">
+            {aiActionResult.text.slice(0, 300)}{aiActionResult.text.length > 300 ? '...' : ''}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

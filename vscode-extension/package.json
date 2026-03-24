@@ -39,6 +39,22 @@
       {
         "command": "md-reader.readAloud",
         "title": "md-reader: Read Aloud"
+      },
+      {
+        "command": "md-reader.summarizeSelection",
+        "title": "md-reader: Summarize Selection"
+      },
+      {
+        "command": "md-reader.explainSelection",
+        "title": "md-reader: Explain Selection"
+      },
+      {
+        "command": "md-reader.readSelectionAloud",
+        "title": "md-reader: Read Selection Aloud"
+      },
+      {
+        "command": "md-reader.copyAsRichText",
+        "title": "md-reader: Copy as Rich Text"
       }
     ],
     "menus": {

@@ -431,8 +431,13 @@ async function evalKnowledgeGraph(testCase: Record<string, unknown>): Promise<Ev
       const id = label.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '')
       if (!seen.has(id) && label.length > 2 && label.length < 40) { seen.add(id); nodes.push({ id, label }) }
     }
+    const acronyms = md.match(/\b[A-Z]{3,}\b/g) ?? []
+    for (const a of acronyms) {
+      const id = a.toLowerCase()
+      if (!seen.has(id) && a.length >= 3 && a.length <= 10) { seen.add(id); nodes.push({ id, label: a }) }
+    }
     const edges: Array<{ source: string; target: string }> = []
-    const limited = nodes.slice(0, 12)
+    const limited = nodes.slice(0, 25)
     const sections = md.split(/^#{1,3}\s+/m).filter(Boolean)
     for (const section of sections) {
       const sl = section.toLowerCase()
@@ -562,11 +567,11 @@ async function evalCoach(testCase: Record<string, unknown>): Promise<EvalResult>
     issues.push(`Too verbose: ${wordLen} words`)
   }
 
-  // AI judge for overall quality (weighted 30% — small model judge varies ±20pts)
+  // AI judge for overall quality (weighted 15% — small model judge varies ±20pts)
   const judge = await aiJudge(
     `Rate this explanation of a technical topic. Is it clear, does it use an analogy, and does it ask a question? Score 0-100.\n\nExplanation: ${explanation}`
   )
-  score = Math.round(score * 0.7 + judge.score * 0.3)
+  score = Math.round(score * 0.85 + judge.score * 0.15)
 
   return {
     id: testCase.id as string,

@@ -11,10 +11,13 @@
 import { extractToc, wordCount, estimateReadingTime } from './markdown'
 import type { TocEntry } from '../store/useStore'
 
+export type FileType = 'markdown' | 'excalidraw'
+
 export interface CollectionFile {
   path: string           // relative path within the collection (e.g., "docs/getting-started.md")
   name: string           // display name (e.g., "Getting Started")
   markdown: string
+  fileType: FileType     // detected from extension
   wordCount: number
   readingTime: number
   toc: TocEntry[]
@@ -42,6 +45,12 @@ export interface Collection {
   structure: 'sequential' | 'wiki' | 'flat' | 'hierarchical'
 }
 
+/** Detect file type from extension */
+function detectFileType(path: string): FileType {
+  if (/\.excalidraw$/i.test(path)) return 'excalidraw'
+  return 'markdown'
+}
+
 // ─── Parse a set of files into a Collection ────────────────────────────────
 
 export function buildCollection(
@@ -54,16 +63,19 @@ export function buildCollection(
   // Parse each file
   const parsedFiles: CollectionFile[] = files.map((f) => {
     const path = normalizePath(f.path)
-    const links = extractLinks(f.content, allPaths)
-    const toc = extractToc(f.content)
-    const wc = wordCount(f.content)
+    const ft = detectFileType(path)
+    const isMarkdown = ft === 'markdown'
+    const links = isMarkdown ? extractLinks(f.content, allPaths, path) : []
+    const toc = isMarkdown ? extractToc(f.content) : []
+    const wc = isMarkdown ? wordCount(f.content) : 0
 
     return {
       path,
       name: pathToName(path),
       markdown: f.content,
+      fileType: ft,
       wordCount: wc,
-      readingTime: estimateReadingTime(f.content),
+      readingTime: isMarkdown ? estimateReadingTime(f.content) : 0,
       toc,
       linksTo: links.map((l) => l.target),
       linkedFrom: [],
@@ -127,20 +139,56 @@ export function buildCollection(
 
 // ─── Link extraction ───────────────────────────────────────────────────────
 
-function extractLinks(markdown: string, allPaths: string[]): Array<{ target: string; label: string }> {
+function extractLinks(markdown: string, allPaths: string[], sourcePath?: string): Array<{ target: string; label: string }> {
   const links: Array<{ target: string; label: string }> = []
-  // Match [text](./path.md) or [text](path.md#fragment) or [text](../path.md)
-  const regex = /\[([^\]]+)\]\(([^)#]+\.(?:md|markdown))(?:#[^)]*)?\)/g
+  // Match [text](path) — any relative link, not just .md
+  const regex = /\[([^\]]+)\]\(([^)#\s]+)(?:#[^)]*)?\)/g
   let match
   while ((match = regex.exec(markdown)) !== null) {
-    const target = normalizePath(match[2])
-    // Only include if the target exists in our collection
-    const resolved = allPaths.find((p) => p === target || p.endsWith('/' + target) || p.endsWith(target))
+    const rawTarget = normalizePath(match[2]).replace(/\/$/, '')
+    // Skip external URLs and images
+    if (rawTarget.startsWith('http://') || rawTarget.startsWith('https://') || /\.(png|jpg|jpeg|gif|svg|webp)$/i.test(rawTarget)) continue
+
+    // Try as-is first (for .md links)
+    let resolved = resolveRelativePath(rawTarget, sourcePath ?? '', allPaths)
+    // If not found and it looks like a directory link, try dir/README.md
+    if (!resolved && !/\.(?:md|markdown)$/i.test(rawTarget)) {
+      resolved = resolveRelativePath(rawTarget + '/README.md', sourcePath ?? '', allPaths) ??
+        resolveRelativePath(rawTarget + '/readme.md', sourcePath ?? '', allPaths)
+    }
     if (resolved) {
       links.push({ target: resolved, label: match[1] })
     }
   }
   return links
+}
+
+/** Resolve a relative path like ../README.md against a source file path */
+export function resolveRelativePath(href: string, sourcePath: string, allPaths: string[]): string | null {
+  const sourceDir = sourcePath.includes('/') ? sourcePath.split('/').slice(0, -1).join('/') : ''
+
+  let resolved = href
+  if (href.startsWith('../')) {
+    // Walk up directory levels
+    const dirParts = sourceDir.split('/').filter(Boolean)
+    const hrefParts = href.split('/')
+    while (hrefParts[0] === '..' && dirParts.length > 0) {
+      hrefParts.shift()
+      dirParts.pop()
+    }
+    // Drop any remaining .. if we're already at root
+    while (hrefParts[0] === '..') hrefParts.shift()
+    resolved = [...dirParts, ...hrefParts].join('/')
+  } else if (sourceDir && !href.includes('/')) {
+    // Sibling file: api.md from subdir/setup.md → subdir/api.md
+    resolved = `${sourceDir}/${href}`
+  }
+
+  // Try exact match first, then fallback to endsWith
+  return allPaths.find((p) => p === resolved) ??
+    allPaths.find((p) => p === href) ??
+    allPaths.find((p) => p.endsWith('/' + href)) ??
+    null
 }
 
 function extractWikilinks(markdown: string, allPaths: string[]): Array<{ target: string; label: string }> {
@@ -238,7 +286,7 @@ function normalizePath(p: string): string {
 
 function pathToName(path: string): string {
   const fileName = path.split('/').pop() ?? path
-  const base = fileName.replace(/\.(md|markdown)$/, '')
+  const base = fileName.replace(/\.(md|markdown|excalidraw)$/, '')
 
   // If file has a numeric prefix (e.g., "01-setup"), format as "1. Setup"
   const numMatch = base.match(/^(\d+)[-_.](.+)/)

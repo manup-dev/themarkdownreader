@@ -6,10 +6,21 @@ export class ReaderPanel {
   public static current: ReaderPanel | undefined
   private static readonly viewType = 'mdReader'
 
+  /** Called by extension.ts to receive progress updates from webview */
+  public static onProgressCallback: ((percent: number, minutesLeft: number, fileName?: string, totalWords?: number) => void) | undefined
+  /** Called when the panel is disposed */
+  public static onDisposeCallback: (() => void) | undefined
+
   private readonly panel: vscode.WebviewPanel
   private readonly extensionUri: vscode.Uri
   private disposables: vscode.Disposable[] = []
   private debounceTimer: NodeJS.Timeout | undefined
+
+  // Feature 10: Session tracking
+  private readonly sessionStart: number = Date.now()
+  private lastPercent = 0
+  private lastWordCount = 0
+  private currentFileName = ''
 
   public static createOrShow(context: vscode.ExtensionContext, defaultView = 'read') {
     const column = vscode.ViewColumn.Beside
@@ -65,10 +76,14 @@ export class ReaderPanel {
     // Debounce rapid updates (typing)
     if (this.debounceTimer) clearTimeout(this.debounceTimer)
     this.debounceTimer = setTimeout(() => {
+      const fileName = path.basename(document.fileName)
+      this.currentFileName = fileName
+      const content = document.getText()
+      this.lastWordCount = content.split(/\s+/).filter(Boolean).length
       this.panel.webview.postMessage({
         type: 'setMarkdown',
-        content: document.getText(),
-        fileName: path.basename(document.fileName),
+        content,
+        fileName,
       })
     }, 300)
   }
@@ -87,23 +102,41 @@ export class ReaderPanel {
         this.sendConfig()
         break
 
-      case 'navigate':
+      case 'navigate': {
         // Jump to line in editor
-        const line = message.line as number
+        const line = typeof message.line === 'number' && isFinite(message.line) ? Math.max(0, message.line) : 0
         const editor = vscode.window.activeTextEditor
         if (editor) {
-          const pos = new vscode.Position(line, 0)
+          const maxLine = editor.document.lineCount - 1
+          const safeLine = Math.min(line, maxLine)
+          const pos = new vscode.Position(safeLine, 0)
           editor.selection = new vscode.Selection(pos, pos)
           editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter)
         }
         break
-
-      case 'saveState':
+      }
+      case 'saveState': {
         // Persist theme/fontSize to VS Code settings
         const config = vscode.workspace.getConfiguration('md-reader')
         if (message.theme) config.update('theme', message.theme, vscode.ConfigurationTarget.Global)
         if (message.fontSize) config.update('fontSize', message.fontSize, vscode.ConfigurationTarget.Global)
         break
+      }
+
+      case 'progress': {
+        const percent = message.percent as number
+        const minutesLeft = message.minutesLeft as number
+        const totalWords = (message.totalWords as number) ?? 0
+        const progressFileName = (message.fileName as string) ?? this.currentFileName
+        // Feature 10: Track for session summary
+        this.lastPercent = percent
+        this.lastWordCount = totalWords
+        if (progressFileName) this.currentFileName = progressFileName
+        if (ReaderPanel.onProgressCallback) {
+          ReaderPanel.onProgressCallback(percent, minutesLeft, this.currentFileName, totalWords)
+        }
+        break
+      }
 
       case 'info':
         vscode.window.showInformationMessage(message.text as string)
@@ -130,6 +163,7 @@ export class ReaderPanel {
     })
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private getHtmlForWebview(defaultView: string): string {
     const webview = this.panel.webview
 
@@ -251,7 +285,23 @@ export class ReaderPanel {
   }
 
   public dispose() {
+    // Clear pending debounce timer
+    if (this.debounceTimer) clearTimeout(this.debounceTimer)
+
+    // Feature 10: Show reading session summary on close
+    const sessionDuration = Date.now() - this.sessionStart
+    const sessionSeconds = Math.floor(sessionDuration / 1000)
+    if (sessionSeconds > 30 && this.currentFileName && this.lastPercent > 0) {
+      const minutes = Math.floor(sessionSeconds / 60)
+      const wordsRead = Math.round((this.lastPercent / 100) * this.lastWordCount)
+      const displayTime = minutes > 0 ? `${minutes}m` : `${sessionSeconds}s`
+      vscode.window.showInformationMessage(
+        `\uD83D\uDCD6 Read ${wordsRead} words (${this.lastPercent}%) of ${this.currentFileName} in ${displayTime}`,
+      )
+    }
+
     ReaderPanel.current = undefined
+    ReaderPanel.onDisposeCallback?.()
     this.panel.dispose()
     while (this.disposables.length) {
       const d = this.disposables.pop()

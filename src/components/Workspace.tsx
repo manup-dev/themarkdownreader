@@ -1,9 +1,80 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { FileText, Trash2, Upload as UploadIcon, FolderOpen, Database, Search, Loader2, Sparkles, Network, BarChart3, Download, UploadCloud, Map, AlertTriangle, ArrowUpDown, Bookmark } from 'lucide-react'
+import { Trash2, Upload as UploadIcon, FolderOpen, Database, Search, Loader2, Sparkles, Network, BarChart3, Download, UploadCloud, Map, AlertTriangle, ArrowUpDown, Bookmark } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { addDocument, removeDocument, getAllDocuments, getDocStats, clearAllData, exportLibrary, importLibrary, requestPersistentStorage, type StoredDocument } from '../lib/docstore'
+import { addDocument, removeDocument, getAllDocuments, getDocStats, clearAllData, exportLibrary, importLibrary, requestPersistentStorage, finalizeImport, saveCollectionCache, type StoredDocument } from '../lib/docstore'
+import { openDirectory, hasDirectoryAccess } from '../lib/fs-access'
 import { generateCollectionOverview, askAcrossDocuments } from '../lib/correlate'
 import { estimateDifficulty } from '../lib/markdown'
+
+function IndexProgressDisplay({ progress }: { progress: { current: number; total: number; fileName: string; startedAt: number; errors: string[] } }) {
+  const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    const timer = setInterval(() => setElapsed(Date.now() - progress.startedAt), 1000)
+    return () => clearInterval(timer)
+  }, [progress.startedAt])
+
+  const elapsedSec = Math.floor(elapsed / 1000)
+  const pct = Math.round((progress.current / progress.total) * 100)
+  const isSlow = elapsedSec > 30
+  const isVerySlow = elapsedSec > 120
+
+  // Estimate remaining time
+  const perFile = progress.current > 0 ? elapsed / progress.current : 0
+  const remaining = Math.max(0, Math.ceil(((progress.total - progress.current) * perFile) / 1000))
+
+  const formatTime = (sec: number) => {
+    if (sec < 60) return `${sec}s`
+    return `${Math.floor(sec / 60)}m ${sec % 60}s`
+  }
+
+  return (
+    <div className="space-y-3">
+      <Loader2 className="h-8 w-8 text-blue-500 animate-spin mx-auto" />
+      <div>
+        <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+          Indexing {progress.current} of {progress.total} documents
+        </p>
+        {progress.fileName && (
+          <p className="text-xs text-gray-400 mt-1 truncate max-w-xs mx-auto" title={progress.fileName}>
+            {progress.fileName}
+          </p>
+        )}
+      </div>
+      <div className="max-w-xs mx-auto">
+        <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-blue-500 rounded-full transition-all duration-300"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className="flex justify-between mt-1">
+          <p className="text-[10px] text-gray-400">{pct}% complete</p>
+          <p className="text-[10px] text-gray-400">
+            {formatTime(elapsedSec)}{remaining > 0 && progress.current < progress.total ? ` · ~${formatTime(remaining)} left` : ''}
+          </p>
+        </div>
+      </div>
+      {isSlow && (
+        <p className={`text-[11px] ${isVerySlow ? 'text-amber-500' : 'text-gray-400'}`}>
+          {isVerySlow
+            ? 'This is taking longer than expected. Large files need more time to index — please hang tight.'
+            : 'Building search index and extracting structure...'}
+        </p>
+      )}
+      {progress.errors.length > 0 && (
+        <div className="text-left max-w-xs mx-auto bg-red-50 dark:bg-red-950/30 rounded-lg px-3 py-2 space-y-1">
+          <p className="text-[10px] font-medium text-red-600 dark:text-red-400">
+            {progress.errors.length} file{progress.errors.length > 1 ? 's' : ''} failed:
+          </p>
+          {progress.errors.slice(-3).map((err, i) => (
+            <p key={i} className="text-[10px] text-red-500 dark:text-red-400 truncate" title={err}>{err}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function Workspace() {
   const setViewMode = useStore((s) => s.setViewMode)
@@ -12,7 +83,8 @@ export function Workspace() {
   const [stats, setStats] = useState<{ totalDocs: number; totalWords: number; totalChunks: number; totalHighlights: number; storageEstimate: string } | null>(null)
   const [dupWarning, setDupWarning] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [sortBy, setSortBy] = useState<'name' | 'words' | 'date'>(() => (localStorage.getItem('md-reader-sort') as 'name' | 'words' | 'date') || 'date')
+  const [indexProgress, setIndexProgress] = useState<{ current: number; total: number; fileName: string; startedAt: number; errors: string[] } | null>(null)
+  const [sortBy, setSortBy] = useState<'name' | 'words' | 'date' | 'difficulty'>(() => (localStorage.getItem('md-reader-sort') as 'name' | 'words' | 'date' | 'difficulty') || 'date')
   const [queued, setQueued] = useState<Set<number>>(() => {
     const saved = localStorage.getItem('md-reader-queue')
     return saved ? new Set(JSON.parse(saved)) : new Set()
@@ -46,22 +118,46 @@ export function Workspace() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { refresh() }, [refresh])
 
+  useEffect(() => {
+    document.title = stats ? `Library (${stats.totalDocs}) — md-reader` : 'Library — md-reader'
+    return () => { document.title = 'md-reader — AI Markdown Reader' }
+  }, [stats])
+
   const handleFiles = useCallback(async (files: FileList) => {
     setLoading(true)
     setDupWarning(null)
     const dupNames: string[] = []
-    for (const file of Array.from(files)) {
-      if (!file.name.match(/\.(md|markdown|txt)$/)) continue
-      const text = await file.text()
-      const result = await addDocument(file.name, text)
-      if (result.isExactDuplicate) {
-        dupNames.push(`${file.name} (exact duplicate, skipped)`)
-      } else if (result.nearDuplicates.length > 0) {
-        dupNames.push(`${file.name} (similar to: ${result.nearDuplicates.map((d) => d.fileName).join(', ')})`)
+    const errors: string[] = []
+    const validFiles = Array.from(files).filter((f) => f.name.match(/\.(md|markdown|txt|excalidraw)$/))
+    const total = validFiles.length
+    const isBatch = total > 1
+    const startedAt = Date.now()
+    for (let i = 0; i < validFiles.length; i++) {
+      const file = validFiles[i]
+      setIndexProgress({ current: i + 1, total, fileName: file.name, startedAt, errors })
+      try {
+        const text = await file.text()
+        const result = await addDocument(file.name, text, isBatch ? { skipPostProcessing: true } : undefined)
+        if (result.isExactDuplicate) {
+          dupNames.push(`${file.name} (exact duplicate, skipped)`)
+        } else if (result.nearDuplicates.length > 0) {
+          dupNames.push(`${file.name} (similar to: ${result.nearDuplicates.map((d) => d.fileName).join(', ')})`)
+        }
+      } catch (err) {
+        errors.push(`${file.name}: ${err instanceof Error ? err.message : 'Unknown error'}`)
       }
+    }
+    if (isBatch) {
+      setIndexProgress({ current: total, total, fileName: 'Building search index...', startedAt, errors })
+      await finalizeImport()
     }
     if (dupNames.length > 0) setDupWarning(dupNames.join('\n'))
     await refresh()
+    if (errors.length > 0) {
+      setIndexProgress({ current: total, total, fileName: '', startedAt, errors })
+      await new Promise((r) => setTimeout(r, 3000))
+    }
+    setIndexProgress(null)
     setLoading(false)
   }, [refresh])
 
@@ -69,6 +165,15 @@ export function Workspace() {
     e.preventDefault()
     if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files)
   }, [handleFiles])
+
+  const handleDirectory = useCallback(async () => {
+    const result = await openDirectory()
+    if (!result || result.files.length === 0) return
+    // Save as a collection project and switch to collection view
+    const rawFiles = result.files.map((f) => ({ path: f.path, content: f.content }))
+    await saveCollectionCache(result.name, rawFiles, 0)
+    setViewMode('collection')
+  }, [setViewMode])
 
   const handleRemove = useCallback(async (docId: number) => {
     const doc = docs.find((d) => d.id === docId)
@@ -218,21 +323,54 @@ export function Workspace() {
 
         {/* Upload area */}
         <div
-          onClick={() => fileRef.current?.click()}
-          className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 dark:hover:border-blue-600 transition-colors"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleDrop}
+          className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
+            loading
+              ? 'border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-950/20'
+              : 'border-gray-300 dark:border-gray-700'
+          }`}
         >
-          {loading ? (
-            <Loader2 className="h-8 w-8 text-blue-500 animate-spin mx-auto" />
+          {loading && indexProgress ? (
+            <IndexProgressDisplay progress={indexProgress} />
+          ) : loading ? (
+            <div>
+              <Loader2 className="h-8 w-8 text-blue-500 animate-spin mx-auto" />
+              <p className="text-sm text-gray-500 mt-2">Preparing...</p>
+            </div>
           ) : (
-            <UploadIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+            <>
+              <UploadIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <p className="text-sm text-gray-500 mb-4">
+                Drop files here, or choose how to import
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                  <UploadIcon className="h-4 w-4" />
+                  Choose Files
+                </button>
+                {hasDirectoryAccess() && (
+                  <button
+                    onClick={handleDirectory}
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 text-sm rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors font-medium"
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                    Choose Folder
+                  </button>
+                )}
+              </div>
+              <p className="text-[10px] text-gray-400 mt-3">
+                Supported: .md, .markdown, .txt, .excalidraw
+              </p>
+            </>
           )}
-          <p className="text-sm text-gray-500">
-            {loading ? 'Indexing documents...' : 'Drop markdown files here or click to upload (multiple files supported)'}
-          </p>
           <input
             ref={fileRef}
             type="file"
-            accept=".md,.markdown,.txt"
+            accept=".md,.markdown,.txt,.excalidraw"
             multiple
             className="hidden"
             onChange={(e) => e.target.files && handleFiles(e.target.files)}
@@ -310,12 +448,13 @@ export function Workspace() {
             <ArrowUpDown className="h-3 w-3 text-gray-400" />
             <select
               value={sortBy}
-              onChange={(e) => { const v = e.target.value as 'name' | 'words' | 'date'; setSortBy(v); localStorage.setItem('md-reader-sort', v) }}
+              onChange={(e) => { const v = e.target.value as 'name' | 'words' | 'date' | 'difficulty'; setSortBy(v); localStorage.setItem('md-reader-sort', v) }}
               className="text-xs bg-transparent text-gray-500 dark:text-gray-400 border-none focus:outline-none cursor-pointer"
             >
               <option value="date">Recent first</option>
               <option value="name">Name A-Z</option>
               <option value="words">Largest first</option>
+              <option value="difficulty">Difficulty</option>
             </select>
           </div>
         )}
@@ -323,13 +462,30 @@ export function Workspace() {
           {[...docs].sort((a, b) => {
             if (sortBy === 'name') return a.fileName.localeCompare(b.fileName)
             if (sortBy === 'words') return b.wordCount - a.wordCount
+            if (sortBy === 'difficulty') {
+              const order = ['Beginner', 'Intermediate', 'Advanced', 'Expert']
+              return order.indexOf(estimateDifficulty(a.markdown)) - order.indexOf(estimateDifficulty(b.markdown))
+            }
             return (b.id ?? 0) - (a.id ?? 0)
           }).map((doc) => (
             <div
               key={doc.id}
               className="flex items-center gap-3 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-4 py-3 hover:shadow-sm hover:border-blue-300 dark:hover:border-blue-700 transition-all group"
             >
-              <FileText className="h-5 w-5 text-gray-400 group-hover:text-blue-500 shrink-0" />
+              <span className="text-base shrink-0" title={estimateDifficulty(doc.markdown)}>
+                {(() => {
+                  const md = doc.markdown
+                  const hasApi = /\b(API|endpoint|GET|POST)\b/i.test(md)
+                  const hasCode = (md.match(/```/g) ?? []).length >= 4
+                  const hasSteps = /^\d+\.\s/m.test(md) && (md.match(/^\d+\.\s/gm) ?? []).length >= 3
+                  const hasTables = (md.match(/^\|/gm) ?? []).length >= 4
+                  if (hasApi && hasCode) return '\uD83D\uDD0C'
+                  if (hasSteps) return '\uD83D\uDCDD'
+                  if (hasTables) return '\uD83D\uDCCA'
+                  if (hasCode) return '\u2699\uFE0F'
+                  return '\uD83D\uDCD6'
+                })()}
+              </span>
               <button
                 onClick={() => openDoc(doc)}
                 className="flex-1 text-left min-w-0"

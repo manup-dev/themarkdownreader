@@ -72,17 +72,15 @@ export function TtsPlayer() {
     setState((s) => ({ ...s, voice }))
   }, [voices])
 
+  // Collapsed state: hidden button (triggered from unified FAB menu via data-tts-player)
   if (!expanded) {
     return (
       <button
+        data-tts-player
         onClick={() => setExpanded(true)}
         onDoubleClick={() => { setExpanded(true); setTimeout(() => handlePlay(), 100) }}
-        className={`fixed bottom-6 left-6 p-3 rounded-full shadow-lg transition-all z-20 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none ${
-          theme === 'sepia'
-            ? 'bg-amber-700 text-white hover:bg-amber-800 hover:scale-110'
-            : 'bg-emerald-600 text-white hover:bg-emerald-700 hover:scale-110'
-        }`}
-        title="Click to expand, double-click to start reading"
+        className="hidden"
+        aria-label="Text-to-speech player"
       >
         <Volume2 className="h-5 w-5" />
       </button>
@@ -99,6 +97,7 @@ export function TtsPlayer() {
           onClick={() => { tts.stop(); setExpanded(false) }}
           className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
           title="Collapse player"
+          aria-label="Close player"
         >
           Close
         </button>
@@ -126,22 +125,22 @@ export function TtsPlayer() {
 
       {/* Controls */}
       <div className="flex items-center justify-center gap-3 mb-3">
-        <button onClick={handlePrev} className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+        <button onClick={handlePrev} className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" aria-label="Previous section">
           <SkipBack className="h-4 w-4" />
         </button>
         {state.speaking && !state.paused ? (
-          <button onClick={handlePause} className="p-3 bg-emerald-600 text-white rounded-full hover:bg-emerald-700">
+          <button onClick={handlePause} className="p-3 bg-emerald-600 text-white rounded-full hover:bg-emerald-700" aria-label="Pause">
             <Pause className="h-5 w-5" />
           </button>
         ) : (
-          <button onClick={handlePlay} className="p-3 bg-emerald-600 text-white rounded-full hover:bg-emerald-700">
+          <button onClick={handlePlay} className="p-3 bg-emerald-600 text-white rounded-full hover:bg-emerald-700" aria-label="Play">
             <Play className="h-5 w-5" />
           </button>
         )}
-        <button onClick={handleStop} className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+        <button onClick={handleStop} className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" aria-label="Stop">
           <Square className="h-4 w-4" />
         </button>
-        <button onClick={handleNext} className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+        <button onClick={handleNext} className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" aria-label="Next section">
           <SkipForward className="h-4 w-4" />
         </button>
       </div>

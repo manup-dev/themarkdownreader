@@ -232,10 +232,29 @@ export function KnowledgeGraphView() {
         <button
           onClick={generate}
           disabled={loading}
+          aria-label="Regenerate graph"
           className="text-xs bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm px-2 py-1 rounded text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-50"
         >
           <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
         </button>
+        {graphData && (
+          <button
+            onClick={() => {
+              if (!graphData) return
+              const lines = ['## Concepts', ...graphData.nodes.map((n) => `- ${n.label} (${n.type})`), '', '## Relationships', ...graphData.edges.map((e) => {
+                const src = typeof e.source === 'string' ? e.source : (e.source as {label:string}).label
+                const tgt = typeof e.target === 'string' ? e.target : (e.target as {label:string}).label
+                return `- ${src} → ${tgt}: ${e.label}`
+              })]
+              navigator.clipboard.writeText(lines.join('\n'))
+            }}
+            aria-label="Copy graph as text"
+            className="text-xs bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm px-2 py-1 rounded text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+            title="Copy graph as markdown"
+          >
+            Copy
+          </button>
+        )}
       </div>
 
       {/* Legend */}

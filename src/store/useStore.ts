@@ -1,51 +1,53 @@
 import { create } from 'zustand'
 import { devtools, persist, type StateStorage } from 'zustand/middleware'
+import { trackEvent, type TelemetryEvent } from '../lib/telemetry'
 
 // IndexedDB-backed storage for Zustand persist — handles large markdown content
-// without hitting localStorage's ~5MB limit
+// without hitting localStorage's ~5MB limit. Connection is cached to avoid
+// opening a new IDB connection on every read/write.
+let cachedDb: IDBDatabase | null = null
+let dbOpenPromise: Promise<IDBDatabase> | null = null
+
+function getDb(): Promise<IDBDatabase> {
+  if (cachedDb) return Promise.resolve(cachedDb)
+  if (!dbOpenPromise) {
+    dbOpenPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open('md-reader-zustand', 1)
+      req.onupgradeneeded = () => { req.result.createObjectStore('state') }
+      req.onsuccess = () => { cachedDb = req.result; resolve(req.result) }
+      req.onerror = () => reject(req.error)
+    })
+  }
+  return dbOpenPromise
+}
+
 const idbStorage: StateStorage = {
   getItem: async (name: string): Promise<string | null> => {
-    const dbReq = indexedDB.open('md-reader-zustand', 1)
-    return new Promise((resolve) => {
-      dbReq.onupgradeneeded = () => { dbReq.result.createObjectStore('state') }
-      dbReq.onsuccess = () => {
-        try {
-          const tx = dbReq.result.transaction('state', 'readonly')
-          const req = tx.objectStore('state').get(name)
-          req.onsuccess = () => resolve(req.result ?? null)
-          req.onerror = () => resolve(null)
-        } catch { resolve(null) }
-      }
-      dbReq.onerror = () => resolve(null)
-    })
+    try {
+      const db = await getDb()
+      const tx = db.transaction('state', 'readonly')
+      const req = tx.objectStore('state').get(name)
+      return new Promise((resolve) => {
+        req.onsuccess = () => resolve(req.result ?? null)
+        req.onerror = () => resolve(null)
+      })
+    } catch { return null }
   },
   setItem: async (name: string, value: string): Promise<void> => {
-    const dbReq = indexedDB.open('md-reader-zustand', 1)
-    return new Promise((resolve) => {
-      dbReq.onupgradeneeded = () => { dbReq.result.createObjectStore('state') }
-      dbReq.onsuccess = () => {
-        try {
-          const tx = dbReq.result.transaction('state', 'readwrite')
-          tx.objectStore('state').put(value, name)
-          tx.oncomplete = () => resolve()
-        } catch { resolve() }
-      }
-      dbReq.onerror = () => resolve()
-    })
+    try {
+      const db = await getDb()
+      const tx = db.transaction('state', 'readwrite')
+      tx.objectStore('state').put(value, name)
+      await new Promise<void>((resolve) => { tx.oncomplete = () => resolve() })
+    } catch { /* swallow */ }
   },
   removeItem: async (name: string): Promise<void> => {
-    const dbReq = indexedDB.open('md-reader-zustand', 1)
-    return new Promise((resolve) => {
-      dbReq.onupgradeneeded = () => { dbReq.result.createObjectStore('state') }
-      dbReq.onsuccess = () => {
-        try {
-          const tx = dbReq.result.transaction('state', 'readwrite')
-          tx.objectStore('state').delete(name)
-          tx.oncomplete = () => resolve()
-        } catch { resolve() }
-      }
-      dbReq.onerror = () => resolve()
-    })
+    try {
+      const db = await getDb()
+      const tx = db.transaction('state', 'readwrite')
+      tx.objectStore('state').delete(name)
+      await new Promise<void>((resolve) => { tx.oncomplete = () => resolve() })
+    } catch { /* swallow */ }
   },
 }
 
@@ -124,8 +126,13 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
   readScrollTop: 0,
 
   setMarkdown: (md, fileName) => {
-    const count = parseInt(localStorage.getItem('md-reader-docs-read') ?? '0')
-    localStorage.setItem('md-reader-docs-read', String(count + 1))
+    // Only count genuinely new document opens, not re-opens of the same content
+    const prev = useStore.getState().markdown
+    if (md && md.length > 0 && prev !== md) {
+      const count = parseInt(localStorage.getItem('md-reader-docs-read') ?? '0')
+      localStorage.setItem('md-reader-docs-read', String(count + 1))
+      trackEvent('doc_opened')
+    }
     set({ markdown: md, fileName: fileName ?? null, readingProgress: 0, activeSection: null, viewMode: 'read' })
   },
   setFileName: (name) => set({ fileName: name }),
@@ -134,7 +141,15 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
   setActiveSection: (id) => set({ activeSection: id }),
   setTheme: (theme) => { localStorage.setItem('md-reader-theme', theme); set({ theme }) },
   setFontSize: (size) => { localStorage.setItem('md-reader-fontSize', String(size)); set({ fontSize: size }) },
-  setViewMode: (mode) => set({ viewMode: mode }),
+  setViewMode: (mode) => {
+    const viewEvents: Record<string, TelemetryEvent> = {
+      read: 'view_read', mindmap: 'view_mindmap', 'summary-cards': 'view_cards',
+      treemap: 'view_treemap', 'knowledge-graph': 'view_graph', coach: 'view_coach',
+    }
+    const event = viewEvents[mode]
+    if (event) trackEvent(event)
+    set({ viewMode: mode })
+  },
   setTtsPlaying: (playing) => set({ ttsPlaying: playing }),
   setTtsSectionIndex: (index) => set({ ttsSectionIndex: index }),
   setWorkspaceMode: (on) => set({ workspaceMode: on }),
@@ -177,6 +192,5 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
     viewMode: state.viewMode,
     workspaceMode: state.workspaceMode,
     activeDocId: state.activeDocId,
-    readScrollTop: state.readScrollTop,
-  }),
+  }) as unknown as DocumentState, // Safe: persist only serializes these fields; missing fields use defaults on rehydration
 }), { name: 'md-reader', enabled: import.meta.env.DEV }))

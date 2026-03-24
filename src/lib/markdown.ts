@@ -3,27 +3,28 @@ import remarkParse from 'remark-parse'
 import remarkGfm from 'remark-gfm'
 import type { TocEntry } from '../store/useStore'
 
-interface HeadingNode {
+interface AstNode {
+  type: string
+  value?: string
+  children?: AstNode[]
+}
+
+interface HeadingNode extends AstNode {
   type: 'heading'
   depth: number
-  children: Array<{ type: string; value?: string; children?: Array<{ value?: string }> }>
 }
 
 interface RootNode {
   type: 'root'
-  children: Array<HeadingNode | { type: string }>
+  children: Array<HeadingNode | AstNode>
 }
 
-function extractText(node: HeadingNode): string {
+function extractText(node: AstNode): string {
+  if (node.value) return node.value
   let text = ''
-  for (const child of node.children) {
-    if (child.value) {
-      text += child.value
-    }
-    if (child.children) {
-      for (const grandchild of child.children) {
-        if (grandchild.value) text += grandchild.value
-      }
+  if (node.children) {
+    for (const child of node.children) {
+      text += extractText(child)
     }
   }
   return text
@@ -32,7 +33,9 @@ function extractText(node: HeadingNode): string {
 export function slugify(text: string): string {
   return text
     .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
+    .normalize('NFD')                    // decompose accents (é → e + combining accent)
+    .replace(/[\u0300-\u036f]/g, '')     // strip combining diacritical marks
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')  // keep letters (any script), numbers, spaces, hyphens
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .trim()
@@ -95,7 +98,7 @@ export function chunkMarkdown(markdown: string): DocumentChunk[] {
       const level = headingMatch[1].length
       const title = headingMatch[2].trim()
       // Maintain heading stack at the correct depth
-      while (headingStack.length >= level) headingStack.pop()
+      while (headingStack.length > level - 1) headingStack.pop()
       headingStack.push(title)
       currentChunkLines.push(line)
       currentChunkLen += line.length + 1

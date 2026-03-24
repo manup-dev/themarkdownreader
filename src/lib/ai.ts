@@ -4,6 +4,8 @@
  * Supports streaming via onToken callback for all backends.
  */
 
+import { PROMPTS, PROMPT_CONFIG } from './prompts'
+
 // ─── Config ────────────────────────────────────────────────────────────────
 
 const OLLAMA_BASE_URL = (typeof localStorage !== 'undefined' && localStorage.getItem('md-reader-ollama-url')) || import.meta.env.VITE_OLLAMA_URL || 'http://localhost:11434'
@@ -22,9 +24,22 @@ export interface ChatMessage {
   content: string
 }
 
+interface WebLLMEngine {
+  chat: {
+    completions: {
+      create: (opts: {
+        messages: Array<{ role: string; content: string }>
+        temperature: number
+        max_tokens: number
+      }) => Promise<{ choices: Array<{ message: { content: string } }> }>
+    }
+  }
+}
+
 type Backend = 'openrouter' | 'ollama' | 'webllm' | 'none'
 let activeBackend: Backend = 'none'
 let backendDetected = false
+let detectPromise: Promise<Backend> | null = null  // mutex: prevents concurrent detection
 
 export function getActiveBackend(): Backend { return activeBackend }
 
@@ -70,36 +85,44 @@ async function checkOpenRouter(): Promise<boolean> {
 
 export async function detectBestBackend(): Promise<Backend> {
   if (backendDetected) return activeBackend
+  // Mutex: if detection is already running, wait for it instead of starting another
+  if (detectPromise) return detectPromise
+  detectPromise = (async () => {
+    try {
+      // 1. OpenRouter — if user has set an API key
+      if (await checkOpenRouter()) {
+        activeBackend = 'openrouter'
+        backendDetected = true
+        return activeBackend
+      }
 
-  // 1. OpenRouter — if user has set an API key
-  if (await checkOpenRouter()) {
-    activeBackend = 'openrouter'
-    backendDetected = true
-    return 'openrouter'
-  }
+      // 2. Ollama — local server
+      if (await checkOllamaHealth()) {
+        activeBackend = 'ollama'
+        backendDetected = true
+        return activeBackend
+      }
 
-  // 2. Ollama — local server
-  if (await checkOllamaHealth()) {
-    activeBackend = 'ollama'
-    backendDetected = true
-    return 'ollama'
-  }
+      // 3. WebLLM — needs WebGPU
+      if (await checkWebGPU()) {
+        activeBackend = 'webllm'
+        backendDetected = true
+        return activeBackend
+      }
 
-  // 3. WebLLM — needs WebGPU
-  if (await checkWebGPU()) {
-    activeBackend = 'webllm'
-    backendDetected = true
-    return 'webllm'
-  }
-
-  activeBackend = 'none'
-  backendDetected = true
-  return 'none'
+      activeBackend = 'none'
+      backendDetected = true
+      return activeBackend
+    } finally {
+      detectPromise = null
+    }
+  })()
+  return detectPromise
 }
 
 // ─── WebLLM engine (lazy loaded) ───────────────────────────────────────────
 
-let webllmEngine: unknown = null
+let webllmEngine: WebLLMEngine | null = null
 let webllmLoading = false
 let webllmReady = false
 
@@ -111,15 +134,14 @@ export function onWebLLMProgress(cb: (pct: number, text: string) => void) {
   onProgressCallback = cb
 }
 
-let webllmLoadPromise: Promise<unknown> | null = null
+let webllmLoadPromise: Promise<WebLLMEngine> | null = null
 
-async function getWebLLMEngine() {
+async function getWebLLMEngine(): Promise<WebLLMEngine> {
   if (webllmEngine && webllmReady) return webllmEngine
   if (webllmLoading && webllmLoadPromise) {
-    // Wait for existing load instead of busy-polling
     const result = await Promise.race([
       webllmLoadPromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('WebLLM load timeout (120s)')), 120000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('WebLLM load timeout (120s)')), 120000)),
     ])
     if (result) return result
     throw new Error('WebLLM failed to load')
@@ -136,10 +158,10 @@ async function getWebLLMEngine() {
       onProgressCallback?.(webllmProgress, webllmProgressText)
     })
     await engine.reload('Qwen2.5-1.5B-Instruct-q4f16_1-MLC')
-    webllmEngine = engine
+    webllmEngine = engine as unknown as WebLLMEngine
     webllmReady = true
     webllmLoading = false
-    return engine
+    return webllmEngine
   } catch (e) {
     webllmLoading = false
     webllmLoadPromise = null
@@ -171,8 +193,8 @@ async function chatOpenRouterStream(
       model: OPENROUTER_FREE_MODEL,
       messages,
       stream: true,
-      max_tokens: 512,
-      temperature: 0.15,
+      max_tokens: PROMPT_CONFIG.maxTokens,
+      temperature: PROMPT_CONFIG.temperature,
     }),
     signal: signal ?? AbortSignal.timeout(OPENROUTER_TIMEOUT),
   })
@@ -231,7 +253,7 @@ async function chatOllamaStream(
       messages,
       stream: true,
       keep_alive: '30m',
-      options: { num_predict: 256, temperature: 0.3 },
+      options: { num_predict: PROMPT_CONFIG.maxTokens, temperature: PROMPT_CONFIG.temperature },
     }),
     signal: signal ?? AbortSignal.timeout(OLLAMA_TIMEOUT),
   })
@@ -243,12 +265,17 @@ async function chatOllamaStream(
 
   const decoder = new TextDecoder()
   let full = ''
+  let buffer = ''
 
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
-    const text = decoder.decode(value, { stream: true })
-    for (const line of text.split('\n').filter(Boolean)) {
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    // Keep the last potentially incomplete line in the buffer
+    buffer = lines.pop() ?? ''
+    for (const line of lines) {
+      if (!line.trim()) continue
       try {
         const json = JSON.parse(line)
         const token = json.message?.content ?? ''
@@ -256,7 +283,7 @@ async function chatOllamaStream(
           full += token
           onToken?.(token)
         }
-      } catch { /* skip */ }
+      } catch { /* skip malformed */ }
     }
   }
   return full
@@ -277,34 +304,32 @@ export async function chat(
       return await chatOpenRouterStream(messages, onToken, signal)
     } catch (e) {
       console.warn('OpenRouter failed, trying fallbacks:', e)
-      // Fall through to Ollama
+      backendDetected = false  // Re-probe on next call (transient failure recovery)
       const ollamaOk = await checkOllamaHealth()
-      if (ollamaOk) { activeBackend = 'ollama' }
-      else {
-        const hasGPU = await checkWebGPU()
-        if (hasGPU) { activeBackend = 'webllm' }
-        else throw new Error(`OpenRouter failed: ${e instanceof Error ? e.message : e}`)
-      }
+      if (ollamaOk) return chatOllamaStream(messages, onToken, signal)
+      const hasGPU = await checkWebGPU()
+      if (hasGPU) { activeBackend = 'webllm' }
+      else throw new Error(`OpenRouter failed: ${e instanceof Error ? e.message : e}`)
     }
   }
 
   // Try WebLLM
   if (activeBackend === 'webllm') {
     try {
-      const engine = await getWebLLMEngine() as { chat: { completions: { create: (opts: unknown) => Promise<{ choices: Array<{ message: { content: string } }> }> } } }
+      const engine = await getWebLLMEngine()
       const reply = await engine.chat.completions.create({
         messages: messages.map((m) => ({ role: m.role, content: m.content })),
-        temperature: 0.15,
-        max_tokens: 256,
+        temperature: PROMPT_CONFIG.temperature,
+        max_tokens: PROMPT_CONFIG.maxTokens,
       })
       const content = reply.choices[0]?.message?.content ?? ''
       onToken?.(content)
       return content
     } catch {
-      // Fall through to Ollama
+      backendDetected = false  // Re-probe on next call
       const ollamaOk = await checkOllamaHealth()
-      if (ollamaOk) { activeBackend = 'ollama' }
-      else throw new Error('No AI backend available')
+      if (ollamaOk) return chatOllamaStream(messages, onToken, signal)
+      throw new Error('No AI backend available')
     }
   }
 
@@ -321,9 +346,8 @@ export async function chat(
   )
 }
 
-// Prompts are in a separate file (no Vite deps) so the eval system can import them
+// Re-export prompts for consumers
 export { PROMPTS, PROMPT_CONFIG } from './prompts'
-import { PROMPTS, PROMPT_CONFIG } from './prompts'
 
 // ─── High-level AI functions ───────────────────────────────────────────────
 
@@ -395,8 +419,18 @@ function extractConceptsDeterministic(text: string): { nodes: Array<{ id: string
     }
   }
 
-  // Limit to 12 nodes max
-  const limited = nodes.slice(0, 12)
+  // Extract ALL-CAPS acronyms (3+ letters) as "technology" nodes
+  const acronyms = text.match(/\b[A-Z]{3,}\b/g) ?? []
+  for (const a of acronyms) {
+    const id = a.toLowerCase()
+    if (!seen.has(id) && a.length >= 3 && a.length <= 10) {
+      seen.add(id)
+      nodes.push({ id, label: a, type: 'technology' })
+    }
+  }
+
+  // Limit to 25 nodes max
+  const limited = nodes.slice(0, 25)
 
   // Connect nodes that appear in the same section (heading + content block)
   const edges: Array<{ source: string; target: string; label: string }> = []
