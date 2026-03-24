@@ -35,6 +35,7 @@ docs/features/**
 
 # Internal/personal docs
 research.md
+VSCODE_EXTENSION_PLAN.md
 EVAL_*.md
 e2e-user-review.md
 e2e-ux-review.md
