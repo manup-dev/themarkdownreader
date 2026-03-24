@@ -4,6 +4,7 @@ import { AiSettings } from './AiSettings'
 import { useStore, type Theme, type ViewMode } from '../store/useStore'
 import { addDocument } from '../lib/docstore'
 import { getActiveBackend } from '../lib/ai'
+import { trackEvent } from '../lib/telemetry'
 
 const singleDocModes: { value: ViewMode; icon: React.ReactNode; label: string; tooltip: string }[] = [
   { value: 'read', icon: <BookText className="h-3.5 w-3.5" />, label: 'Read', tooltip: 'Distraction-free reading' },
@@ -310,7 +311,7 @@ export function Toolbar() {
                   </>
                 )}
                 <button
-                  onClick={() => { window.print(); setShowMode(false) }}
+                  onClick={() => { window.print(); trackEvent('export_pdf'); setShowMode(false) }}
                   className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
                   <Printer className="h-3.5 w-3.5" />

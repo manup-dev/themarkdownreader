@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
 import { addHighlight, getHighlights, removeHighlight, updateHighlightNote, addComment, addDocument, type Highlight } from '../lib/docstore'
 import { chat } from '../lib/ai'
+import { trackEvent } from '../lib/telemetry'
 
 const COLORS = ['#fef08a', '#bbf7d0', '#bfdbfe', '#fbcfe8', '#fed7aa']
 const COLOR_NAMES: Record<string, string> = {
@@ -105,6 +106,7 @@ export function SelectionMenu() {
     window.getSelection()?.removeAllRanges()
     setMenu(null)
     await refreshHighlights()
+    trackEvent('highlight_added')
   }, [menu, activeDocId, refreshHighlights])
 
   const handleAskAI = useCallback(async (prompt: string) => {
@@ -193,6 +195,7 @@ export function SelectionMenu() {
     setShowCommentInput(false)
     window.getSelection()?.removeAllRanges()
     setMenu(null)
+    trackEvent('comment_added')
     // Notify Reader to refresh inline comment highlights immediately
     window.dispatchEvent(new CustomEvent('md-reader-comment-changed'))
     // Toast notification
@@ -298,7 +301,7 @@ export function SelectionMenu() {
             <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
 
             <button
-              onClick={() => handleAskAI('Explain this concisely in 2-3 sentences. Use simple language.')}
+              onClick={() => { handleAskAI('Explain this concisely in 2-3 sentences. Use simple language.'); trackEvent('ai_explain') }}
               className="p-1.5 text-gray-500 hover:text-blue-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
               title="Explain with AI"
             >
@@ -306,7 +309,7 @@ export function SelectionMenu() {
             </button>
 
             <button
-              onClick={() => handleAskAI('Explain this to a 10-year-old in 2-3 simple sentences. Use everyday words. No jargon.')}
+              onClick={() => { handleAskAI('Explain this to a 10-year-old in 2-3 simple sentences. Use everyday words. No jargon.'); trackEvent('ai_explain') }}
               className="p-1.5 text-gray-500 hover:text-emerald-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
               title="Simplify (ELI5)"
             >

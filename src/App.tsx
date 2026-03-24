@@ -13,6 +13,7 @@ import { ResizeHandle } from './components/ResizeHandle'
 import { KeyboardShortcuts } from './components/KeyboardShortcuts'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { OnboardingOverlay } from './components/OnboardingOverlay'
+import { TelemetryBanner } from './components/TelemetryBanner'
 
 // Lazy load heavy/optional components
 const Chat = lazy(() => import('./components/Chat').then((m) => ({ default: m.Chat })))
@@ -365,6 +366,9 @@ function App() {
 
       {/* Onboarding overlay for first-time users */}
       {showOnboarding && <OnboardingOverlay onComplete={() => setShowOnboarding(false)} />}
+
+      {/* Telemetry opt-in banner (shows once) */}
+      <TelemetryBanner />
     </div>
   )
 }

@@ -6,6 +6,7 @@ import { useStore } from '../store/useStore'
 import { chunkMarkdown } from '../lib/markdown'
 import { searchChunks } from '../lib/embeddings'
 import { askAboutDocument, summarize, detectBestBackend, getActiveBackend, onWebLLMProgress } from '../lib/ai'
+import { trackEvent } from '../lib/telemetry'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -65,6 +66,7 @@ export function Chat() {
       })
       setMessages((prev) => [...prev, { role: 'assistant', content: answer, timestamp: Date.now() }])
       setStreamingText('')
+      trackEvent('ai_chat')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
       if (!msg.includes('abort')) {
@@ -155,6 +157,7 @@ export function Chat() {
                 a.download = `${fileName.replace(/\.md$/, '')}-qa.md`
                 a.click()
                 URL.revokeObjectURL(a.href)
+                trackEvent('export_chat')
               }}
               className="p-1 text-gray-300 hover:text-blue-400 transition-colors rounded"
               title="Export chat as markdown"

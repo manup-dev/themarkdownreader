@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useStore } from '../store/useStore'
+import { trackEvent } from '../lib/telemetry'
 
 const SHORTCUTS = [
   { group: 'Navigation', items: [
@@ -126,6 +127,8 @@ export function KeyboardShortcuts() {
       const target = e.target as HTMLElement
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
 
+      trackEvent('keyboard_shortcut')
+
       switch (e.key) {
         case 'j': {
           if (viewMode !== 'read') return
@@ -161,6 +164,7 @@ export function KeyboardShortcuts() {
         case 'p': {
           if (e.ctrlKey || e.metaKey) return
           e.preventDefault()
+          trackEvent('export_pdf')
           window.print()
           break
         }
@@ -186,6 +190,7 @@ export function KeyboardShortcuts() {
           }
           // Plain 'b' — bionic reading mode
           if (viewMode !== 'read') return
+          trackEvent('bionic_toggle')
           const article = document.querySelector('article')
           if (!article) return
           // Toggle off
@@ -234,6 +239,7 @@ export function KeyboardShortcuts() {
         case 'r': {
           if (e.ctrlKey || e.metaKey) return
           if (viewMode !== 'read') return
+          trackEvent('focus_mode_toggle')
           const body = document.body
           const isFP = body.classList.contains('focus-paragraph')
           if (isFP) {
@@ -264,6 +270,7 @@ export function KeyboardShortcuts() {
         case 'h': {
           if (e.ctrlKey || e.metaKey) return
           if (viewMode !== 'read') return
+          trackEvent('heatmap_toggle')
           const article = document.querySelector('article')
           if (!article) return
           // Toggle: if heatmap is on, remove it
@@ -369,6 +376,7 @@ export function KeyboardShortcuts() {
         case 's': {
           if (e.ctrlKey || e.metaKey) return
           if (viewMode !== 'read') return
+          trackEvent('auto_scroll_toggle')
           const reader = document.querySelector('[class*="overflow-y-auto"]') as HTMLElement
           if (!reader) return
           if (autoScrollRef.current) {

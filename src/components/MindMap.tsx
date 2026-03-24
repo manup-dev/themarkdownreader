@@ -3,6 +3,7 @@ import { Download, Maximize2, Layers, Target, ChevronDown, ChevronUp } from 'luc
 import { Transformer } from 'markmap-lib'
 import { Markmap } from 'markmap-view'
 import { useStore } from '../store/useStore'
+import { trackEvent } from '../lib/telemetry'
 
 const transformer = new Transformer()
 
@@ -298,7 +299,7 @@ export function MindMapView() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setMaxDepth((d) => Math.max(1, d - 1))}
+              onClick={() => { setMaxDepth((d) => Math.max(1, d - 1)); trackEvent('mindmap_depth_change') }}
               className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               disabled={maxDepth <= 1}
               aria-label="Decrease depth"
@@ -310,12 +311,12 @@ export function MindMapView() {
               min={1}
               max={7}
               value={Math.min(maxDepth, 7)}
-              onChange={(e) => setMaxDepth(parseInt(e.target.value))}
+              onChange={(e) => { setMaxDepth(parseInt(e.target.value)); trackEvent('mindmap_depth_change') }}
               className="flex-1 h-1.5 accent-blue-500"
               aria-label="Mind map depth level"
             />
             <button
-              onClick={() => setMaxDepth((d) => Math.min(10, d + 1))}
+              onClick={() => { setMaxDepth((d) => Math.min(10, d + 1)); trackEvent('mindmap_depth_change') }}
               className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               disabled={maxDepth >= 7}
               aria-label="Increase depth"
@@ -327,7 +328,7 @@ export function MindMapView() {
             {[1, 2, 3, 4].map((d) => (
               <button
                 key={d}
-                onClick={() => setMaxDepth(d)}
+                onClick={() => { setMaxDepth(d); trackEvent('mindmap_depth_change') }}
                 className={`flex-1 text-[10px] py-0.5 rounded ${
                   maxDepth === d
                     ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-medium'
@@ -338,7 +339,7 @@ export function MindMapView() {
               </button>
             ))}
             <button
-              onClick={() => setMaxDepth(10)}
+              onClick={() => { setMaxDepth(10); trackEvent('mindmap_depth_change') }}
               className={`flex-1 text-[10px] py-0.5 rounded ${
                 maxDepth > 6
                   ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-medium'

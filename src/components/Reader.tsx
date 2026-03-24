@@ -8,6 +8,7 @@ import rehypeKatex from 'rehype-katex'
 import { useStore } from '../store/useStore'
 import { extractToc, wordCount, estimateDifficulty, slugify } from '../lib/markdown'
 import { getComments, updateComment, removeComment, type Comment } from '../lib/docstore'
+import { trackEvent } from '../lib/telemetry'
 
 // Delight #24: Click heading to copy anchor link
 function HeadingRenderer(level: number) {
@@ -415,6 +416,7 @@ export function Reader() {
     const scrollHeight = el.scrollHeight - el.clientHeight
     const progress = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0
     setReadingProgress(Math.min(100, progress))
+    if (progress >= 100 && useStore.getState().readingProgress < 100) trackEvent('reading_completed')
 
     // Live WPM calculation
     const now = Date.now()

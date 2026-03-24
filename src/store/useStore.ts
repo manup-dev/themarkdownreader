@@ -139,7 +139,13 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
   setToc: (toc) => set({ toc }),
   setReadingProgress: (progress) => set({ readingProgress: progress }),
   setActiveSection: (id) => set({ activeSection: id }),
-  setTheme: (theme) => { localStorage.setItem('md-reader-theme', theme); set({ theme }) },
+  setTheme: (theme) => {
+    localStorage.setItem('md-reader-theme', theme)
+    const themeEvents: Record<string, TelemetryEvent> = { dark: 'theme_dark', sepia: 'theme_sepia', light: 'theme_light', 'high-contrast': 'theme_high_contrast' }
+    const event = themeEvents[theme]
+    if (event) trackEvent(event)
+    set({ theme })
+  },
   setFontSize: (size) => { localStorage.setItem('md-reader-fontSize', String(size)); set({ fontSize: size }) },
   setViewMode: (mode) => {
     const viewEvents: Record<string, TelemetryEvent> = {

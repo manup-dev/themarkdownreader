@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Play, Pause, Square, SkipForward, SkipBack, Volume2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { tts, type TtsState } from '../lib/tts'
+import { trackEvent } from '../lib/telemetry'
 
 export function TtsPlayer() {
   const markdown = useStore((s) => s.markdown)
@@ -44,6 +45,7 @@ export function TtsPlayer() {
     } else {
       tts.play(state.currentSection)
     }
+    trackEvent('tts_play')
   }, [state])
 
   const handlePause = useCallback(() => { tts.pause() }, [])

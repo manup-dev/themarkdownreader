@@ -5,6 +5,7 @@ import { addDocument, removeDocument, getAllDocuments, getDocStats, clearAllData
 import { openDirectory, hasDirectoryAccess } from '../lib/fs-access'
 import { generateCollectionOverview, askAcrossDocuments } from '../lib/correlate'
 import { estimateDifficulty } from '../lib/markdown'
+import { trackEvent } from '../lib/telemetry'
 
 function IndexProgressDisplay({ progress }: { progress: { current: number; total: number; fileName: string; startedAt: number; errors: string[] } }) {
   const [elapsed, setElapsed] = useState(0)
@@ -108,6 +109,7 @@ export function Workspace() {
   const refresh = useCallback(async () => {
     const allDocs = await getAllDocuments()
     setDocs(allDocs)
+    if (allDocs.length >= 2) trackEvent('library_multi_doc')
     const s = await getDocStats()
     setStats(s)
   }, [])

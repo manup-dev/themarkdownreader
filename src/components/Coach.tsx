@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
 import { chunkMarkdown } from '../lib/markdown'
 import { generateCoachExplanation, generateQuiz, detectBestBackend, summarizeSection } from '../lib/ai'
+import { trackEvent } from '../lib/telemetry'
 
 interface QuizQuestion {
   question: string
@@ -70,6 +71,7 @@ export function CoachView() {
       )
       setCoaching(explanation)
       setCompletedSections((prev) => new Set([...prev, sectionIndex]))
+      trackEvent('ai_coach')
     } catch {
       setCoaching('Could not generate coaching. Make sure Ollama is running.')
     }
@@ -421,6 +423,7 @@ export function CoachView() {
               <button
                 onClick={() => {
                   setShowExplanations(true)
+                  trackEvent('ai_quiz')
                   const pct = Math.round((score / quiz.length) * 100)
                   const updated = { ...sectionScores, [sectionIndex]: pct }
                   setSectionScores(updated)

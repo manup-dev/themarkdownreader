@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Key, Server, Zap, Check, X, Eye, EyeOff, ExternalLink, Settings } from 'lucide-react'
+import { Key, Server, Zap, Check, X, Eye, EyeOff, ExternalLink, Settings, BarChart3 } from 'lucide-react'
 import { setApiKey, getApiKey, clearApiKey, detectBestBackend, getActiveBackend, checkOllamaHealth } from '../lib/ai'
+import { isTelemetryEnabled, enableTelemetry, disableTelemetry, exportTelemetry, clearTelemetry, TRACKED_EVENTS } from '../lib/telemetry'
 
 // Use same key as ai.ts to avoid duplication
 const LS_OLLAMA_URL = 'md-reader-ollama-url'
@@ -187,6 +188,11 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
 
       <hr className="border-gray-200 dark:border-gray-700" />
 
+      {/* Telemetry */}
+      <TelemetrySection />
+
+      <hr className="border-gray-200 dark:border-gray-700" />
+
       {/* Save & Close */}
       <button
         type="button"
@@ -196,6 +202,102 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
         <Check className="h-3.5 w-3.5" />
         Save &amp; Close
       </button>
+    </div>
+  )
+}
+
+function TelemetrySection() {
+  const [enabled, setEnabled] = useState(() => isTelemetryEnabled())
+  const [showEvents, setShowEvents] = useState(false)
+
+  const handleToggle = () => {
+    if (enabled) {
+      disableTelemetry()
+      setEnabled(false)
+    } else {
+      enableTelemetry()
+      setEnabled(true)
+    }
+  }
+
+  const handleExport = () => {
+    const data = exportTelemetry()
+    if (!data) return
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = 'md-reader-telemetry.json'
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
+  const handleClear = () => {
+    if (!window.confirm('Delete all telemetry data?')) return
+    clearTelemetry()
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
+          <BarChart3 className="h-3.5 w-3.5" />
+          Anonymous Analytics
+        </label>
+        <button
+          onClick={handleToggle}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+            enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+          }`}
+        >
+          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+            enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'
+          }`} />
+        </button>
+      </div>
+      <p className="text-[10px] text-gray-400 leading-relaxed">
+        {enabled
+          ? 'Sharing anonymous feature usage stats. No personal data.'
+          : 'Analytics disabled. No data is being collected.'}
+      </p>
+
+      {enabled && (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExport}
+            className="text-[10px] text-blue-500 hover:text-blue-600"
+          >
+            Export my data
+          </button>
+          <span className="text-gray-300 dark:text-gray-600">|</span>
+          <button
+            onClick={handleClear}
+            className="text-[10px] text-red-400 hover:text-red-500"
+          >
+            Delete my data
+          </button>
+        </div>
+      )}
+
+      <button
+        onClick={() => setShowEvents(!showEvents)}
+        className="self-start text-[10px] text-blue-500 hover:text-blue-600"
+      >
+        {showEvents ? 'Hide tracked events' : 'See what\'s tracked'}
+      </button>
+
+      {showEvents && (
+        <div className="max-h-32 overflow-y-auto border border-gray-100 dark:border-gray-800 rounded-lg p-2 text-[10px]">
+          {TRACKED_EVENTS.map((e) => (
+            <div key={e.event} className="flex justify-between py-0.5 text-gray-500 dark:text-gray-400">
+              <span className="font-mono">{e.event}</span>
+              <span className="text-gray-400 ml-2 truncate">{e.description}</span>
+            </div>
+          ))}
+          <p className="text-gray-400 mt-1.5 pt-1.5 border-t border-gray-100 dark:border-gray-800">
+            Never: file contents, filenames, emails, API keys, or personal data.
+          </p>
+        </div>
+      )}
     </div>
   )
 }
