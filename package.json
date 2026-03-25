@@ -42,6 +42,7 @@
     "graphology-communities-louvain": "^2.0.2",
     "graphology-metrics": "^2.4.0",
     "lucide-react": "^0.577.0",
+    "markmap-common": "^0.18.9",
     "markmap-lib": "^0.18.12",
     "markmap-view": "^0.18.12",
     "minisearch": "^7.2.0",
