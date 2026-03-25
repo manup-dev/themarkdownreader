@@ -10,7 +10,7 @@ function CollectionHeading(level: number) {
   return function Heading({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
     const text = typeof children === 'string' ? children : String(children ?? '')
     const id = slugify(text)
-    const Tag = `h${level}` as keyof JSX.IntrinsicElements
+    const Tag = `h${level}` as any
     return <Tag id={id} {...props} className="scroll-mt-16">{children}</Tag>
   }
 }

@@ -189,6 +189,21 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
       await idbStorage.removeItem(name)
     },
   },
+  // If opened via browser extension (#url=...), clear rehydrated markdown so the extension handler loads fresh content
+  merge: (persisted, current) => {
+    const merged = { ...current, ...(persisted as Partial<DocumentState>) }
+    // When opened via browser extension, clear cached content so fresh content loads
+    const hash = typeof window !== 'undefined' ? window.location.hash : ''
+    if (hash.startsWith('#md=') || hash.startsWith('#url=') || hash === '#ext-pending') {
+      merged.markdown = ''
+      merged.fileName = null
+      merged.toc = []
+      merged.readingProgress = 0
+      merged.activeSection = null
+      merged.activeDocId = null
+    }
+    return merged
+  },
   partialize: (state) => ({
     markdown: state.markdown,
     fileName: state.fileName,

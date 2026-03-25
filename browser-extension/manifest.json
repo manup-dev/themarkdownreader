@@ -1,18 +1,19 @@
 {
   "manifest_version": 3,
-  "name": "md-reader for GitHub",
-  "version": "0.1.0",
-  "description": "Read GitHub markdown files beautifully with mind maps, AI chat, TTS, and visual exploration",
-  "permissions": ["activeTab"],
+  "name": "md-reader",
+  "version": "0.2.0",
+  "description": "Enhanced reading for markdown files — TOC, reading progress, TTS, dark mode. Works on GitHub, GitLab, Gitea, and any site with markdown.",
+  "permissions": ["activeTab", "storage"],
   "icons": {
     "48": "icon48.png",
     "128": "icon128.png"
   },
   "content_scripts": [
     {
-      "matches": ["https://github.com/*"],
-      "js": ["content.js"],
-      "css": ["content.css"]
+      "matches": ["<all_urls>"],
+      "js": ["markmap-bundle.js", "content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
     }
   ],
   "action": {

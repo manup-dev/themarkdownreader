@@ -6,7 +6,6 @@ import { trackEvent } from '../lib/telemetry'
 
 export function TtsPlayer() {
   const markdown = useStore((s) => s.markdown)
-  const theme = useStore((s) => s.theme)
   const toc = useStore((s) => s.toc)
   const setTtsPlaying = useStore((s) => s.setTtsPlaying)
   const setTtsSectionIndex = useStore((s) => s.setTtsSectionIndex)

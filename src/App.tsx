@@ -56,7 +56,57 @@ function App() {
   const [fabMenuOpen, setFabMenuOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [mobileTocOpen, setMobileTocOpen] = useState(false)
+  const setMarkdown = useStore((s) => s.setMarkdown)
   const activeDocId = useStore((s) => s.activeDocId)
+
+  // Browser extension: handle incoming markdown from extension
+  useEffect(() => {
+    const hash = window.location.hash
+
+    // Handle #md=<base64> — inline markdown payload from extension
+    if (hash.startsWith('#md=')) {
+      const encoded = hash.slice(4)
+      window.history.replaceState(null, '', window.location.pathname)
+      try {
+        const json = decodeURIComponent(escape(atob(encoded)))
+        const { markdown: md, fileName } = JSON.parse(json)
+        if (md) setMarkdown(md, fileName || 'document.md')
+      } catch (err) {
+        console.error('md-reader: Failed to decode extension payload:', err)
+      }
+      return
+    }
+
+    // Handle #url=<encoded-url> — fetch raw content (public repos only)
+    if (hash.startsWith('#url=')) {
+      const encodedUrl = hash.slice(5)
+      window.history.replaceState(null, '', window.location.pathname)
+      try {
+        const targetUrl = decodeURIComponent(encodedUrl)
+        if (!targetUrl.startsWith('https://') && !targetUrl.startsWith('http://')) return
+        const fileName = targetUrl.split('/').pop() || 'document.md'
+        fetch(targetUrl)
+          .then((res) => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.text() })
+          .then((md) => setMarkdown(md, fileName))
+          .catch((err) => console.error('md-reader: Failed to fetch from extension URL:', err))
+      } catch { /* invalid URL encoding */ }
+      return
+    }
+
+    // Handle #ext-pending — large file fallback, wait for postMessage
+    if (hash === '#ext-pending') {
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+
+    // Listen for postMessage from extension (large file fallback)
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'md-reader-load' && event.data.markdown) {
+        setMarkdown(event.data.markdown, event.data.fileName || 'document.md')
+      }
+    }
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [setMarkdown])
 
   // Trigger onboarding on first document load
   useEffect(() => {

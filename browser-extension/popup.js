@@ -1,4 +1,4 @@
-const DEFAULT_URL = 'https://md-reader.netlify.app'
+const DEFAULT_URL = 'http://localhost:5183'
 
 // Load saved URL
 const urlInput = document.getElementById('readerUrl')

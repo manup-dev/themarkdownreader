@@ -22,23 +22,7 @@ export function Upload() {
 
   // Browser extension support: handle #url= hash and postMessage from extension
   useEffect(() => {
-    // Handle #url=<encoded-url> from browser extension
-    const hash = window.location.hash
-    if (hash.startsWith('#url=')) {
-      const encodedUrl = hash.slice(5)
-      try {
-        const targetUrl = decodeURIComponent(encodedUrl)
-        // Validate protocol to prevent javascript: XSS
-        if (targetUrl.startsWith('https://') || targetUrl.startsWith('http://')) {
-          setUrl(targetUrl)
-          setTimeout(() => {
-            const btn = document.querySelector('[data-fetch-btn]') as HTMLButtonElement
-            btn?.click()
-          }, 300)
-        }
-        window.history.replaceState(null, '', window.location.pathname)
-      } catch { /* invalid URL encoding */ }
-    }
+    // Note: #url= hash handling is done in App.tsx so it works even when Upload isn't mounted
 
     // Handle postMessage from browser extension (validate origin)
     const handleMessage = (event: MessageEvent) => {
