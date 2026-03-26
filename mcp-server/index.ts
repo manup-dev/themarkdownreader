@@ -47,18 +47,26 @@ async function openView(absPath: string, view: string, extra?: Record<string, st
     ...extra,
   })
 
-  // VS Code integration: write trigger file + open the .md file in VS Code
-  const triggerPath = path.join(PROJECT_ROOT, '.md-reader-trigger.json')
+  // VS Code integration: POST to extension's HTTP server
+  const portFile = path.join(PROJECT_ROOT, '.md-reader-mcp-port')
   try {
-    const { execFileSync } = await import('child_process')
-    // Write trigger file BEFORE opening the file — extension watches for it
-    fs.writeFileSync(triggerPath, JSON.stringify({ file: absPath, view, ...extra, ts: Date.now() }))
-    // Open the .md file in VS Code — this activates the extension which reads the trigger
-    execFileSync('/snap/bin/code', [absPath], { stdio: 'ignore', timeout: 3000 })
-    return `vscode: opened ${relativePath} in ${view} view`
+    if (fs.existsSync(portFile)) {
+      const port = parseInt(fs.readFileSync(portFile, 'utf-8').trim())
+      if (port > 0) {
+        const body = JSON.stringify({ file: absPath, view, ...extra })
+        const res = await fetch(`http://127.0.0.1:${port}/open`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+          signal: AbortSignal.timeout(5000),
+        })
+        if (res.ok) {
+          return `vscode: opened ${relativePath} in ${view} view`
+        }
+      }
+    }
   } catch {
-    // code CLI not available — clean up trigger and fall back to browser
-    try { fs.unlinkSync(triggerPath) } catch {}
+    // VS Code extension not running or request failed — fall back to browser
   }
 
   // Browser fallback: health check + open in default browser

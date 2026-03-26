@@ -53,4 +53,4 @@ vscode-extension/dist/
 vscode-extension/webview/dist/
 vscode-extension/tsconfig.tsbuildinfo
 vscode-extension/*.vsix
-.md-reader-trigger.json
+.md-reader-mcp-port

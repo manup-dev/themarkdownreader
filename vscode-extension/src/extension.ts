@@ -1,6 +1,7 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
 import * as fs from 'fs'
+import * as http from 'http'
 import { ReaderPanel } from './ReaderPanel'
 
 const WORDS_PER_MINUTE = 230
@@ -249,104 +250,71 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.executeCommand('setContext', 'md-reader.panelActive', active)
   }
 
-  // ── URI Handler (MCP integration) ──────────────────────────────────
-  // Handles: vscode://md-reader.md-reader/open?file=<path>&view=<mode>&tts=true&section=<heading>
-  // Triggered by the MCP server when running inside VS Code
-  context.subscriptions.push(
-    vscode.window.registerUriHandler({
-      async handleUri(uri: vscode.Uri) {
-        if (uri.path !== '/open') return
-
-        const params = new URLSearchParams(uri.query)
-        const filePath = params.get('file')
-        const view = params.get('view') || 'read'
-        const tts = params.get('tts') === 'true'
-
-        if (!filePath) {
-          vscode.window.showErrorMessage('md-reader: Missing file parameter in URI')
+  // ── MCP HTTP server ─────────────────────────────────────────────
+  // Starts a localhost HTTP server so the MCP server can reliably trigger views.
+  // Port is written to .md-reader-mcp-port for discovery.
+  {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    if (workspaceRoot) {
+      const portFile = path.join(workspaceRoot, '.md-reader-mcp-port')
+      const server = http.createServer(async (req, res) => {
+        if (req.method !== 'POST' || req.url !== '/open') {
+          res.writeHead(404)
+          res.end('Not found')
           return
         }
 
-        // Resolve the file path
-        const resolvedPath = path.isAbsolute(filePath)
-          ? filePath
-          : path.resolve(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '', filePath)
-
-        if (!fs.existsSync(resolvedPath)) {
-          vscode.window.showErrorMessage(`md-reader: File not found: ${filePath}`)
+        // Read JSON body
+        let body = ''
+        for await (const chunk of req) body += chunk
+        let trigger: { file: string; view: string; tts?: string; section?: string }
+        try {
+          trigger = JSON.parse(body)
+        } catch {
+          res.writeHead(400)
+          res.end('Invalid JSON')
           return
         }
 
-        // Open the file in the editor (Column One) so it's visible alongside the reader
-        const doc = await vscode.workspace.openTextDocument(resolvedPath)
+        const filePath = trigger.file
+        if (!filePath || !fs.existsSync(filePath)) {
+          res.writeHead(404)
+          res.end('File not found')
+          return
+        }
+
+        // Open the file in the editor
+        const doc = await vscode.workspace.openTextDocument(filePath)
         await vscode.window.showTextDocument(doc, vscode.ViewColumn.One)
 
-        // Open the reader panel with the requested view
-        const viewMap: Record<string, string> = {
-          'read': 'read',
-          'mindmap': 'mindmap',
-          'knowledge-graph': 'knowledge-graph',
-          'treemap': 'treemap',
-          'coach': 'coach',
-          'summary-cards': 'summary-cards',
-        }
-        ReaderPanel.createOrShow(context, viewMap[view] || 'read')
+        // Open reader panel with the requested view
+        ReaderPanel.createOrShow(context, trigger.view || 'read')
 
-        // Load content directly — handles both fresh panel (queues for 'ready') and existing panel
+        // Send content directly via loadContent
         const content = doc.getText()
-        const fileName = path.basename(resolvedPath)
-        ReaderPanel.current?.loadContent(content, fileName, view)
+        const fileName = path.basename(filePath)
+        ReaderPanel.current?.loadContent(content, fileName, trigger.view)
 
-        if (tts) {
+        if (trigger.tts === 'true') {
           setTimeout(() => ReaderPanel.current?.postMessage({ type: 'readAloud' }), 1500)
         }
-      },
-    }),
-  )
 
-  // ── MCP trigger file watcher ─────────────────────────────────────
-  // The MCP server writes .md-reader-trigger.json, we pick it up and open the view
-  {
-    const folders = vscode.workspace.workspaceFolders
-    if (folders) {
-      const triggerPattern = new vscode.RelativePattern(folders[0], '.md-reader-trigger.json')
-      const watcher = vscode.workspace.createFileSystemWatcher(triggerPattern)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true }))
+      })
 
-      const handleTrigger = async () => {
-        const triggerPath = path.join(folders[0].uri.fsPath, '.md-reader-trigger.json')
-        if (!fs.existsSync(triggerPath)) return
+      server.listen(0, '127.0.0.1', () => {
+        const addr = server.address() as { port: number }
+        fs.writeFileSync(portFile, String(addr.port))
+      })
 
-        try {
-          const raw = fs.readFileSync(triggerPath, 'utf-8')
-          const trigger = JSON.parse(raw) as { file: string; view: string; tts?: string }
-          fs.unlinkSync(triggerPath) // Clean up immediately
-
-          const filePath = trigger.file
-          if (!filePath || !fs.existsSync(filePath)) return
-
-          // Open the file in editor
-          const doc = await vscode.workspace.openTextDocument(filePath)
-          await vscode.window.showTextDocument(doc, vscode.ViewColumn.One)
-
-          // Open reader panel with the requested view
-          ReaderPanel.createOrShow(context, trigger.view || 'read')
-
-          // Send content directly via loadContent
-          const content = doc.getText()
-          const fileName = path.basename(filePath)
-          ReaderPanel.current?.loadContent(content, fileName, trigger.view)
-
-          if (trigger.tts === 'true') {
-            setTimeout(() => ReaderPanel.current?.postMessage({ type: 'readAloud' }), 1500)
-          }
-        } catch (err) {
-          console.error('md-reader: trigger file error:', err)
-        }
-      }
-
-      watcher.onDidCreate(handleTrigger)
-      watcher.onDidChange(handleTrigger)
-      context.subscriptions.push(watcher)
+      // Cleanup on deactivate
+      context.subscriptions.push({
+        dispose() {
+          server.close()
+          try { fs.unlinkSync(portFile) } catch {}
+        },
+      })
     }
   }
 
