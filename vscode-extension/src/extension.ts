@@ -277,7 +277,7 @@ export function activate(context: vscode.ExtensionContext) {
           return
         }
 
-        // Open the file in the editor
+        // Open the file in the editor (Column One) so it's visible alongside the reader
         const doc = await vscode.workspace.openTextDocument(resolvedPath)
         await vscode.window.showTextDocument(doc, vscode.ViewColumn.One)
 
@@ -292,10 +292,20 @@ export function activate(context: vscode.ExtensionContext) {
         }
         ReaderPanel.createOrShow(context, viewMap[view] || 'read')
 
-        // If TTS requested, trigger it after panel is ready
-        if (tts) {
-          setTimeout(() => ReaderPanel.current?.postMessage({ type: 'readAloud' }), 800)
+        // Directly send the file content to the webview panel.
+        // We can't rely on sendCurrentEditor() because creating the webview
+        // panel shifts focus away from the text editor, making activeTextEditor undefined.
+        const content = doc.getText()
+        const fileName = path.basename(resolvedPath)
+        const sendContent = () => {
+          ReaderPanel.current?.postMessage({ type: 'setMarkdown', content, fileName })
+          if (tts) {
+            ReaderPanel.current?.postMessage({ type: 'readAloud' })
+          }
         }
+        // Send immediately and again after webview is ready (covers both fresh and reuse cases)
+        setTimeout(sendContent, 500)
+        setTimeout(sendContent, 1500)
       },
     }),
   )
