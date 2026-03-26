@@ -1,9 +1,52 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import fs from 'fs'
+import path from 'path'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: 'md-reader-file-api',
+      configureServer(server) {
+        server.middlewares.use('/api/file', (req, res) => {
+          const url = new URL(req.url!, `http://${req.headers.host}`)
+          const filePath = url.searchParams.get('path')
+
+          if (!filePath) {
+            res.statusCode = 400
+            res.end('Missing ?path= parameter')
+            return
+          }
+
+          const resolved = path.resolve(filePath)
+          const root = server.config.root
+
+          // Security: must be within project root and be a .md file
+          if (!resolved.startsWith(root)) {
+            res.statusCode = 403
+            res.end('Path outside project root')
+            return
+          }
+          if (!resolved.endsWith('.md')) {
+            res.statusCode = 400
+            res.end('Only .md files are supported')
+            return
+          }
+          if (!fs.existsSync(resolved)) {
+            res.statusCode = 404
+            res.end('File not found')
+            return
+          }
+
+          res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+          res.end(fs.readFileSync(resolved, 'utf-8'))
+        })
+      },
+    },
+  ],
   server: {
     host: '0.0.0.0',
     port: 5183,
