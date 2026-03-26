@@ -282,6 +282,42 @@ npm run eval  # Runs 15 tests, reports score out of 100
 | TTS narration | 1 | 100/100 |
 | Coach explanation | 1 | ~80/100 |
 
+## Claude Code Integration (MCP)
+
+md-reader can serve as a visual companion for Claude Code. Claude reasons about your docs; md-reader visualizes them.
+
+### Setup
+
+1. Start the dev server: `npm run dev`
+2. Install MCP server dependencies: `cd mcp-server && npm install`
+3. Add to your Claude Code MCP config (`.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "md-reader": {
+      "command": "npx",
+      "args": ["tsx", "mcp-server/index.ts"],
+      "cwd": "/path/to/md-reader"
+    }
+  }
+}
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `show_mind_map` | Interactive mind map of a markdown file |
+| `show_knowledge_graph` | Force-directed concept network |
+| `show_treemap` | Section-size proportional treemap |
+| `read_aloud` | Text-to-speech narration |
+| `show_coach` | AI coach with explanations + quizzes |
+
+### Example
+
+Ask Claude: *"Show me a mind map of docs/architecture.md"* — Claude invokes the tool and your browser opens the interactive visualization.
+
 ## License
 
 MIT
