@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
 import { MessageSquare, MessageSquareText, PanelLeftClose, PanelLeftOpen, Loader2, Menu, Volume2, X } from 'lucide-react'
 import { useStore, type ViewMode } from './store/useStore'
 import { getCommentCount } from './lib/docstore'
+import { extractToc } from './lib/markdown'
 import { Upload } from './components/Upload'
 import { Reader } from './components/Reader'
 import { Toolbar } from './components/Toolbar'
@@ -106,6 +107,70 @@ function App() {
     }
     window.addEventListener('message', handleMessage)
     return () => window.removeEventListener('message', handleMessage)
+  }, [setMarkdown])
+
+  // MCP integration: handle #file=<path>&view=<mode> from MCP server
+  useEffect(() => {
+    const hash = window.location.hash
+    if (!hash.includes('file=')) return
+
+    // Parse hash params: #file=<path>&view=<mode>&tts=true&section=<heading>
+    const params = new URLSearchParams(hash.slice(1))
+    const filePath = params.get('file')
+    const view = (params.get('view') || 'read') as ViewMode
+    const tts = params.get('tts') === 'true'
+    const section = params.get('section')
+
+    if (!filePath) return
+
+    // Clear hash immediately so browser history useEffect doesn't conflict
+    window.history.replaceState(null, '', window.location.pathname)
+
+    // Note: URLSearchParams.get() already decodes percent-encoding, so no
+    // additional decodeURIComponent() call is needed here.
+    const fileName = filePath.split('/').pop() || 'document.md'
+
+    fetch(`/api/file?path=${encodeURIComponent(filePath)}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load file: HTTP ${res.status}`)
+        return res.text()
+      })
+      .then((md) => {
+        setMarkdown(md, fileName)
+        useStore.getState().setViewMode(view)
+
+        // Compute TOC locally — the store's toc is populated by Reader's
+        // useEffect which hasn't run yet at this point
+        const toc = extractToc(md)
+
+        // Start TTS if requested
+        if (tts) {
+          import('./lib/tts').then(({ tts: ttsEngine }) => {
+            ttsEngine.loadMarkdown(md)
+            if (section) {
+              // Case-insensitive substring match for section heading
+              const matchIdx = toc.findIndex((t) =>
+                t.text.toLowerCase().includes(section.toLowerCase())
+              )
+              ttsEngine.play(matchIdx >= 0 ? matchIdx : 0)
+            } else {
+              ttsEngine.play(0)
+            }
+            useStore.getState().setTtsPlaying(true)
+          })
+        }
+
+        // Navigate to section if specified (for coach view)
+        if (section && !tts) {
+          const match = toc.find((t) =>
+            t.text.toLowerCase().includes(section.toLowerCase())
+          )
+          if (match) {
+            useStore.getState().setActiveSection(match.id)
+          }
+        }
+      })
+      .catch((err) => console.error('md-reader: MCP file load failed:', err))
   }, [setMarkdown])
 
   // Trigger onboarding on first document load
