@@ -292,20 +292,14 @@ export function activate(context: vscode.ExtensionContext) {
         }
         ReaderPanel.createOrShow(context, viewMap[view] || 'read')
 
-        // Directly send the file content to the webview panel.
-        // We can't rely on sendCurrentEditor() because creating the webview
-        // panel shifts focus away from the text editor, making activeTextEditor undefined.
+        // Load content directly — handles both fresh panel (queues for 'ready') and existing panel
         const content = doc.getText()
         const fileName = path.basename(resolvedPath)
-        const sendContent = () => {
-          ReaderPanel.current?.postMessage({ type: 'setMarkdown', content, fileName })
-          if (tts) {
-            ReaderPanel.current?.postMessage({ type: 'readAloud' })
-          }
+        ReaderPanel.current?.loadContent(content, fileName, view)
+
+        if (tts) {
+          setTimeout(() => ReaderPanel.current?.postMessage({ type: 'readAloud' }), 1500)
         }
-        // Send immediately and again after webview is ready (covers both fresh and reuse cases)
-        setTimeout(sendContent, 500)
-        setTimeout(sendContent, 1500)
       },
     }),
   )

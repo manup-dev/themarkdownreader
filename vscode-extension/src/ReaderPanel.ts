@@ -24,6 +24,9 @@ export class ReaderPanel {
   private lastWordCount = 0
   private currentFileName = ''
 
+  // Pending content to send when webview is ready (set by loadContent before 'ready' fires)
+  private pendingContent: { content: string; fileName: string; view?: string } | null = null
+
   public static createOrShow(context: vscode.ExtensionContext, defaultView = 'read') {
     const column = vscode.ViewColumn.Beside
 
@@ -98,11 +101,35 @@ export class ReaderPanel {
     }
   }
 
+  /** Load specific content + view, handling the case where webview isn't ready yet */
+  public loadContent(content: string, fileName: string, view?: string) {
+    this.pendingContent = { content, fileName, view }
+    // Try sending immediately (works if webview is already mounted)
+    this.sendPendingContent()
+  }
+
+  private sendPendingContent() {
+    if (!this.pendingContent) return
+    const { content, fileName, view } = this.pendingContent
+    this.currentFileName = fileName
+    this.lastWordCount = content.split(/\s+/).filter(Boolean).length
+    this.panel.webview.postMessage({ type: 'setMarkdown', content, fileName })
+    if (view) {
+      this.panel.webview.postMessage({ type: 'config', defaultView: view })
+    }
+    this.pendingContent = null
+  }
+
   private handleMessage(message: { type: string; [key: string]: unknown }) {
     switch (message.type) {
       case 'ready':
-        this.sendCurrentEditor()
         this.sendConfig()
+        // If content was queued before webview was ready (e.g., from URI handler), send it now
+        if (this.pendingContent) {
+          this.sendPendingContent()
+        } else {
+          this.sendCurrentEditor()
+        }
         break
 
       case 'navigate': {
