@@ -22,6 +22,11 @@ export default defineConfig({
     alias: {
       // Reuse components from the main app
       '@app': path.resolve(__dirname, '../../src'),
+      // Force single React instance — prevents "Cannot read properties of null (reading 'useCallback')"
+      // when @app components use a different React than the webview's own copy
+      'react': path.resolve(__dirname, 'node_modules/react'),
+      'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
+      'react/jsx-runtime': path.resolve(__dirname, 'node_modules/react/jsx-runtime'),
     },
   },
 })

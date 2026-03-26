@@ -7,7 +7,6 @@ import { z } from 'zod'
 
 const PROJECT_ROOT = process.cwd()
 const MD_READER_URL = process.env.MD_READER_URL || 'http://localhost:5183'
-const IS_VSCODE = !!(process.env.VSCODE_IPC_HOOK_CLI || process.env.VSCODE_GIT_IPC_HANDLE || process.env.TERM_PROGRAM === 'vscode')
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -42,31 +41,36 @@ async function checkHealth(): Promise<void> {
 async function openView(absPath: string, view: string, extra?: Record<string, string>): Promise<string> {
   const relativePath = path.relative(PROJECT_ROOT, absPath)
 
-  // VS Code: use URI handler → opens in the VS Code webview panel
-  if (IS_VSCODE) {
-    const params = new URLSearchParams({
-      file: absPath,
-      view,
-      ...extra,
-    })
-    const vscodeUri = `vscode://md-reader.md-reader/open?${params.toString()}`
+  const params = new URLSearchParams({
+    file: absPath,
+    view,
+    ...extra,
+  })
 
-    const { execSync } = await import('child_process')
-    execSync(`code --open-url "${vscodeUri}"`, { stdio: 'ignore' })
-
-    return vscodeUri
+  // VS Code integration: write trigger file + open the .md file in VS Code
+  const triggerPath = path.join(PROJECT_ROOT, '.md-reader-trigger.json')
+  try {
+    const { execFileSync } = await import('child_process')
+    // Write trigger file BEFORE opening the file — extension watches for it
+    fs.writeFileSync(triggerPath, JSON.stringify({ file: absPath, view, ...extra, ts: Date.now() }))
+    // Open the .md file in VS Code — this activates the extension which reads the trigger
+    execFileSync('/snap/bin/code', [absPath], { stdio: 'ignore', timeout: 3000 })
+    return `vscode: opened ${relativePath} in ${view} view`
+  } catch {
+    // code CLI not available — clean up trigger and fall back to browser
+    try { fs.unlinkSync(triggerPath) } catch {}
   }
 
-  // Browser: health check + open in default browser
+  // Browser fallback: health check + open in default browser
   await checkHealth()
 
-  const params = new URLSearchParams({
+  const browserParams = new URLSearchParams({
     file: relativePath,
     view,
     ...extra,
   })
 
-  const url = `${MD_READER_URL}/#${params.toString()}`
+  const url = `${MD_READER_URL}/#${browserParams.toString()}`
 
   const { default: open } = await import('open')
   await open(url)

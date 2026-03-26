@@ -304,6 +304,52 @@ export function activate(context: vscode.ExtensionContext) {
     }),
   )
 
+  // ── MCP trigger file watcher ─────────────────────────────────────
+  // The MCP server writes .md-reader-trigger.json, we pick it up and open the view
+  {
+    const folders = vscode.workspace.workspaceFolders
+    if (folders) {
+      const triggerPattern = new vscode.RelativePattern(folders[0], '.md-reader-trigger.json')
+      const watcher = vscode.workspace.createFileSystemWatcher(triggerPattern)
+
+      const handleTrigger = async () => {
+        const triggerPath = path.join(folders[0].uri.fsPath, '.md-reader-trigger.json')
+        if (!fs.existsSync(triggerPath)) return
+
+        try {
+          const raw = fs.readFileSync(triggerPath, 'utf-8')
+          const trigger = JSON.parse(raw) as { file: string; view: string; tts?: string }
+          fs.unlinkSync(triggerPath) // Clean up immediately
+
+          const filePath = trigger.file
+          if (!filePath || !fs.existsSync(filePath)) return
+
+          // Open the file in editor
+          const doc = await vscode.workspace.openTextDocument(filePath)
+          await vscode.window.showTextDocument(doc, vscode.ViewColumn.One)
+
+          // Open reader panel with the requested view
+          ReaderPanel.createOrShow(context, trigger.view || 'read')
+
+          // Send content directly via loadContent
+          const content = doc.getText()
+          const fileName = path.basename(filePath)
+          ReaderPanel.current?.loadContent(content, fileName, trigger.view)
+
+          if (trigger.tts === 'true') {
+            setTimeout(() => ReaderPanel.current?.postMessage({ type: 'readAloud' }), 1500)
+          }
+        } catch (err) {
+          console.error('md-reader: trigger file error:', err)
+        }
+      }
+
+      watcher.onDidCreate(handleTrigger)
+      watcher.onDidChange(handleTrigger)
+      context.subscriptions.push(watcher)
+    }
+  }
+
   // ── Auto-update webview ───────────────────────────────────────────
 
   // Auto-update webview when active markdown editor changes
