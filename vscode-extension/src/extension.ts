@@ -249,6 +249,57 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.executeCommand('setContext', 'md-reader.panelActive', active)
   }
 
+  // ── URI Handler (MCP integration) ──────────────────────────────────
+  // Handles: vscode://md-reader.md-reader/open?file=<path>&view=<mode>&tts=true&section=<heading>
+  // Triggered by the MCP server when running inside VS Code
+  context.subscriptions.push(
+    vscode.window.registerUriHandler({
+      async handleUri(uri: vscode.Uri) {
+        if (uri.path !== '/open') return
+
+        const params = new URLSearchParams(uri.query)
+        const filePath = params.get('file')
+        const view = params.get('view') || 'read'
+        const tts = params.get('tts') === 'true'
+
+        if (!filePath) {
+          vscode.window.showErrorMessage('md-reader: Missing file parameter in URI')
+          return
+        }
+
+        // Resolve the file path
+        const resolvedPath = path.isAbsolute(filePath)
+          ? filePath
+          : path.resolve(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '', filePath)
+
+        if (!fs.existsSync(resolvedPath)) {
+          vscode.window.showErrorMessage(`md-reader: File not found: ${filePath}`)
+          return
+        }
+
+        // Open the file in the editor
+        const doc = await vscode.workspace.openTextDocument(resolvedPath)
+        await vscode.window.showTextDocument(doc, vscode.ViewColumn.One)
+
+        // Open the reader panel with the requested view
+        const viewMap: Record<string, string> = {
+          'read': 'read',
+          'mindmap': 'mindmap',
+          'knowledge-graph': 'knowledge-graph',
+          'treemap': 'treemap',
+          'coach': 'coach',
+          'summary-cards': 'summary-cards',
+        }
+        ReaderPanel.createOrShow(context, viewMap[view] || 'read')
+
+        // If TTS requested, trigger it after panel is ready
+        if (tts) {
+          setTimeout(() => ReaderPanel.current?.postMessage({ type: 'readAloud' }), 800)
+        }
+      },
+    }),
+  )
+
   // ── Auto-update webview ───────────────────────────────────────────
 
   // Auto-update webview when active markdown editor changes

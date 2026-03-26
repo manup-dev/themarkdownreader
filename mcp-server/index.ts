@@ -7,6 +7,7 @@ import { z } from 'zod'
 
 const PROJECT_ROOT = process.cwd()
 const MD_READER_URL = process.env.MD_READER_URL || 'http://localhost:5183'
+const IS_VSCODE = !!(process.env.VSCODE_IPC_HOOK_CLI || process.env.VSCODE_GIT_IPC_HANDLE || process.env.TERM_PROGRAM === 'vscode')
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -39,17 +40,34 @@ async function checkHealth(): Promise<void> {
 }
 
 async function openView(absPath: string, view: string, extra?: Record<string, string>): Promise<string> {
+  const relativePath = path.relative(PROJECT_ROOT, absPath)
+
+  // VS Code: use URI handler → opens in the VS Code webview panel
+  if (IS_VSCODE) {
+    const params = new URLSearchParams({
+      file: absPath,
+      view,
+      ...extra,
+    })
+    const vscodeUri = `vscode://md-reader.md-reader/open?${params.toString()}`
+
+    const { execSync } = await import('child_process')
+    execSync(`code --open-url "${vscodeUri}"`, { stdio: 'ignore' })
+
+    return vscodeUri
+  }
+
+  // Browser: health check + open in default browser
   await checkHealth()
 
   const params = new URLSearchParams({
-    file: absPath,
+    file: relativePath,
     view,
     ...extra,
   })
 
   const url = `${MD_READER_URL}/#${params.toString()}`
 
-  // Dynamic import for ESM 'open' package
   const { default: open } = await import('open')
   await open(url)
 

@@ -22,7 +22,8 @@
     "knowledge graph"
   ],
   "activationEvents": [
-    "onLanguage:markdown"
+    "onLanguage:markdown",
+    "onUri"
   ],
   "main": "./dist/extension.js",
   "contributes": {
