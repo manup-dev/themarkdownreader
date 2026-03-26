@@ -2,7 +2,7 @@
   "name": "md-reader",
   "displayName": "md-reader",
   "description": "AI-native markdown reader with mind maps, TTS, visual exploration, and AI chat",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "md-reader",
   "license": "MIT",
   "engines": {
@@ -34,27 +34,63 @@
       },
       {
         "command": "md-reader.openMindMap",
-        "title": "md-reader: Open Mind Map"
+        "title": "md-reader: Open Mind Map",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "md-reader.openSummary",
+        "title": "md-reader: Open Summary Cards",
+        "icon": "$(list-unordered)"
       },
       {
         "command": "md-reader.readAloud",
-        "title": "md-reader: Read Aloud"
+        "title": "md-reader: Read Aloud",
+        "icon": "$(unmute)"
       },
       {
         "command": "md-reader.summarizeSelection",
-        "title": "md-reader: Summarize Selection"
+        "title": "md-reader: Summarize Selection",
+        "icon": "$(sparkle)"
       },
       {
         "command": "md-reader.explainSelection",
-        "title": "md-reader: Explain Selection"
+        "title": "md-reader: Explain Selection",
+        "icon": "$(question)"
       },
       {
         "command": "md-reader.readSelectionAloud",
-        "title": "md-reader: Read Selection Aloud"
+        "title": "md-reader: Read Selection Aloud",
+        "icon": "$(unmute)"
       },
       {
         "command": "md-reader.copyAsRichText",
-        "title": "md-reader: Copy as Rich Text"
+        "title": "md-reader: Copy as Rich Text",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "md-reader.toggleToc",
+        "title": "md-reader: Toggle Table of Contents",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "md-reader.increaseFontSize",
+        "title": "md-reader: Increase Font Size"
+      },
+      {
+        "command": "md-reader.decreaseFontSize",
+        "title": "md-reader: Decrease Font Size"
+      },
+      {
+        "command": "md-reader.toggleTheme",
+        "title": "md-reader: Toggle Theme (Light/Dark/Sepia)"
+      },
+      {
+        "command": "md-reader.focusMode",
+        "title": "md-reader: Toggle Focus Mode"
+      },
+      {
+        "command": "md-reader.openTreemap",
+        "title": "md-reader: Open Treemap View"
       }
     ],
     "menus": {
@@ -62,7 +98,51 @@
         {
           "when": "resourceLangId == markdown",
           "command": "md-reader.openReader",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "when": "resourceLangId == markdown",
+          "command": "md-reader.openMindMap",
+          "group": "navigation@2"
+        }
+      ],
+      "editor/context": [
+        {
+          "when": "resourceLangId == markdown",
+          "command": "md-reader.openReader",
+          "group": "md-reader@1"
+        },
+        {
+          "when": "resourceLangId == markdown",
+          "command": "md-reader.openMindMap",
+          "group": "md-reader@2"
+        },
+        {
+          "when": "resourceLangId == markdown",
+          "command": "md-reader.readAloud",
+          "group": "md-reader@3"
+        },
+        {
+          "when": "resourceLangId == markdown && editorHasSelection",
+          "command": "md-reader.summarizeSelection",
+          "group": "md-reader-selection@1"
+        },
+        {
+          "when": "resourceLangId == markdown && editorHasSelection",
+          "command": "md-reader.explainSelection",
+          "group": "md-reader-selection@2"
+        },
+        {
+          "when": "resourceLangId == markdown && editorHasSelection",
+          "command": "md-reader.readSelectionAloud",
+          "group": "md-reader-selection@3"
+        }
+      ],
+      "explorer/context": [
+        {
+          "when": "resourceLangId == markdown",
+          "command": "md-reader.openReader",
+          "group": "md-reader"
         }
       ]
     },
@@ -71,6 +151,54 @@
         "command": "md-reader.openReader",
         "key": "ctrl+shift+r",
         "mac": "cmd+shift+r",
+        "when": "editorLangId == markdown"
+      },
+      {
+        "command": "md-reader.openMindMap",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m",
+        "when": "editorLangId == markdown"
+      },
+      {
+        "command": "md-reader.readAloud",
+        "key": "ctrl+shift+l",
+        "mac": "cmd+shift+l",
+        "when": "editorLangId == markdown"
+      },
+      {
+        "command": "md-reader.toggleToc",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "editorLangId == markdown"
+      },
+      {
+        "command": "md-reader.increaseFontSize",
+        "key": "ctrl+shift+=",
+        "mac": "cmd+shift+=",
+        "when": "editorLangId == markdown"
+      },
+      {
+        "command": "md-reader.decreaseFontSize",
+        "key": "ctrl+shift+-",
+        "mac": "cmd+shift+-",
+        "when": "editorLangId == markdown"
+      },
+      {
+        "command": "md-reader.focusMode",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f",
+        "when": "editorLangId == markdown && md-reader.panelActive"
+      },
+      {
+        "command": "md-reader.copyAsRichText",
+        "key": "ctrl+shift+c",
+        "mac": "cmd+shift+c",
+        "when": "editorLangId == markdown && md-reader.panelActive"
+      },
+      {
+        "command": "md-reader.openSummary",
+        "key": "ctrl+shift+s",
+        "mac": "cmd+shift+s",
         "when": "editorLangId == markdown"
       }
     ],

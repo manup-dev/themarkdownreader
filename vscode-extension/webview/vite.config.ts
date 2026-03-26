@@ -8,6 +8,8 @@ export default defineConfig({
   base: './',
   build: {
     outDir: 'dist',
+    modulePreload: { polyfill: false },
+    target: 'es2020',
     rollupOptions: {
       output: {
         entryFileNames: 'assets/[name].js',

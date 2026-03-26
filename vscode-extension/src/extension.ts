@@ -183,6 +183,72 @@ export function activate(context: vscode.ExtensionContext) {
     }),
   )
 
+  // Open Summary Cards
+  context.subscriptions.push(
+    vscode.commands.registerCommand('md-reader.openSummary', () => {
+      ReaderPanel.createOrShow(context, 'summary-cards')
+    }),
+  )
+
+  // Open Treemap
+  context.subscriptions.push(
+    vscode.commands.registerCommand('md-reader.openTreemap', () => {
+      ReaderPanel.createOrShow(context, 'treemap')
+    }),
+  )
+
+  // Toggle TOC sidebar
+  context.subscriptions.push(
+    vscode.commands.registerCommand('md-reader.toggleToc', () => {
+      if (!ReaderPanel.current) {
+        ReaderPanel.createOrShow(context, 'read')
+        return
+      }
+      ReaderPanel.current.postMessage({ type: 'toggleToc' })
+    }),
+  )
+
+  // Increase font size
+  context.subscriptions.push(
+    vscode.commands.registerCommand('md-reader.increaseFontSize', () => {
+      const config = vscode.workspace.getConfiguration('md-reader')
+      const current = config.get<number>('fontSize', 18)
+      config.update('fontSize', Math.min(32, current + 2), vscode.ConfigurationTarget.Global)
+      ReaderPanel.current?.postMessage({ type: 'setFontSize', size: Math.min(32, current + 2) })
+    }),
+  )
+
+  // Decrease font size
+  context.subscriptions.push(
+    vscode.commands.registerCommand('md-reader.decreaseFontSize', () => {
+      const config = vscode.workspace.getConfiguration('md-reader')
+      const current = config.get<number>('fontSize', 18)
+      config.update('fontSize', Math.max(12, current - 2), vscode.ConfigurationTarget.Global)
+      ReaderPanel.current?.postMessage({ type: 'setFontSize', size: Math.max(12, current - 2) })
+    }),
+  )
+
+  // Toggle theme
+  context.subscriptions.push(
+    vscode.commands.registerCommand('md-reader.toggleTheme', () => {
+      if (!ReaderPanel.current) return
+      ReaderPanel.current.postMessage({ type: 'toggleTheme' })
+    }),
+  )
+
+  // Focus mode
+  context.subscriptions.push(
+    vscode.commands.registerCommand('md-reader.focusMode', () => {
+      if (!ReaderPanel.current) return
+      ReaderPanel.current.postMessage({ type: 'toggleFocusMode' })
+    }),
+  )
+
+  // Set context key when panel is active (for keybinding "when" clauses)
+  ReaderPanel.onPanelActiveCallback = (active: boolean) => {
+    vscode.commands.executeCommand('setContext', 'md-reader.panelActive', active)
+  }
+
   // ── Auto-update webview ───────────────────────────────────────────
 
   // Auto-update webview when active markdown editor changes

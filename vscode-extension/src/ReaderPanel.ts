@@ -10,6 +10,8 @@ export class ReaderPanel {
   public static onProgressCallback: ((percent: number, minutesLeft: number, fileName?: string, totalWords?: number) => void) | undefined
   /** Called when the panel is disposed */
   public static onDisposeCallback: (() => void) | undefined
+  /** Called when panel active state changes (for context key) */
+  public static onPanelActiveCallback: ((active: boolean) => void) | undefined
 
   private readonly panel: vscode.WebviewPanel
   private readonly extensionUri: vscode.Uri
@@ -46,6 +48,7 @@ export class ReaderPanel {
     )
 
     ReaderPanel.current = new ReaderPanel(panel, context.extensionUri, defaultView)
+    ReaderPanel.onPanelActiveCallback?.(true)
   }
 
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, defaultView: string) {
@@ -177,7 +180,13 @@ export class ReaderPanel {
 
       // Convert relative paths to webview URIs
       const baseUri = webview.asWebviewUri(vscode.Uri.file(webviewDistPath))
-      html = html.replace(/(href|src)="\.?\/?/g, `$1="${baseUri}/`)
+      html = html.replace(/(href|src)="\.\/assets\//g, `$1="${baseUri}/assets/`)
+
+      // Remove crossorigin attributes (not needed in webview, can cause CORS issues)
+      html = html.replace(/ crossorigin/g, '')
+
+      // DO NOT inject a CSP — VS Code provides its own CSP for webviews.
+      // Adding a custom one is more restrictive and blocks module scripts.
 
       return html
     }
@@ -301,6 +310,7 @@ export class ReaderPanel {
     }
 
     ReaderPanel.current = undefined
+    ReaderPanel.onPanelActiveCallback?.(false)
     ReaderPanel.onDisposeCallback?.()
     this.panel.dispose()
     while (this.disposables.length) {
