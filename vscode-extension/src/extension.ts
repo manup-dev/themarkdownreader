@@ -250,13 +250,42 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.executeCommand('setContext', 'md-reader.panelActive', active)
   }
 
-  // ── MCP HTTP server ─────────────────────────────────────────────
-  // Starts a localhost HTTP server so the MCP server can reliably trigger views.
-  // Port is written to .md-reader-mcp-port for discovery.
+  // ── MCP integration: internal command + HTTP server ──────────────
+  // The HTTP server receives requests from the MCP server.
+  // It delegates to a VS Code command (which runs on the extension host thread).
+
+  // Shared state: HTTP handler stores request, command consumes it
+  let pendingMcpRequest: { file: string; view: string; tts?: string; section?: string } | null = null
+
+  // Internal command that opens the file + reader panel
+  context.subscriptions.push(
+    vscode.commands.registerCommand('md-reader._mcpOpen', async () => {
+      const req = pendingMcpRequest
+      if (!req) return
+      pendingMcpRequest = null
+
+      const doc = await vscode.workspace.openTextDocument(req.file)
+      await vscode.window.showTextDocument(doc, vscode.ViewColumn.One)
+
+      ReaderPanel.createOrShow(context, req.view || 'read')
+
+      const content = doc.getText()
+      const fileName = path.basename(req.file)
+      ReaderPanel.current?.loadContent(content, fileName, req.view, req.section)
+
+      if (req.tts === 'true') {
+        setTimeout(() => ReaderPanel.current?.postMessage({ type: 'readAloud' }), 2000)
+      }
+    }),
+  )
+
+  // HTTP server for MCP server discovery
   {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
     if (workspaceRoot) {
       const portFile = path.join(workspaceRoot, '.md-reader-mcp-port')
+      const allowedViews = ['read', 'mindmap', 'summary-cards', 'treemap', 'knowledge-graph', 'coach']
+
       const server = http.createServer((req, res) => {
         if (req.method !== 'POST' || req.url !== '/open') {
           res.writeHead(404)
@@ -264,7 +293,6 @@ export function activate(context: vscode.ExtensionContext) {
           return
         }
 
-        // Read JSON body (64KB limit)
         const chunks: Buffer[] = []
         let totalSize = 0
         req.on('data', (chunk: Buffer) => {
@@ -290,7 +318,6 @@ export function activate(context: vscode.ExtensionContext) {
             return
           }
 
-          // Validate: must be .md file within workspace
           const resolved = path.resolve(filePath)
           if (!resolved.endsWith('.md') || !resolved.startsWith(workspaceRoot + path.sep)) {
             res.writeHead(403)
@@ -298,32 +325,16 @@ export function activate(context: vscode.ExtensionContext) {
             return
           }
 
-          // Validate view
-          const allowedViews = ['read', 'mindmap', 'summary-cards', 'treemap', 'knowledge-graph', 'coach']
           if (trigger.view && !allowedViews.includes(trigger.view)) {
             trigger.view = 'read'
           }
 
-          // Respond immediately
+          // Store request and trigger the command (runs on VS Code's extension host thread)
+          pendingMcpRequest = trigger
+          vscode.commands.executeCommand('md-reader._mcpOpen')
+
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ ok: true }))
-
-          // Open file, create panel, load content
-          vscode.workspace.openTextDocument(filePath).then((doc) => {
-            return vscode.window.showTextDocument(doc, vscode.ViewColumn.One).then(() => doc)
-          }).then((doc) => {
-            ReaderPanel.createOrShow(context, trigger.view || 'read')
-
-            const content = doc.getText()
-            const fileName = path.basename(filePath)
-            ReaderPanel.current?.loadContent(content, fileName, trigger.view, trigger.section)
-
-            if (trigger.tts === 'true') {
-              setTimeout(() => ReaderPanel.current?.postMessage({ type: 'readAloud' }), 1500)
-            }
-          }).catch((err) => {
-            vscode.window.showErrorMessage(`md-reader MCP error: ${err.message}`)
-          })
         })
       })
 
@@ -332,7 +343,6 @@ export function activate(context: vscode.ExtensionContext) {
         fs.writeFileSync(portFile, String(addr.port))
       })
 
-      // Cleanup on deactivate
       context.subscriptions.push({
         dispose() {
           server.close()

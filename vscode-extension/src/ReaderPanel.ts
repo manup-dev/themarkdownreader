@@ -144,6 +144,7 @@ export class ReaderPanel {
           this.sendConfig(true)
           this.sendPendingContent()
         } else {
+          this.sendConfig()
           this.sendCurrentEditor()
         }
         break
