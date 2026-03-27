@@ -107,9 +107,11 @@ export class ReaderPanel {
     this.pendingContent = { content, fileName, view, section }
     // Cancel any previous pending timer to avoid double-sends
     if (this.pendingContentTimer) clearTimeout(this.pendingContentTimer)
-    // The 'ready' handler will call sendPendingContent() for fresh panels.
-    // For already-mounted panels, send after a delay as fallback.
-    this.pendingContentTimer = setTimeout(() => this.sendPendingContent(), 500)
+    // For fresh panels: the 'ready' handler will call sendPendingContent().
+    // For already-mounted panels: retry multiple times to ensure delivery.
+    this.pendingContentTimer = setTimeout(() => this.sendPendingContent(), 300)
+    setTimeout(() => this.sendPendingContent(), 800)
+    setTimeout(() => this.sendPendingContent(), 1500)
   }
 
   private sendPendingContent() {
