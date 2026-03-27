@@ -25,7 +25,8 @@ export class ReaderPanel {
   private currentFileName = ''
 
   // Pending content to send when webview is ready (set by loadContent before 'ready' fires)
-  private pendingContent: { content: string; fileName: string; view?: string } | null = null
+  private pendingContent: { content: string; fileName: string; view?: string; section?: string } | null = null
+  private pendingContentTimer: ReturnType<typeof setTimeout> | null = null
 
   public static createOrShow(context: vscode.ExtensionContext, defaultView = 'read') {
     const column = vscode.ViewColumn.Beside
@@ -102,30 +103,43 @@ export class ReaderPanel {
   }
 
   /** Load specific content + view, handling the case where webview isn't ready yet */
-  public loadContent(content: string, fileName: string, view?: string) {
-    this.pendingContent = { content, fileName, view }
-    // Try sending immediately (works if webview is already mounted)
-    this.sendPendingContent()
+  public loadContent(content: string, fileName: string, view?: string, section?: string) {
+    this.pendingContent = { content, fileName, view, section }
+    // Cancel any previous pending timer to avoid double-sends
+    if (this.pendingContentTimer) clearTimeout(this.pendingContentTimer)
+    // The 'ready' handler will call sendPendingContent() for fresh panels.
+    // For already-mounted panels, send after a delay as fallback.
+    this.pendingContentTimer = setTimeout(() => this.sendPendingContent(), 500)
   }
 
   private sendPendingContent() {
     if (!this.pendingContent) return
-    const { content, fileName, view } = this.pendingContent
+    const { content, fileName, view, section } = this.pendingContent
     this.currentFileName = fileName
     this.lastWordCount = content.split(/\s+/).filter(Boolean).length
     this.panel.webview.postMessage({ type: 'setMarkdown', content, fileName })
+    // Send view switch AFTER setMarkdown settles (setMarkdown resets viewMode to 'read')
     if (view) {
-      this.panel.webview.postMessage({ type: 'config', defaultView: view })
+      setTimeout(() => {
+        this.panel.webview.postMessage({ type: 'config', defaultView: view })
+        // Navigate to section if specified
+        if (section) {
+          const slug = section.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s]+/g, '-')
+          this.panel.webview.postMessage({ type: 'scrollToSection', sectionId: slug })
+        }
+      }, 200)
     }
     this.pendingContent = null
+    // Cancel fallback timer if ready handler already sent
+    if (this.pendingContentTimer) { clearTimeout(this.pendingContentTimer); this.pendingContentTimer = null }
   }
 
   private handleMessage(message: { type: string; [key: string]: unknown }) {
     switch (message.type) {
       case 'ready':
-        this.sendConfig()
-        // If content was queued before webview was ready (e.g., from URI handler), send it now
+        // If content was queued (MCP trigger), send config WITHOUT defaultView — pendingContent controls the view
         if (this.pendingContent) {
+          this.sendConfig(true)
           this.sendPendingContent()
         } else {
           this.sendCurrentEditor()
@@ -174,7 +188,7 @@ export class ReaderPanel {
     }
   }
 
-  private sendConfig() {
+  private sendConfig(skipDefaultView = false) {
     const config = vscode.workspace.getConfiguration('md-reader')
     const vscodeTheme = vscode.window.activeColorTheme.kind
 
@@ -184,13 +198,16 @@ export class ReaderPanel {
         ? 'dark' : 'light'
     }
 
-    this.panel.webview.postMessage({
+    const msg: Record<string, unknown> = {
       type: 'config',
       theme,
       fontSize: config.get<number>('fontSize', 18),
       ollamaUrl: config.get<string>('ollamaUrl', 'http://localhost:11434'),
-      defaultView: config.get<string>('defaultView', 'read'),
-    })
+    }
+    if (!skipDefaultView) {
+      msg.defaultView = config.get<string>('defaultView', 'read')
+    }
+    this.panel.webview.postMessage(msg)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -206,7 +223,9 @@ export class ReaderPanel {
       let html = fs.readFileSync(indexPath, 'utf-8')
 
       // Convert relative paths to webview URIs
-      const baseUri = webview.asWebviewUri(vscode.Uri.file(webviewDistPath))
+      // Use Uri.joinPath with extensionUri (not Uri.file) so it works in Remote SSH
+      const webviewDistUri = vscode.Uri.joinPath(this.extensionUri, 'webview', 'dist')
+      const baseUri = webview.asWebviewUri(webviewDistUri)
       html = html.replace(/(href|src)="\.\/assets\//g, `$1="${baseUri}/assets/`)
 
       // Remove crossorigin attributes (not needed in webview, can cause CORS issues)

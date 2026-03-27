@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "md-reader": {
+      "command": "npx",
+      "args": ["tsx", "mcp-server/index.ts"],
+      "cwd": "/home/manu/Desktop/code/md-reader"
+    }
+  }
+}

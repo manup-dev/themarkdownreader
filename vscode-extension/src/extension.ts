@@ -257,50 +257,76 @@ export function activate(context: vscode.ExtensionContext) {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
     if (workspaceRoot) {
       const portFile = path.join(workspaceRoot, '.md-reader-mcp-port')
-      const server = http.createServer(async (req, res) => {
+      const server = http.createServer((req, res) => {
         if (req.method !== 'POST' || req.url !== '/open') {
           res.writeHead(404)
           res.end('Not found')
           return
         }
 
-        // Read JSON body
-        let body = ''
-        for await (const chunk of req) body += chunk
-        let trigger: { file: string; view: string; tts?: string; section?: string }
-        try {
-          trigger = JSON.parse(body)
-        } catch {
-          res.writeHead(400)
-          res.end('Invalid JSON')
-          return
-        }
+        // Read JSON body (64KB limit)
+        const chunks: Buffer[] = []
+        let totalSize = 0
+        req.on('data', (chunk: Buffer) => {
+          totalSize += chunk.length
+          if (totalSize > 65536) { res.writeHead(413); res.end('Too large'); req.destroy(); return }
+          chunks.push(chunk)
+        })
+        req.on('end', () => {
+          const body = Buffer.concat(chunks).toString()
+          let trigger: { file: string; view: string; tts?: string; section?: string }
+          try {
+            trigger = JSON.parse(body)
+          } catch {
+            res.writeHead(400)
+            res.end('Invalid JSON')
+            return
+          }
 
-        const filePath = trigger.file
-        if (!filePath || !fs.existsSync(filePath)) {
-          res.writeHead(404)
-          res.end('File not found')
-          return
-        }
+          const filePath = trigger.file
+          if (!filePath || !fs.existsSync(filePath)) {
+            res.writeHead(404)
+            res.end('File not found')
+            return
+          }
 
-        // Open the file in the editor
-        const doc = await vscode.workspace.openTextDocument(filePath)
-        await vscode.window.showTextDocument(doc, vscode.ViewColumn.One)
+          // Validate: must be .md file within workspace
+          const resolved = path.resolve(filePath)
+          if (!resolved.endsWith('.md') || !resolved.startsWith(workspaceRoot + path.sep)) {
+            res.writeHead(403)
+            res.end('Access denied')
+            return
+          }
 
-        // Open reader panel with the requested view
-        ReaderPanel.createOrShow(context, trigger.view || 'read')
+          // Validate view
+          const allowedViews = ['read', 'mindmap', 'summary-cards', 'treemap', 'knowledge-graph', 'coach']
+          if (trigger.view && !allowedViews.includes(trigger.view)) {
+            trigger.view = 'read'
+          }
 
-        // Send content directly via loadContent
-        const content = doc.getText()
-        const fileName = path.basename(filePath)
-        ReaderPanel.current?.loadContent(content, fileName, trigger.view)
+          // Respond immediately
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
 
-        if (trigger.tts === 'true') {
-          setTimeout(() => ReaderPanel.current?.postMessage({ type: 'readAloud' }), 1500)
-        }
+          // Open file, create panel, load content — all directly, no command indirection
+          vscode.workspace.openTextDocument(filePath).then((doc) => {
+            return vscode.window.showTextDocument(doc, vscode.ViewColumn.One).then(() => doc)
+          }).then((doc) => {
+            // Create/show the reader panel
+            ReaderPanel.createOrShow(context, trigger.view || 'read')
 
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: true }))
+            // Load content directly — don't rely on activeTextEditor
+            const content = doc.getText()
+            const fileName = path.basename(filePath)
+            ReaderPanel.current?.loadContent(content, fileName, trigger.view, trigger.section)
+
+            if (trigger.tts === 'true') {
+              setTimeout(() => ReaderPanel.current?.postMessage({ type: 'readAloud' }), 1500)
+            }
+          }).catch((err) => {
+            vscode.window.showErrorMessage(`md-reader MCP error: ${err.message}`)
+          })
+        })
       })
 
       server.listen(0, '127.0.0.1', () => {

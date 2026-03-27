@@ -12,7 +12,7 @@ const MD_READER_URL = process.env.MD_READER_URL || 'http://localhost:5183'
 
 function validateMdPath(inputPath: string): string {
   const resolved = path.resolve(PROJECT_ROOT, inputPath)
-  if (!resolved.startsWith(PROJECT_ROOT)) {
+  if (resolved !== PROJECT_ROOT && !resolved.startsWith(PROJECT_ROOT + path.sep)) {
     throw new Error(`Path "${inputPath}" is outside the project root`)
   }
   if (!resolved.endsWith('.md')) {
