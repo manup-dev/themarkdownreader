@@ -308,14 +308,12 @@ export function activate(context: vscode.ExtensionContext) {
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ ok: true }))
 
-          // Open file, create panel, load content — all directly, no command indirection
+          // Open file, create panel, load content
           vscode.workspace.openTextDocument(filePath).then((doc) => {
             return vscode.window.showTextDocument(doc, vscode.ViewColumn.One).then(() => doc)
           }).then((doc) => {
-            // Create/show the reader panel
             ReaderPanel.createOrShow(context, trigger.view || 'read')
 
-            // Load content directly — don't rely on activeTextEditor
             const content = doc.getText()
             const fileName = path.basename(filePath)
             ReaderPanel.current?.loadContent(content, fileName, trigger.view, trigger.section)
