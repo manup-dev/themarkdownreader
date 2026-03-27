@@ -13,6 +13,8 @@ import type { ViewMode, Theme } from '@app/store/useStore'
 const MindMapView = lazy(() => import('@app/components/MindMap').then((m) => ({ default: m.MindMapView })))
 const SummaryCardsView = lazy(() => import('@app/components/SummaryCards').then((m) => ({ default: m.SummaryCardsView })))
 const TreemapView = lazy(() => import('@app/components/TreemapView').then((m) => ({ default: m.TreemapView })))
+const KnowledgeGraphView = lazy(() => import('@app/components/KnowledgeGraph').then((m) => ({ default: m.KnowledgeGraphView })))
+const CoachView = lazy(() => import('@app/components/Coach').then((m) => ({ default: m.CoachView })))
 
 function LazyFallback() {
   return (
@@ -27,6 +29,8 @@ const viewModes: { value: ViewMode; label: string }[] = [
   { value: 'mindmap', label: 'Mind Map' },
   { value: 'summary-cards', label: 'Cards' },
   { value: 'treemap', label: 'Treemap' },
+  { value: 'knowledge-graph', label: 'Graph' },
+  { value: 'coach', label: 'Coach' },
 ]
 
 export function VscodeApp() {
@@ -283,6 +287,8 @@ export function VscodeApp() {
           {viewMode === 'mindmap' && <ErrorBoundary name="Mind Map"><MindMapView /></ErrorBoundary>}
           {viewMode === 'summary-cards' && <ErrorBoundary name="Cards"><SummaryCardsView /></ErrorBoundary>}
           {viewMode === 'treemap' && <ErrorBoundary name="Treemap"><TreemapView /></ErrorBoundary>}
+          {viewMode === 'knowledge-graph' && <ErrorBoundary name="Graph"><KnowledgeGraphView /></ErrorBoundary>}
+          {viewMode === 'coach' && <ErrorBoundary name="Coach"><CoachView /></ErrorBoundary>}
         </Suspense>
       </div>
 
