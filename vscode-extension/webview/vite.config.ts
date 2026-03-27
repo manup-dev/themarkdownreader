@@ -20,13 +20,25 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      // Reuse components from the main app
       '@app': path.resolve(__dirname, '../../src'),
-      // Force single React instance — prevents "Cannot read properties of null (reading 'useCallback')"
-      // when @app components use a different React than the webview's own copy
+      // Force single React instance
       'react': path.resolve(__dirname, 'node_modules/react'),
       'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
       'react/jsx-runtime': path.resolve(__dirname, 'node_modules/react/jsx-runtime'),
+      // Resolve shared packages from base repo
+      'd3': path.resolve(__dirname, '../../node_modules/d3'),
+      'd3-hierarchy': path.resolve(__dirname, '../../node_modules/d3-hierarchy'),
+      'lucide-react': path.resolve(__dirname, '../../node_modules/lucide-react'),
+      'react-markdown': path.resolve(__dirname, '../../node_modules/react-markdown'),
+      'remark-gfm': path.resolve(__dirname, '../../node_modules/remark-gfm'),
+      'remark-math': path.resolve(__dirname, '../../node_modules/remark-math'),
+      'remark-parse': path.resolve(__dirname, '../../node_modules/remark-parse'),
+      'rehype-highlight': path.resolve(__dirname, '../../node_modules/rehype-highlight'),
+      'rehype-katex': path.resolve(__dirname, '../../node_modules/rehype-katex'),
+      'unified': path.resolve(__dirname, '../../node_modules/unified'),
+      'markmap-lib': path.resolve(__dirname, '../../node_modules/markmap-lib'),
+      'markmap-view': path.resolve(__dirname, '../../node_modules/markmap-view'),
+      'zustand': path.resolve(__dirname, '../../node_modules/zustand'),
     },
   },
 })
