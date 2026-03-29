@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, useEffect } from 'react'
-import { Upload as UploadIcon, Link, FileText, Library, PenLine, ArrowRight, Clock, FolderOpen, Chrome, Code2 } from 'lucide-react'
+import { Upload as UploadIcon, Link, FileText, Library, PenLine, ArrowRight, Clock, FolderOpen, Chrome, Code2, Shield, Cpu, Eye, Headphones, Map, GraduationCap } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { getAllDocuments, type StoredDocument } from '../lib/docstore'
 
@@ -348,8 +348,34 @@ md-reader is open source. Contributions welcome!
             md-reader
           </h1>
           <p className="text-lg text-gray-500 dark:text-gray-400">
-            Read, understand, and explore your markdown documents
+            The AI-powered markdown reader that runs entirely in your browser
           </p>
+          <div className="flex items-center justify-center gap-1.5 pt-1">
+            <Shield className="h-3.5 w-3.5 text-green-500" />
+            <span className="text-xs text-green-600 dark:text-green-400 font-medium">
+              100% local &middot; No server &middot; Your files never leave your device
+            </span>
+          </div>
+        </div>
+
+        {/* Feature highlights */}
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { icon: Eye, label: 'Beautiful reading', desc: 'Kindle-like experience', color: 'text-blue-500' },
+            { icon: Map, label: 'Visual exploration', desc: 'Mind maps & graphs', color: 'text-purple-500' },
+            { icon: Cpu, label: 'AI-powered Q&A', desc: 'Ask anything about your doc', color: 'text-emerald-500' },
+            { icon: Headphones, label: 'Read aloud', desc: 'Smart TTS narration', color: 'text-amber-500' },
+            { icon: GraduationCap, label: 'AI Coach', desc: 'Learn with quizzes', color: 'text-rose-500' },
+            { icon: Shield, label: 'Private by design', desc: 'Runs 100% in your browser', color: 'text-green-500' },
+          ].map(({ icon: Icon, label, desc, color }) => (
+            <div key={label} className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-white/60 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-800">
+              <Icon className={`h-4 w-4 ${color} shrink-0 mt-0.5`} />
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-gray-700 dark:text-gray-300 leading-tight">{label}</p>
+                <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-tight">{desc}</p>
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* Drop zone — prominent */}
