@@ -109,6 +109,11 @@ export function Upload() {
       if (privatePatterns.some((p) => p.test(hostname))) {
         throw new Error('URLs pointing to private/local networks are not allowed')
       }
+      // Auto-convert GitHub blob/tree URLs to raw URLs
+      const ghBlobMatch = targetUrl.match(/^https:\/\/github\.com\/([^/]+\/[^/]+)\/blob\/(.+)/)
+      if (ghBlobMatch) {
+        targetUrl = `https://raw.githubusercontent.com/${ghBlobMatch[1]}/${ghBlobMatch[2]}`
+      }
       const res = await fetch(targetUrl, { signal: AbortSignal.timeout(30000) })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       // Content-type check: only allow text-like responses
