@@ -309,7 +309,7 @@ export function Reader() {
   const quotableSentence = useMemo(() => {
     const sentences = markdown.split(/[.!?]\s+/).filter((s) => s.length > 30 && s.length < 200)
     const scored = sentences.map((s) => ({
-      text: s.replace(/[#*`\[\]()]/g, '').trim(),
+      text: s.replace(/[#*`[\]()]/g, '').trim(),
       score: (s.match(/\*\*[^*]+\*\*/g) ?? []).length + (s.match(/\*[^*]+\*/g) ?? []).length
     })).filter((s) => s.score > 0 && s.text.length > 20)
     return scored.sort((a, b) => b.score - a.score)[0] ?? null

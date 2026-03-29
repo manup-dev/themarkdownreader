@@ -41,12 +41,6 @@ async function checkHealth(): Promise<void> {
 async function openView(absPath: string, view: string, extra?: Record<string, string>): Promise<string> {
   const relativePath = path.relative(PROJECT_ROOT, absPath)
 
-  const params = new URLSearchParams({
-    file: absPath,
-    view,
-    ...extra,
-  })
-
   // TTS requires audio output — VS Code webview sandbox can't produce sound, so always use browser
   const skipVscode = extra?.tts === 'true'
 
@@ -59,7 +53,7 @@ async function openView(absPath: string, view: string, extra?: Record<string, st
     execFileSync('/snap/bin/code', [absPath], { stdio: 'ignore', timeout: 3000 })
     return `vscode: opened ${relativePath} in ${view} view`
   } catch {
-    try { fs.unlinkSync(viewFile) } catch {}
+    try { fs.unlinkSync(viewFile) } catch { /* ignore */ }
     // code CLI not available — fall back to browser
   }
 

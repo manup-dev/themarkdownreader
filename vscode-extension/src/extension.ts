@@ -351,7 +351,7 @@ export function activate(context: vscode.ExtensionContext) {
       context.subscriptions.push({
         dispose() {
           server.close()
-          try { fs.unlinkSync(portFile) } catch {}
+          try { fs.unlinkSync(portFile) } catch { /* port file may not exist */ }
         },
       })
     }

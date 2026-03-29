@@ -28,12 +28,15 @@ export function OnboardingOverlay({ onComplete }: { onComplete: () => void }) {
 
   useEffect(() => {
     const target = document.querySelector(STEPS[step].target)
+    // DOM measurement (getBoundingClientRect) must run after render — setState here is intentional
+    /* eslint-disable react-hooks/set-state-in-effect */
     if (target) {
       const rect = target.getBoundingClientRect()
-      setSpotlightRect(rect) // Intentional: update spotlight position when step changes
+      setSpotlightRect(rect)
     } else {
       setSpotlightRect(null)
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [step])
 
   const handleNext = () => {

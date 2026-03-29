@@ -18,11 +18,13 @@ export function TableOfContents() {
     const saved = localStorage.getItem(bookmarkKey)
     return saved ? new Set(JSON.parse(saved)) : new Set()
   })
-  // Reset bookmarks when document changes
-  useEffect(() => {
+  // Reset bookmarks when document changes — adjusting state during render (React recommended pattern)
+  const [prevBookmarkKey, setPrevBookmarkKey] = useState(bookmarkKey)
+  if (prevBookmarkKey !== bookmarkKey) {
+    setPrevBookmarkKey(bookmarkKey)
     const saved = localStorage.getItem(bookmarkKey)
     setBookmarks(saved ? new Set(JSON.parse(saved)) : new Set())
-  }, [bookmarkKey])
+  }
   const toggleBookmark = (id: string) => {
     const isAdding = !bookmarks.has(id)
     setBookmarks((prev) => {
@@ -71,8 +73,8 @@ export function TableOfContents() {
 
   // Feature 16: Live countdown — update every 5s based on scroll progress within section
   useEffect(() => {
-    if (!activeSection) { setCountdownLeft(null); return }
     const update = () => {
+      if (!activeSection) { setCountdownLeft(null); return }
       const heading = document.getElementById(activeSection)
       if (!heading) return
       const activeIdx = toc.findIndex((t) => t.id === activeSection)
@@ -127,9 +129,11 @@ export function TableOfContents() {
   const [bookmarkNotes, setBookmarkNotes] = useState<Record<string, string>>(() => {
     try { return JSON.parse(localStorage.getItem(notesKey) ?? '{}') } catch { return {} }
   })
-  useEffect(() => {
+  const [prevNotesKey, setPrevNotesKey] = useState(notesKey)
+  if (prevNotesKey !== notesKey) {
+    setPrevNotesKey(notesKey)
     try { setBookmarkNotes(JSON.parse(localStorage.getItem(notesKey) ?? '{}')) } catch { setBookmarkNotes({}) }
-  }, [notesKey])
+  }
 
   const generateBookmarkNote = useCallback(async (sectionId: string, sectionText: string) => {
     try {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense, type ElementType } from 'react'
 import { FolderOpen, ChevronRight, ChevronLeft, Clock, FileText, ArrowRight, RefreshCw, BookOpen, GripVertical, Layers, Search, PenTool } from 'lucide-react'
 
 const ExcalidrawViewer = lazy(() => import('./ExcalidrawViewer').then((m) => ({ default: m.ExcalidrawViewer })))
@@ -10,7 +10,7 @@ function CollectionHeading(level: number) {
   return function Heading({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
     const text = typeof children === 'string' ? children : String(children ?? '')
     const id = slugify(text)
-    const Tag = `h${level}` as any
+    const Tag = `h${level}` as ElementType
     return <Tag id={id} {...props} className="scroll-mt-16">{children}</Tag>
   }
 }
