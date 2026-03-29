@@ -464,7 +464,7 @@ md-reader is open source. Contributions welcome!
         {/* Extensions */}
         <div className="flex gap-3">
           <a
-            href="https://github.com/manup-dev/themarkdownreader/releases/latest"
+            href="https://github.com/manup-dev/themarkdownreader/tree/master/browser-extension#readme"
             target="_blank"
             rel="noopener"
             className="flex-1 flex items-center gap-2.5 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-sm transition-all text-sm"
