@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, useEffect } from 'react'
-import { Upload as UploadIcon, Link, FileText, Library, PenLine, ArrowRight, Clock, FolderOpen } from 'lucide-react'
+import { Upload as UploadIcon, Link, FileText, Library, PenLine, ArrowRight, Clock, FolderOpen, Chrome, Code2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { getAllDocuments, type StoredDocument } from '../lib/docstore'
 
@@ -454,6 +454,28 @@ md-reader is open source. Contributions welcome!
             <FolderOpen className="h-5 w-5 text-amber-500" />
             <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Open Folder</span>
           </button>
+        </div>
+
+        {/* Extensions */}
+        <div className="flex gap-3">
+          <a
+            href="https://github.com/manup-dev/themarkdownreader/releases/latest"
+            target="_blank"
+            rel="noopener"
+            className="flex-1 flex items-center gap-2.5 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-sm transition-all text-sm"
+          >
+            <Chrome className="h-4 w-4 text-blue-500 shrink-0" />
+            <span className="text-gray-600 dark:text-gray-300">Chrome Extension</span>
+          </a>
+          <a
+            href="https://marketplace.visualstudio.com/items?itemName=manup-dev.md-reader"
+            target="_blank"
+            rel="noopener"
+            className="flex-1 flex items-center gap-2.5 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-sm transition-all text-sm"
+          >
+            <Code2 className="h-4 w-4 text-purple-500 shrink-0" />
+            <span className="text-gray-600 dark:text-gray-300">VS Code Extension</span>
+          </a>
         </div>
 
         {/* GitHub star banner — below action buttons */}

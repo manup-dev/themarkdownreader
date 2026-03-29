@@ -47,26 +47,20 @@ async function openView(absPath: string, view: string, extra?: Record<string, st
     ...extra,
   })
 
-  // VS Code integration: POST to extension's HTTP server
-  const portFile = path.join(PROJECT_ROOT, '.md-reader-mcp-port')
-  try {
-    if (fs.existsSync(portFile)) {
-      const port = parseInt(fs.readFileSync(portFile, 'utf-8').trim())
-      if (port > 0) {
-        const body = JSON.stringify({ file: absPath, view, ...extra })
-        const res = await fetch(`http://127.0.0.1:${port}/open`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-          signal: AbortSignal.timeout(5000),
-        })
-        if (res.ok) {
-          return `vscode: opened ${relativePath} in ${view} view`
-        }
-      }
-    }
+  // TTS requires audio output — VS Code webview sandbox can't produce sound, so always use browser
+  const skipVscode = extra?.tts === 'true'
+
+  // VS Code integration: write view file + open file via code CLI
+  // The extension's onDidChangeActiveTextEditor reads .md-reader-view and opens the panel
+  const viewFile = path.join(PROJECT_ROOT, '.md-reader-view')
+  if (!skipVscode) try {
+    fs.writeFileSync(viewFile, view)
+    const { execFileSync } = await import('child_process')
+    execFileSync('/snap/bin/code', [absPath], { stdio: 'ignore', timeout: 3000 })
+    return `vscode: opened ${relativePath} in ${view} view`
   } catch {
-    // VS Code extension not running or request failed — fall back to browser
+    try { fs.unlinkSync(viewFile) } catch {}
+    // code CLI not available — fall back to browser
   }
 
   // Browser fallback: health check + open in default browser

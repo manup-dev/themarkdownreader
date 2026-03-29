@@ -54,3 +54,12 @@ vscode-extension/webview/dist/
 vscode-extension/tsconfig.tsbuildinfo
 vscode-extension/*.vsix
 .md-reader-mcp-port
+.md-reader-view
+.md-reader-trigger.json
+
+# (personal docs)
+docs/course/
+docs/learnings/
+
+# Superpowers specs/plans
+docs/superpowers/

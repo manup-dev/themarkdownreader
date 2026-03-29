@@ -3,7 +3,7 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
 
 # md-reader
-
+export type first = {second}
 > The AI-native markdown reader. Read, understand, and explore your documents.
 
 ![md-reader reader view](docs/screenshots/reader.png)

@@ -139,14 +139,9 @@ export class ReaderPanel {
   private handleMessage(message: { type: string; [key: string]: unknown }) {
     switch (message.type) {
       case 'ready':
-        // If content was queued (MCP trigger), send config WITHOUT defaultView — pendingContent controls the view
         if (this.pendingContent) {
-          const view = this.pendingContent.view || 'read'
-          const name = this.pendingContent.fileName
           this.sendConfig(true)
           this.sendPendingContent()
-          // Status toast — also provides a necessary UI thread yield for webview rendering
-          vscode.window.showInformationMessage(`md-reader: ${name} (${view})`)
         } else {
           this.sendConfig()
           this.sendCurrentEditor()

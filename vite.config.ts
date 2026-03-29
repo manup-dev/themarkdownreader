@@ -5,6 +5,7 @@ import fs from 'fs'
 import path from 'path'
 
 export default defineConfig({
+  base: process.env.GITHUB_ACTIONS ? '/themarkdownreader/' : '/',
   plugins: [
     react(),
     tailwindcss(),
@@ -22,10 +23,10 @@ export default defineConfig({
           }
 
           const resolved = path.resolve(filePath)
-          const root = server.config.root
+          const rootWithSlash = server.config.root + (server.config.root.endsWith('/') ? '' : '/')
 
           // Security: must be within project root and be a .md file
-          if (!resolved.startsWith(root)) {
+          if (!resolved.startsWith(rootWithSlash)) {
             res.statusCode = 403
             res.end('Path outside project root')
             return

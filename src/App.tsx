@@ -111,66 +111,72 @@ function App() {
 
   // MCP integration: handle #file=<path>&view=<mode> from MCP server
   useEffect(() => {
-    const hash = window.location.hash
-    if (!hash.includes('file=')) return
+    function handleMcpHash() {
+      const hash = window.location.hash
+      if (!hash.includes('file=')) return
 
-    // Parse hash params: #file=<path>&view=<mode>&tts=true&section=<heading>
-    const params = new URLSearchParams(hash.slice(1))
-    const filePath = params.get('file')
-    const view = (params.get('view') || 'read') as ViewMode
-    const tts = params.get('tts') === 'true'
-    const section = params.get('section')
+      // Parse hash params: #file=<path>&view=<mode>&tts=true&section=<heading>
+      const params = new URLSearchParams(hash.slice(1))
+      const filePath = params.get('file')
+      const view = (params.get('view') || 'read') as ViewMode
+      const tts = params.get('tts') === 'true'
+      const section = params.get('section')
 
-    if (!filePath) return
+      if (!filePath) return
 
-    // Clear hash immediately so browser history useEffect doesn't conflict
-    window.history.replaceState(null, '', window.location.pathname)
+      // Clear hash immediately so browser history useEffect doesn't conflict
+      window.history.replaceState(null, '', window.location.pathname)
 
-    // Note: URLSearchParams.get() already decodes percent-encoding, so no
-    // additional decodeURIComponent() call is needed here.
-    const fileName = filePath.split('/').pop() || 'document.md'
+      // Note: URLSearchParams.get() already decodes percent-encoding, so no
+      // additional decodeURIComponent() call is needed here.
+      const fileName = filePath.split('/').pop() || 'document.md'
 
-    fetch(`/api/file?path=${encodeURIComponent(filePath)}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`Failed to load file: HTTP ${res.status}`)
-        return res.text()
-      })
-      .then((md) => {
-        setMarkdown(md, fileName)
-        useStore.getState().setViewMode(view)
+      fetch(`/api/file?path=${encodeURIComponent(filePath)}`)
+        .then((res) => {
+          if (!res.ok) throw new Error(`Failed to load file: HTTP ${res.status}`)
+          return res.text()
+        })
+        .then((md) => {
+          setMarkdown(md, fileName)
+          useStore.getState().setViewMode(view)
 
-        // Compute TOC locally — the store's toc is populated by Reader's
-        // useEffect which hasn't run yet at this point
-        const toc = extractToc(md)
+          // Compute TOC locally — the store's toc is populated by Reader's
+          // useEffect which hasn't run yet at this point
+          const toc = extractToc(md)
 
-        // Start TTS if requested
-        if (tts) {
-          import('./lib/tts').then(({ tts: ttsEngine }) => {
-            ttsEngine.loadMarkdown(md)
-            if (section) {
-              // Case-insensitive substring match for section heading
-              const matchIdx = toc.findIndex((t) =>
-                t.text.toLowerCase().includes(section.toLowerCase())
-              )
-              ttsEngine.play(matchIdx >= 0 ? matchIdx : 0)
-            } else {
-              ttsEngine.play(0)
-            }
-            useStore.getState().setTtsPlaying(true)
-          })
-        }
-
-        // Navigate to section if specified (for coach view)
-        if (section && !tts) {
-          const match = toc.find((t) =>
-            t.text.toLowerCase().includes(section.toLowerCase())
-          )
-          if (match) {
-            useStore.getState().setActiveSection(match.id)
+          // Start TTS if requested
+          if (tts) {
+            import('./lib/tts').then(({ tts: ttsEngine }) => {
+              ttsEngine.loadMarkdown(md)
+              if (section) {
+                const matchIdx = toc.findIndex((t) =>
+                  t.text.toLowerCase().includes(section.toLowerCase())
+                )
+                ttsEngine.play(matchIdx >= 0 ? matchIdx : 0)
+              } else {
+                ttsEngine.play(0)
+              }
+              useStore.getState().setTtsPlaying(true)
+            })
           }
-        }
-      })
-      .catch((err) => console.error('md-reader: MCP file load failed:', err))
+
+          // Navigate to section if specified (for coach view)
+          if (section && !tts) {
+            const match = toc.find((t) =>
+              t.text.toLowerCase().includes(section.toLowerCase())
+            )
+            if (match) {
+              useStore.getState().setActiveSection(match.id)
+            }
+          }
+        })
+        .catch((err) => console.error('md-reader: MCP file load failed:', err))
+    }
+
+    // Run on mount (fresh tab) AND on hash change (reused tab from MCP server)
+    handleMcpHash()
+    window.addEventListener('hashchange', handleMcpHash)
+    return () => window.removeEventListener('hashchange', handleMcpHash)
   }, [setMarkdown])
 
   // Trigger onboarding on first document load

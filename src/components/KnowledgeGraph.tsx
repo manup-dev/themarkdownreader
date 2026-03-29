@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as d3 from 'd3'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { extractConceptsAndRelations, detectBestBackend } from '../lib/ai'
+import { extractConceptsAndRelations } from '../lib/ai'
 
 function highlightTextInReader(term: string) {
   // Switch to read view and highlight all occurrences
@@ -53,20 +53,18 @@ export function KnowledgeGraphView() {
   const svgRef = useRef<SVGSVGElement>(null)
   const [loading, setLoading] = useState(false)
   const [graphData, setGraphData] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null)
-  const [aiReady, setAiReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [tooltip, setTooltip] = useState<{ x: number; y: number; label: string; type: string; connections: string[] } | null>(null)
-
-  useEffect(() => {
-    detectBestBackend().then((b) => setAiReady(b !== 'none'))
-  }, [])
 
   const generate = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const text = markdown.slice(0, 5000)
-      const result = await extractConceptsAndRelations(text)
+      const abort = new AbortController()
+      const timeout = setTimeout(() => abort.abort(), 10000)
+      const result = await extractConceptsAndRelations(text, abort.signal)
+      clearTimeout(timeout)
       if (result.nodes.length === 0) {
         setError('Could not extract concepts. Try again or use a longer document.')
       } else if (result.nodes.length < 3) {
@@ -81,10 +79,10 @@ export function KnowledgeGraphView() {
     setLoading(false)
   }, [markdown])
 
-  // Auto-generate when AI is ready
+  // Auto-generate: run immediately (extractConceptsAndRelations has deterministic fallback)
   useEffect(() => {
-    if (aiReady && !graphData && !loading) generate() // eslint-disable-line react-hooks/set-state-in-effect
-  }, [aiReady, graphData, loading, generate])
+    if (!graphData && !loading) generate() // eslint-disable-line react-hooks/set-state-in-effect
+  }, [graphData, loading, generate])
 
   // Render force-directed graph
   useEffect(() => {
@@ -214,14 +212,6 @@ export function KnowledgeGraphView() {
 
     return () => { simulation.stop() }
   }, [graphData, theme, setViewMode])
-
-  if (!aiReady && !loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-gray-400">AI backend loading... Open the chat panel first to initialize WebGPU.</p>
-      </div>
-    )
-  }
 
   return (
     <div className="flex-1 overflow-hidden relative">

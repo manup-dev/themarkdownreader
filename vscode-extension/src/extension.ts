@@ -264,10 +264,15 @@ export function activate(context: vscode.ExtensionContext) {
       if (!req) return
       pendingMcpRequest = null
 
+      const tick = () => new Promise<void>(r => setTimeout(r, 50))
+
       const doc = await vscode.workspace.openTextDocument(req.file)
+      await tick()
       await vscode.window.showTextDocument(doc, vscode.ViewColumn.One)
+      await tick()
 
       ReaderPanel.createOrShow(context, req.view || 'read')
+      await tick()
 
       const content = doc.getText()
       const fileName = path.basename(req.file)
@@ -355,10 +360,24 @@ export function activate(context: vscode.ExtensionContext) {
   // ── Auto-update webview ───────────────────────────────────────────
 
   // Auto-update webview when active markdown editor changes
+  // Also handles MCP triggers: if .md-reader-view exists, open the requested view
+  const mcpViewFile = path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '', '.md-reader-view')
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor?.document.languageId === 'markdown') {
-        ReaderPanel.current?.updateContent(editor.document)
+        // Check if MCP server requested a specific view
+        if (fs.existsSync(mcpViewFile)) {
+          try {
+            const view = fs.readFileSync(mcpViewFile, 'utf-8').trim()
+            fs.unlinkSync(mcpViewFile)
+            ReaderPanel.createOrShow(context, view || 'read')
+            const content = editor.document.getText()
+            const fileName = path.basename(editor.document.fileName)
+            ReaderPanel.current?.loadContent(content, fileName, view)
+          } catch { /* ignore */ }
+        } else {
+          ReaderPanel.current?.updateContent(editor.document)
+        }
       }
     }),
   )

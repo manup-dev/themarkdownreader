@@ -73,7 +73,11 @@ async function checkWebGPU(): Promise<boolean> {
   try {
     const nav = navigator as unknown as { gpu?: { requestAdapter: () => Promise<unknown | null> } }
     if (!nav.gpu) return false
-    const adapter = await nav.gpu.requestAdapter()
+    // Timeout: requestAdapter() can hang in VS Code webview sandbox
+    const adapter = await Promise.race([
+      nav.gpu.requestAdapter(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+    ])
     return adapter !== null
   } catch { return false }
 }
