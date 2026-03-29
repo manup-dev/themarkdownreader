@@ -56,7 +56,7 @@ export function MindMapView() {
   const isLargeDoc = nodeCount > 40
 
   // Depth slider: auto-collapse for large docs
-  const [maxDepth, setMaxDepth] = useState(() => isLargeDoc ? 2 : 10)
+  const [maxDepth, setMaxDepth] = useState(2)
   const [showDepthControl, setShowDepthControl] = useState(false)
 
   // Derive highlight directly from activeSection (no extra state/effect)
