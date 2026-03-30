@@ -102,12 +102,13 @@ export function CoachView() {
   }, [currentChunk, loadingQuiz])
 
   // Auto-trigger explanation for very short sections (< 50 words)
+  const autoExplainedRef = useRef<number>(-1)
   useEffect(() => {
-    if (currentChunk && currentChunk.text.split(/\s+/).length < 50 && aiReady && !coaching && !loadingCoach) {
+    if (currentChunk && currentChunk.text.split(/\s+/).length < 50 && aiReady && !coaching && !loadingCoach && autoExplainedRef.current !== sectionIndex) {
+      autoExplainedRef.current = sectionIndex
       handleCoach()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sectionIndex, aiReady])
+  }, [sectionIndex, aiReady, currentChunk, coaching, loadingCoach, handleCoach])
 
   const selectAnswer = useCallback((qIndex: number, optionIndex: number) => {
     if (showExplanations) return
@@ -203,6 +204,7 @@ export function CoachView() {
                 return null
               })()}
             </span>
+            <span className="text-[9px] text-gray-400 block mt-0.5">← → to navigate</span>
             <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mt-1">
               {currentChunk?.sectionPath ?? 'Document'}
             </h2>
@@ -276,15 +278,15 @@ export function CoachView() {
               <ChevronRight className={`h-3 w-3 transition-transform ${showMoreActions ? 'rotate-90' : ''}`} />
             </button>
             {showMoreActions && (
-              <div className="absolute top-full mt-1 left-0 z-10 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-1.5 min-w-[160px] animate-pop-in">
+              <div className="absolute top-full mt-1 right-0 sm:left-0 sm:right-auto z-10 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-1.5 min-w-[160px] animate-pop-in">
                 <button
-                  onClick={async () => { setShowMoreActions(false); if (!currentChunk) return; const s = await summarizeSection(currentChunk.text.slice(0, 1500)); setSectionSummary(s) }}
+                  onClick={async () => { setShowMoreActions(false); if (!currentChunk) return; try { const s = await summarizeSection(currentChunk.text.slice(0, 1500)); setSectionSummary(s) } catch { /* AI unavailable */ } }}
                   className="w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
                 >
                   <Sparkles className="h-3.5 w-3.5 text-green-500" /> Quick summary
                 </button>
                 <button
-                  onClick={async () => { setShowMoreActions(false); if (!currentChunk) return; const { PROMPTS } = await import('../lib/prompts'); const { chat: chatFn } = await import('../lib/ai'); const result = await chatFn([{ role: 'system', content: PROMPTS.eli5 }, { role: 'user', content: currentChunk.text.slice(0, 1000) }]); setSimplified(result) }}
+                  onClick={async () => { setShowMoreActions(false); if (!currentChunk) return; try { const { PROMPTS } = await import('../lib/prompts'); const { chat: chatFn } = await import('../lib/ai'); const result = await chatFn([{ role: 'system', content: PROMPTS.eli5 }, { role: 'user', content: currentChunk.text.slice(0, 1000) }]); setSimplified(result) } catch { /* AI unavailable */ } }}
                   className="w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
                 >
                   <GraduationCap className="h-3.5 w-3.5 text-cyan-500" /> Simplify (ELI5)
@@ -424,7 +426,7 @@ export function CoachView() {
                 onClick={() => {
                   setShowExplanations(true)
                   trackEvent('ai_quiz')
-                  const pct = Math.round((score / quiz.length) * 100)
+                  const pct = quiz.length > 0 ? Math.round((score / quiz.length) * 100) : 0
                   const updated = { ...sectionScores, [sectionIndex]: pct }
                   setSectionScores(updated)
                   localStorage.setItem('md-reader-coach-scores', JSON.stringify(updated))
@@ -449,9 +451,9 @@ export function CoachView() {
                 </p>
                 <div className="mt-2 flex items-center gap-2">
                   <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full transition-all ${score === quiz.length ? 'bg-green-500' : score >= quiz.length / 2 ? 'bg-amber-500' : 'bg-red-400'}`} style={{ width: `${Math.round((score / quiz.length) * 100)}%` }} />
+                    <div className={`h-full rounded-full transition-all ${score === quiz.length ? 'bg-green-500' : score >= quiz.length / 2 ? 'bg-amber-500' : 'bg-red-400'}`} style={{ width: `${quiz.length > 0 ? Math.round((score / quiz.length) * 100) : 0}%` }} />
                   </div>
-                  <span className="text-[10px] text-gray-400">{Math.round((score / quiz.length) * 100)}% mastery</span>
+                  <span className="text-[10px] text-gray-400">{quiz.length > 0 ? Math.round((score / quiz.length) * 100) : 0}% mastery</span>
                 </div>
               </div>
             )}

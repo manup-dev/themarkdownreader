@@ -35,7 +35,7 @@ export function TtsPlayer() {
     loadVoices()
     window.speechSynthesis.onvoiceschanged = loadVoices
 
-    return () => { tts.stop() }
+    return () => { tts.stop(); window.speechSynthesis.onvoiceschanged = null }
   }, [markdown, setTtsPlaying, setTtsSectionIndex])
 
   const handlePlay = useCallback(() => {

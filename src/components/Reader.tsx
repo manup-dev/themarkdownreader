@@ -10,6 +10,9 @@ import { extractToc, wordCount, estimateDifficulty, slugify } from '../lib/markd
 import { getComments, updateComment, removeComment, type Comment } from '../lib/docstore'
 import { trackEvent } from '../lib/telemetry'
 
+// Module-level constant to avoid re-creating on every render
+const STOP_WORDS = new Set(['this','that','with','from','have','been','will','your','they','their','which','when','what','each','other','about','more','than','also','only','into','some','very','just','like','over','such','most','these','there','could','would','should','using','where','after','before','because','through','between','under','above','within','without','during','following','along','across','behind','beyond','every','another','those','being','while','since','until','however','although','either','neither','whether','among','around','against','though','still','already','rather','often','never','always','sometimes','usually','perhaps','quite','really','actually','certainly','definitely','probably','possibly','maybe'])
+
 // Delight #24: Click heading to copy anchor link
 function HeadingRenderer(level: number) {
   return function Heading({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
@@ -180,6 +183,16 @@ export function Reader() {
   const readingProgress = useStore((s) => s.readingProgress)
   const fileName = useStore((s) => s.fileName)
   const contentRef = useRef<HTMLDivElement>(null)
+  const sectionsReadCache = useRef(new Set<string>())
+  const [prevDocId, setPrevDocId] = useState<number | null>(null)
+  if (prevDocId !== activeDocId) {
+    setPrevDocId(activeDocId)
+    if (activeDocId) {
+      try { sectionsReadCache.current = new Set(JSON.parse(localStorage.getItem(`md-reader-sections-read-${activeDocId}`) ?? '[]')) } catch { sectionsReadCache.current = new Set() }
+    } else {
+      sectionsReadCache.current = new Set()
+    }
+  }
 
   // Feature 17: URL fragment sharing state
   const [linkCopied, setLinkCopied] = useState(false)
@@ -301,7 +314,7 @@ export function Reader() {
     const text = markdown.toLowerCase()
     const wordList = text.match(/\b[a-z]{4,}\b/g) ?? []
     const freq = new Map<string, number>()
-    const stop = new Set(['this','that','with','from','have','been','will','your','they','their','which','when','what','each','other','about','more','than','also','only','into','some','very','just','like','over','such','most','these','there','could','would','should','using','where','after','before','because','through','between','under','above','within','without','during','following','along','across','behind','beyond','every','another','those','being','while','since','until','however','although','either','neither','whether','among','around','against','though','still','already','rather','often','never','always','sometimes','usually','perhaps','quite','really','actually','certainly','definitely','probably','possibly','maybe'])
+    const stop = STOP_WORDS
     for (const w of wordList) { if (!stop.has(w)) freq.set(w, (freq.get(w) ?? 0) + 1) }
     const top = [...freq.entries()].filter(([,c]) => c >= 3).sort((a,b) => b[1]-a[1])[0]
     return top ?? null
@@ -453,13 +466,12 @@ export function Reader() {
     }
     setActiveSection(active)
 
-    // Track sections read for analytics
+    // Track sections read for analytics (cached to avoid JSON parse on every scroll)
     if (active && activeDocId) {
-      const key = `md-reader-sections-read-${activeDocId}`
-      const read = JSON.parse(localStorage.getItem(key) ?? '[]') as string[]
-      if (!read.includes(active)) {
-        read.push(active)
-        localStorage.setItem(key, JSON.stringify(read))
+      if (!sectionsReadCache.current.has(active)) {
+        sectionsReadCache.current.add(active)
+        const key = `md-reader-sections-read-${activeDocId}`
+        localStorage.setItem(key, JSON.stringify([...sectionsReadCache.current]))
       }
     }
   }, [toc, setReadingProgress, setActiveSection, words, activeDocId])

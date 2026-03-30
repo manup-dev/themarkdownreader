@@ -499,18 +499,31 @@ function injectButton() {
 
 function init() {
   if (!isMarkdownPage()) return
+
+  // MutationObserver catches GitHub's lazy-loaded React toolbar
   const observer = new MutationObserver(() => {
     if (isMarkdownPage() && !document.querySelector('.md-reader-btn')) {
       injectButton()
     }
   })
   observer.observe(document.body, { childList: true, subtree: true })
-  setTimeout(injectButton, 500)
-  setTimeout(injectButton, 2000)
+
+  // Retry at increasing intervals — GitHub's React UI can be slow to render the toolbar
+  for (const delay of [300, 800, 1500, 3000, 6000]) {
+    setTimeout(() => {
+      if (!document.querySelector('.md-reader-btn')) injectButton()
+    }, delay)
+  }
 }
 
+// GitHub SPA navigation events
 document.addEventListener('turbo:load', init)
 document.addEventListener('turbo:render', init)
+// Older GitHub pjax
+document.addEventListener('pjax:end', init)
+
+// Also re-init on popstate (back/forward navigation)
+window.addEventListener('popstate', () => setTimeout(init, 300))
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init)

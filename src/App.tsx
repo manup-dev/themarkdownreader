@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
 import { MessageSquare, MessageSquareText, PanelLeftClose, PanelLeftOpen, Loader2, Menu, Volume2, X } from 'lucide-react'
 import { useStore, type ViewMode } from './store/useStore'
 import { getCommentCount } from './lib/docstore'
@@ -157,7 +157,7 @@ function App() {
                 ttsEngine.play(0)
               }
               useStore.getState().setTtsPlaying(true)
-            })
+            }).catch(() => { /* TTS module load failed — non-critical */ })
           }
 
           // Navigate to section if specified (for coach view)
@@ -235,7 +235,8 @@ function App() {
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
 
-  useEffect(() => {
+  // Apply theme class before paint to prevent flash of wrong theme on code blocks
+  useLayoutEffect(() => {
     const root = document.documentElement
     root.classList.remove('dark', 'sepia', 'high-contrast')
     if (theme === 'dark' || theme === 'high-contrast') root.classList.add('dark')
@@ -345,7 +346,7 @@ function App() {
 
               {!isWorkspaceView && markdown && (
                 <>
-                  {viewMode === 'read' && <Reader />}
+                  {viewMode === 'read' && <ErrorBoundary name="Reader"><Reader /></ErrorBoundary>}
                   {viewMode === 'mindmap' && <ErrorBoundary name="Mind Map"><MindMapView /></ErrorBoundary>}
                   {viewMode === 'summary-cards' && <ErrorBoundary name="Summary Cards"><SummaryCardsView /></ErrorBoundary>}
                   {viewMode === 'treemap' && <ErrorBoundary name="Treemap"><TreemapView /></ErrorBoundary>}

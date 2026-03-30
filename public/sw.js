@@ -1,5 +1,5 @@
 // md-reader Service Worker — offline support for core reading features
-const CACHE_NAME = 'md-reader-v1'
+const CACHE_NAME = 'md-reader-v2'
 const CORE_ASSETS = [
   '/',
   '/index.html',
@@ -25,29 +25,27 @@ self.addEventListener('activate', (event) => {
   self.clients.claim()
 })
 
-// Fetch: network-first for API, cache-first for assets
+// Fetch: network-first for navigation, passthrough for hashed assets
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
 
-  // Skip Ollama/OpenRouter API requests
+  // Skip cross-origin requests (Ollama/OpenRouter API)
   if (url.hostname !== self.location.hostname) return
 
-  // Cache-first for static assets
-  if (url.pathname.startsWith('/assets/') || url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
+  // Don't intercept Vite hashed assets — browser cache handles them fine
+  // and caching them here causes stale-hash fetch failures on rebuilds
+  if (url.pathname.startsWith('/assets/')) return
+
+  // Network-first for HTML (SPA) — fall back to cached shell when offline
+  if (event.request.mode === 'navigate') {
     event.respondWith(
-      caches.match(event.request).then((cached) =>
-        cached || fetch(event.request).then((response) => {
-          const clone = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone))
-          return response
-        })
-      )
+      fetch(event.request).catch(() => caches.match('/index.html'))
     )
     return
   }
 
-  // Network-first for HTML (SPA)
+  // Cache-first for core assets (favicon, manifest, etc.)
   event.respondWith(
-    fetch(event.request).catch(() => caches.match('/index.html'))
+    caches.match(event.request).then((cached) => cached || fetch(event.request))
   )
 })

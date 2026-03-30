@@ -359,7 +359,7 @@ md-reader is open source. Contributions welcome!
         </div>
 
         {/* Feature highlights */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {[
             { icon: Eye, label: 'Beautiful reading', desc: 'Kindle-like experience', color: 'text-blue-500' },
             { icon: Map, label: 'Visual exploration', desc: 'Mind maps & graphs', color: 'text-purple-500' },
@@ -456,7 +456,7 @@ md-reader is open source. Contributions welcome!
         })()}
 
         {/* Action buttons */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <button
             onClick={() => setMode('editor')}
             className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-sm transition-all text-center"

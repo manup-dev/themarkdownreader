@@ -56,15 +56,34 @@ export function KnowledgeGraphView() {
   const [error, setError] = useState<string | null>(null)
   const [tooltip, setTooltip] = useState<{ x: number; y: number; label: string; type: string; connections: string[] } | null>(null)
 
+  const abortRef = useRef<AbortController | null>(null)
+  const mountedRef = useRef(true)
+  // Reset graph when markdown changes — render-time state adjustment
+  const [prevMarkdown, setPrevMarkdown] = useState(markdown)
+  if (prevMarkdown !== markdown) {
+    setPrevMarkdown(markdown)
+    setGraphData(null)
+  }
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
+
   const generate = useCallback(async () => {
+    // Abort any in-flight request
+    abortRef.current?.abort()
+    const abort = new AbortController()
+    abortRef.current = abort
+
     setLoading(true)
     setError(null)
     try {
       const text = markdown.slice(0, 5000)
-      const abort = new AbortController()
       const timeout = setTimeout(() => abort.abort(), 10000)
       const result = await extractConceptsAndRelations(text, abort.signal)
       clearTimeout(timeout)
+      if (!mountedRef.current) return
       if (result.nodes.length === 0) {
         setError('Could not extract concepts. Try again or use a longer document.')
       } else if (result.nodes.length < 3) {
@@ -74,15 +93,17 @@ export function KnowledgeGraphView() {
         setGraphData(result)
       }
     } catch (e) {
+      if (!mountedRef.current || abort.signal.aborted) return
       setError(`Failed: ${e instanceof Error ? e.message : 'Unknown error'}. Click refresh to retry.`)
     }
-    setLoading(false)
+    if (mountedRef.current) setLoading(false)
   }, [markdown])
 
-  // Auto-generate: run immediately (extractConceptsAndRelations has deterministic fallback)
+  // Auto-generate on mount or markdown change — run once, not on every generate reference change
   useEffect(() => {
-    if (!graphData && !loading) generate() // eslint-disable-line react-hooks/set-state-in-effect
-  }, [graphData, loading, generate])
+    generate() // eslint-disable-line react-hooks/set-state-in-effect -- async data fetch sets loading state
+    return () => { abortRef.current?.abort() }
+  }, [markdown]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Render force-directed graph
   useEffect(() => {
@@ -261,7 +282,7 @@ export function KnowledgeGraphView() {
         <div className="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-gray-950/50 z-20">
           <div className="flex items-center gap-2 text-gray-500">
             <Loader2 className="h-5 w-5 animate-spin" />
-            Extracting concepts...
+            Extracting concepts... (may take up to 10s)
           </div>
         </div>
       )}

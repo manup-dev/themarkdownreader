@@ -4,6 +4,8 @@ import { useStore } from '../store/useStore'
 import { buildSectionCards, type SectionCard } from '../lib/visualize'
 import { summarizeSection, detectBestBackend } from '../lib/ai'
 
+const SUMMARY_STOP_WORDS = new Set(['this','that','with','from','have','been','will','your','they','their','which','when','what','each','other','about','more','than','also','only','into','some','very','just','like','over','such','most','these','there','could','would','should'])
+
 export function SummaryCardsView() {
   const markdown = useStore((s) => s.markdown)
   const toc = useStore((s) => s.toc)
@@ -86,7 +88,7 @@ export function SummaryCardsView() {
               const allText = cards.map((c) => c.text).join(' ').toLowerCase()
               const words = allText.match(/\b[a-z]{4,}\b/g) ?? []
               const freq = new Map<string, number>()
-              const stop = new Set(['this','that','with','from','have','been','will','your','they','their','which','when','what','each','other','about','more','than','also','only','into','some','very','just','like','over','such','most','these','there','could','would','should'])
+              const stop = SUMMARY_STOP_WORDS
               for (const w of words) { if (!stop.has(w)) freq.set(w, (freq.get(w) ?? 0) + 1) }
               const top = [...freq.entries()].filter(([,c]) => c >= 2).sort((a,b) => b[1]-a[1]).slice(0, 12)
               if (top.length === 0) return null
@@ -126,7 +128,7 @@ export function SummaryCardsView() {
               })()}
             </div>
           </div>
-          {cards.map((card) => (
+          {(() => { const totalWordsAll = cards.reduce((s, c) => s + c.wordCount, 0); return cards.map((card) => (
             <div
               key={card.id}
               role="button"
@@ -175,7 +177,7 @@ export function SummaryCardsView() {
                   {card.readingTime} min
                 </span>
                 <div className="flex-1 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden ml-2">
-                  <div className="h-full bg-blue-400 rounded-full" style={{ width: `${Math.round((card.wordCount / Math.max(1, cards.reduce((s, c) => s + c.wordCount, 0))) * 100)}%` }} />
+                  <div className="h-full bg-blue-400 rounded-full" style={{ width: `${Math.round((card.wordCount / Math.max(1, totalWordsAll)) * 100)}%` }} />
                 </div>
                 {aiReady && !card.summary && (
                   <button
@@ -211,7 +213,7 @@ export function SummaryCardsView() {
                 </div>
               )}
             </div>
-          ))}
+          )); })()}
         </div>
 
         {cards.length === 0 && (

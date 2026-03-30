@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import * as d3 from 'd3'
 import { hierarchy, treemap, treemapSquarify, type HierarchyRectangularNode } from 'd3-hierarchy'
 import { useStore } from '../store/useStore'
@@ -14,7 +14,7 @@ export function TreemapView() {
   const setViewMode = useStore((s) => s.setViewMode)
   const containerRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<{ x: number; y: number; name: string; words: number } | null>(null)
-  const totalWords = markdown.split(/\s+/).filter(Boolean).length
+  const totalWords = useMemo(() => markdown.split(/\s+/).filter(Boolean).length, [markdown])
 
   useEffect(() => {
     if (!containerRef.current) return

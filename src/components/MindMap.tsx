@@ -246,7 +246,7 @@ export function MindMapView() {
             onClick={() => setShowHint(false)}
             title="Click to dismiss"
           >
-            Scroll to zoom, drag to pan. Ctrl+click a node to jump to that section. &times;
+            Scroll to zoom, drag to pan. Ctrl+click a node to jump to that section. Use the layers icon to expand depth. &times;
           </span>
         )}
         <button

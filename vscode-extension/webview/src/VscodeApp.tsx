@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
 import { Loader2, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useStore } from '@app/store/useStore'
 import { Reader } from '@app/components/Reader'
@@ -48,8 +48,8 @@ export function VscodeApp() {
   const [aiActionResult, setAiActionResult] = useState<{ action: string; text: string; result?: string } | null>(null)
   const lastScrollSectionRef = useRef<string>('')
 
-  // Apply theme
-  useEffect(() => {
+  // Apply theme before paint to prevent code block flash
+  useLayoutEffect(() => {
     const root = document.documentElement
     root.classList.remove('dark', 'sepia')
     if (theme === 'dark') root.classList.add('dark')

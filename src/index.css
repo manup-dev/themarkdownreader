@@ -52,6 +52,19 @@ html, body, #root {
 .sepia .hljs-number { color: #0369a1; }
 .sepia .hljs-built_in { color: #b45309; }
 
+/* Smooth theme transition on code blocks */
+.hljs, .hljs span { transition: background-color 200ms, color 200ms; }
+
+/* Code block syntax highlighting — high-contrast theme (inherits .dark for cascade) */
+.high-contrast .hljs { background: #111 !important; color: #fff; }
+.high-contrast .hljs-keyword, .high-contrast .hljs-selector-tag { color: #ff6666; }
+.high-contrast .hljs-string, .high-contrast .hljs-attr { color: #66ccff; }
+.high-contrast .hljs-comment { color: #999; }
+.high-contrast .hljs-function, .high-contrast .hljs-title { color: #cc99ff; }
+.high-contrast .hljs-number, .high-contrast .hljs-literal { color: #66ffcc; }
+.high-contrast .hljs-built_in, .high-contrast .hljs-type { color: #ffcc66; }
+.high-contrast .hljs-meta, .high-contrast .hljs-meta-keyword { color: #66ff66; }
+
 /* Smooth transitions */
 button, a, input, select, textarea, nav, [role="button"] { transition-property: background-color, border-color, color; transition-duration: 150ms; }
 article *, article *::before, article *::after { transition: none; }
