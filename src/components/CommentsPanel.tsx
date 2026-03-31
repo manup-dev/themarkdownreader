@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { X, Check, Trash2, Download, ExternalLink, Eye, EyeOff } from 'lucide-react'
+import { X, Check, Trash2, Download, ExternalLink, Eye, EyeOff, Wand2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { getComments, updateComment, removeComment, type Comment } from '../lib/docstore'
+import { trackEvent } from '../lib/telemetry'
+import { PromptBuilder } from './PromptBuilder'
 
 function timeAgo(ts: number): string {
   const sec = Math.floor((Date.now() - ts) / 1000)
@@ -20,6 +22,7 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
   const toc = useStore((s) => s.toc)
   const [comments, setComments] = useState<Comment[]>([])
   const [showResolved, setShowResolved] = useState(false)
+  const [showPromptBuilder, setShowPromptBuilder] = useState(false)
   const [username, setUsername] = useState(() => localStorage.getItem('md-reader-username') || 'You')
 
   const refresh = useCallback(async () => {
@@ -89,6 +92,10 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
   const filtered = showResolved ? comments : comments.filter((c) => !c.resolved)
   const resolvedCount = comments.filter((c) => c.resolved).length
 
+  if (showPromptBuilder) {
+    return <PromptBuilder comments={comments} onClose={() => setShowPromptBuilder(false)} />
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -99,13 +106,22 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
           </h3>
           <div className="flex items-center gap-1">
             {comments.length > 0 && (
-              <button
-                onClick={handleExport}
-                className="p-1 text-gray-300 hover:text-blue-400 transition-colors rounded"
-                title="Export comments as markdown"
-              >
-                <Download className="h-3 w-3" />
-              </button>
+              <>
+                <button
+                  onClick={() => { setShowPromptBuilder(true); trackEvent('prompt_builder_opened') }}
+                  className="p-1 text-gray-300 hover:text-teal-400 transition-colors rounded"
+                  title="Generate AI prompt from comments"
+                >
+                  <Wand2 className="h-3 w-3" />
+                </button>
+                <button
+                  onClick={handleExport}
+                  className="p-1 text-gray-300 hover:text-blue-400 transition-colors rounded"
+                  title="Export comments as markdown"
+                >
+                  <Download className="h-3 w-3" />
+                </button>
+              </>
             )}
             <button
               onClick={onClose}

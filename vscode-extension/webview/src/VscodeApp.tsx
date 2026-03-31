@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
-import { Loader2, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Loader2, PanelLeftClose, PanelLeftOpen, MessageSquare } from 'lucide-react'
 import { useStore } from '@app/store/useStore'
 import { Reader } from '@app/components/Reader'
 import { TableOfContents } from '@app/components/TableOfContents'
@@ -7,6 +7,7 @@ import { TtsPlayer } from '@app/components/TtsPlayer'
 import { ResizeHandle } from '@app/components/ResizeHandle'
 import { KeyboardShortcuts } from '@app/components/KeyboardShortcuts'
 import { ErrorBoundary } from '@app/components/ErrorBoundary'
+import { SelectionMenu } from '@app/components/SelectionMenu'
 import { getVsCodeApi } from './vscodeApi'
 import type { ViewMode, Theme } from '@app/store/useStore'
 
@@ -15,6 +16,7 @@ const SummaryCardsView = lazy(() => import('@app/components/SummaryCards').then(
 const TreemapView = lazy(() => import('@app/components/TreemapView').then((m) => ({ default: m.TreemapView })))
 const KnowledgeGraphView = lazy(() => import('@app/components/KnowledgeGraph').then((m) => ({ default: m.KnowledgeGraphView })))
 const CoachView = lazy(() => import('@app/components/Coach').then((m) => ({ default: m.CoachView })))
+const CommentsPanel = lazy(() => import('@app/components/CommentsPanel').then((m) => ({ default: m.CommentsPanel })))
 
 function LazyFallback() {
   return (
@@ -45,6 +47,7 @@ export function VscodeApp() {
   const setSidebarWidth = useStore((s) => s.setSidebarWidth)
   const fileName = useStore((s) => s.fileName)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [commentsOpen, setCommentsOpen] = useState(false)
   const [aiActionResult, setAiActionResult] = useState<{ action: string; text: string; result?: string } | null>(null)
   const lastScrollSectionRef = useRef<string>('')
 
@@ -146,6 +149,12 @@ export function VscodeApp() {
               vscodeApi?.postMessage({ type: 'info', text: 'Copied reader content as rich text' })
             }
           }
+          break
+        }
+        case 'sendToTerminal': {
+          // Forward to extension host
+          const vscApi = getVsCodeApi()
+          vscApi?.postMessage({ type: 'sendToTerminal', text: msg.text })
           break
         }
         case 'scrollToSection': {
@@ -279,6 +288,18 @@ export function VscodeApp() {
               {vm.label}
             </button>
           ))}
+          <div className="flex-1" />
+          <button
+            onClick={() => setCommentsOpen(!commentsOpen)}
+            className={`p-1 rounded text-xs transition-colors ${
+              commentsOpen
+                ? 'bg-teal-100 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300'
+                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+            }`}
+            title="Comments & Prompt Builder"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+          </button>
         </div>
 
         {/* Content */}
@@ -291,6 +312,20 @@ export function VscodeApp() {
           {viewMode === 'coach' && <ErrorBoundary name="Coach"><CoachView /></ErrorBoundary>}
         </Suspense>
       </div>
+
+      {/* Comments panel */}
+      {commentsOpen && (
+        <aside className="shrink-0 border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-y-auto" style={{ width: 300 }}>
+          <Suspense fallback={<LazyFallback />}>
+            <ErrorBoundary name="Comments">
+              <CommentsPanel onClose={() => setCommentsOpen(false)} />
+            </ErrorBoundary>
+          </Suspense>
+        </aside>
+      )}
+
+      {/* Selection menu (highlight, AI explain, comment, copy) */}
+      {markdown && viewMode === 'read' && <SelectionMenu />}
 
       {/* TTS */}
       <TtsPlayer />

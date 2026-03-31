@@ -187,6 +187,22 @@ export class ReaderPanel {
       case 'info':
         vscode.window.showInformationMessage(message.text as string)
         break
+
+      case 'sendToTerminal': {
+        // Paste prompt into active terminal (or create one)
+        const text = message.text as string
+        if (text) {
+          const terminal = vscode.window.activeTerminal ?? vscode.window.createTerminal('md-reader prompt')
+          terminal.show()
+          // Use clipboard approach: copy to clipboard and notify user
+          vscode.env.clipboard.writeText(text).then(() => {
+            vscode.window.showInformationMessage(
+              'Prompt copied to clipboard. Paste it into Claude Code or your preferred AI tool.',
+            )
+          })
+        }
+        break
+      }
     }
   }
 
