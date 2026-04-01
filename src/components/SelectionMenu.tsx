@@ -79,9 +79,18 @@ export function SelectionMenu() {
   }, [])
 
   const handleHighlight = useCallback(async (color: string) => {
-    if (!menu || !activeDocId) return
+    if (!menu) return
+    let docId = activeDocId
+    // Auto-save document if not yet in library — skip heavy post-processing to stay responsive
+    if (!docId) {
+      const { markdown, fileName, setActiveDocId } = useStore.getState()
+      if (!markdown || !fileName) return
+      const result = await addDocument(fileName, markdown, { skipPostProcessing: true })
+      docId = result.docId
+      setActiveDocId(docId)
+    }
     await addHighlight({
-      docId: activeDocId,
+      docId,
       text: menu.text,
       startOffset: 0,
       endOffset: 0,
@@ -172,11 +181,11 @@ export function SelectionMenu() {
   const handleSaveComment = useCallback(async () => {
     if (!menu || !commentText.trim()) return
     let docId = activeDocId
-    // Auto-save document if not yet in library
+    // Auto-save document if not yet in library — skip heavy post-processing to stay responsive
     if (!docId) {
       const { markdown, fileName, setActiveDocId } = useStore.getState()
       if (!markdown || !fileName) return
-      const result = await addDocument(fileName, markdown)
+      const result = await addDocument(fileName, markdown, { skipPostProcessing: true })
       docId = result.docId
       setActiveDocId(docId)
     }
@@ -274,157 +283,158 @@ export function SelectionMenu() {
             )
           })()}
 
-          {/* Action buttons */}
-          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-1.5 flex items-center gap-0.5">
-            {/* Highlight colors */}
-            {COLORS.map((c) => (
+          {/* Action buttons — two rows for clarity */}
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-2 space-y-1.5 min-w-[280px]">
+            {/* Row 1: Highlight colors + comment */}
+            <div className="flex items-center gap-1.5">
+              {COLORS.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => handleHighlight(c)}
+                  className="w-7 h-7 rounded-full border-2 border-gray-300 dark:border-gray-600 hover:border-gray-500 dark:hover:border-gray-400 transition-all hover:scale-110 shrink-0"
+                  style={{ background: c }}
+                  title={`Highlight ${COLOR_NAMES[c] ?? c}`}
+                  aria-label={`Highlight ${COLOR_NAMES[c] ?? c}`}
+                />
+              ))}
+              <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-0.5" />
               <button
-                key={c}
-                onClick={() => handleHighlight(c)}
-                className="w-6 h-6 rounded-full border-2 border-transparent hover:border-gray-400 transition-all hover:scale-110"
-                style={{ background: c }}
-                title={`Highlight ${COLOR_NAMES[c] ?? c}`}
-                aria-label={`Highlight ${COLOR_NAMES[c] ?? c}`}
-              />
-            ))}
-
-            <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
-
-            <button
-              onClick={() => { setShowCommentInput(!showCommentInput); setCommentText('') }}
-              className="p-1.5 text-gray-500 hover:text-teal-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-              title="Add comment"
-            >
-              <MessageSquare className="h-4 w-4" />
-            </button>
-
-            <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
-
-            <button
-              onClick={() => { handleAskAI('Explain this concisely in 2-3 sentences. Use simple language.'); trackEvent('ai_explain') }}
-              className="p-1.5 text-gray-500 hover:text-blue-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-              title="Explain with AI"
-            >
-              <Bot className="h-4 w-4" />
-            </button>
-
-            <button
-              onClick={() => { handleAskAI('Explain this to a 10-year-old in 2-3 simple sentences. Use everyday words. No jargon.'); trackEvent('ai_explain') }}
-              className="p-1.5 text-gray-500 hover:text-emerald-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-              title="Simplify (ELI5)"
-            >
-              <span className="text-xs font-bold">5</span>
-            </button>
-
-            <button
-              onClick={() => handleAskAI('Describe this as if explaining a diagram. Use simple ASCII art or arrows if helpful. Max 100 words.')}
-              className="p-1.5 text-gray-500 hover:text-orange-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-              title="Visualize as diagram"
-            >
-              <span className="text-xs">▣</span>
-            </button>
-
-            <button
-              onClick={() => handleAskAI('Define this term or concept. Give a clear, concise definition and one example.')}
-              className="p-1.5 text-gray-500 hover:text-purple-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-              title="Define"
-            >
-              <BookOpen className="h-4 w-4" />
-            </button>
-
-            <button
-              onClick={handleSearch}
-              className="p-1.5 text-gray-500 hover:text-amber-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-              title="Find in document"
-            >
-              <Search className="h-4 w-4" />
-            </button>
-
-            <button
-              onClick={() => {
-                if (!menu) return
-                const chatFab = document.querySelector('.fixed.bottom-6.right-6') as HTMLButtonElement
-                if (chatFab) chatFab.click()
-                setTimeout(() => {
-                  const input = document.querySelector('[placeholder*="Ask a question"]') as HTMLInputElement
-                  if (input) {
-                    input.value = `Explain this passage: "${menu.text.slice(0, 200)}"`
-                    input.dispatchEvent(new Event('input', { bubbles: true }))
-                    input.focus()
-                  }
-                }, 200)
-                setMenu(null)
-              }}
-              className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-              title="Ask about this in Chat"
-            >
-              <div className="flex items-center gap-0.5">
-                <Bot className="h-3.5 w-3.5" />
-                <span className="text-[8px]">Chat</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => {
-                if (!menu) return
-                const term = menu.text.split(/\s+/).slice(0, 3).join(' ')
-                const docId = useStore.getState().activeDocId ?? 'unsaved'
-                const key = `md-reader-glossary-${docId}`
-                const glossary = JSON.parse(localStorage.getItem(key) ?? '{}')
-                glossary[term] = menu.text
-                localStorage.setItem(key, JSON.stringify(glossary))
-                setMenu(null)
-              }}
-              className="p-1.5 text-gray-500 hover:text-indigo-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-              title="Save to glossary"
-            >
-              <BookOpen className="h-4 w-4" />
-            </button>
-
-            <div className="relative">
+                onClick={() => { setShowCommentInput(!showCommentInput); setCommentText('') }}
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-teal-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="Add comment"
+              >
+                <MessageSquare className="h-4 w-4" />
+              </button>
               <button
                 onClick={handleCopy}
                 onContextMenu={(e) => { e.preventDefault(); setShowCopyMenu(!showCopyMenu) }}
-                className={`p-1.5 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 ${copied ? 'text-green-500' : 'text-gray-500 hover:text-green-500'}`}
+                className={`p-1.5 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 ${copied ? 'text-green-500' : 'text-gray-500 dark:text-gray-400 hover:text-green-500'}`}
                 title="Copy (right-click for options)"
               >
                 {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </button>
-              {showCopyMenu && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg shadow-xl p-1 min-w-36 z-50">
-                  <button onClick={handleCopy} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
-                    <Copy className="h-3 w-3" /> Copy text
-                  </button>
-                  <button onClick={handleCopyAsQuote} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
-                    <Quote className="h-3 w-3" /> Copy as quote
-                  </button>
-                  <button onClick={handleCopyWithSource} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
-                    <FileText className="h-3 w-3" /> Copy with source
-                  </button>
-                  <button
-                    onClick={() => {
-                      const fileName = useStore.getState().fileName ?? 'Document'
-                      const section = useStore.getState().activeSection ?? ''
-                      const toc = useStore.getState().toc
-                      const sectionName = toc.find((t) => t.id === section)?.text ?? ''
-                      const cite = `"${menu?.text}" — ${fileName}${sectionName ? `, ${sectionName}` : ''}`
-                      navigator.clipboard.writeText(cite)
-                      setCopied(true); setShowCopyMenu(false); setTimeout(() => setCopied(false), 1500)
-                    }}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
-                  >
-                    <Quote className="h-3 w-3" /> Cite this
-                  </button>
-                </div>
-              )}
+              <button
+                onClick={() => { setMenu(null); setAiResponse(null) }}
+                className="p-1.5 text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors rounded-lg ml-auto"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
 
-            <button
-              onClick={() => { setMenu(null); setAiResponse(null) }}
-              className="p-1.5 text-gray-300 hover:text-gray-500 transition-colors rounded-lg"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            {/* Row 2: AI + tools */}
+            <div className="flex items-center gap-0.5 border-t border-gray-100 dark:border-gray-800 pt-1.5">
+              <button
+                onClick={() => { handleAskAI('Explain this concisely in 2-3 sentences. Use simple language.'); trackEvent('ai_explain') }}
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-blue-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="Explain with AI"
+              >
+                <Bot className="h-4 w-4" />
+              </button>
+
+              <button
+                onClick={() => { handleAskAI('Explain this to a 10-year-old in 2-3 simple sentences. Use everyday words. No jargon.'); trackEvent('ai_explain') }}
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-emerald-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="Simplify (ELI5)"
+              >
+                <span className="text-xs font-bold leading-none">5</span>
+              </button>
+
+              <button
+                onClick={() => handleAskAI('Describe this as if explaining a diagram. Use simple ASCII art or arrows if helpful. Max 100 words.')}
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-orange-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="Visualize as diagram"
+              >
+                <span className="text-xs leading-none">▣</span>
+              </button>
+
+              <button
+                onClick={() => handleAskAI('Define this term or concept. Give a clear, concise definition and one example.')}
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-purple-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="Define"
+              >
+                <BookOpen className="h-4 w-4" />
+              </button>
+
+              <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-0.5" />
+
+              <button
+                onClick={handleSearch}
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-amber-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="Find in document"
+              >
+                <Search className="h-4 w-4" />
+              </button>
+
+              <button
+                onClick={() => {
+                  if (!menu) return
+                  const chatFab = document.querySelector('[data-chat-fab]') as HTMLButtonElement
+                  if (chatFab) chatFab.click()
+                  setTimeout(() => {
+                    const input = document.querySelector('[placeholder*="Ask a question"]') as HTMLInputElement
+                    if (input) {
+                      input.value = `Explain this passage: "${menu.text.slice(0, 200)}"`
+                      input.dispatchEvent(new Event('input', { bubbles: true }))
+                      input.focus()
+                    }
+                  }, 200)
+                  setMenu(null)
+                }}
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                title="Ask about this in Chat"
+              >
+                <div className="flex items-center gap-0.5">
+                  <Bot className="h-3.5 w-3.5" />
+                  <span className="text-[9px] font-medium">Chat</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (!menu) return
+                  const term = menu.text.split(/\s+/).slice(0, 3).join(' ')
+                  const docId = useStore.getState().activeDocId ?? 'unsaved'
+                  const key = `md-reader-glossary-${docId}`
+                  const glossary = JSON.parse(localStorage.getItem(key) ?? '{}')
+                  glossary[term] = menu.text
+                  localStorage.setItem(key, JSON.stringify(glossary))
+                  setMenu(null)
+                }}
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-indigo-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="Save to glossary"
+              >
+                <BookOpen className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Copy submenu */}
+            {showCopyMenu && (
+              <div className="border-t border-gray-100 dark:border-gray-800 pt-1.5 space-y-0.5">
+                <button onClick={handleCopy} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+                  <Copy className="h-3 w-3" /> Copy text
+                </button>
+                <button onClick={handleCopyAsQuote} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+                  <Quote className="h-3 w-3" /> Copy as quote
+                </button>
+                <button onClick={handleCopyWithSource} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+                  <FileText className="h-3 w-3" /> Copy with source
+                </button>
+                <button
+                  onClick={() => {
+                    const fileName = useStore.getState().fileName ?? 'Document'
+                    const section = useStore.getState().activeSection ?? ''
+                    const toc = useStore.getState().toc
+                    const sectionName = toc.find((t) => t.id === section)?.text ?? ''
+                    const cite = `"${menu?.text}" — ${fileName}${sectionName ? `, ${sectionName}` : ''}`
+                    navigator.clipboard.writeText(cite)
+                    setCopied(true); setShowCopyMenu(false); setTimeout(() => setCopied(false), 1500)
+                  }}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                >
+                  <Quote className="h-3 w-3" /> Cite this
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Inline comment input */}

@@ -6,6 +6,7 @@ import remarkMath from 'remark-math'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeKatex from 'rehype-katex'
 import { useStore } from '../store/useStore'
+import ScrollMinimap from './ScrollMinimap'
 import { extractToc, wordCount, estimateDifficulty, slugify } from '../lib/markdown'
 import { getComments, updateComment, removeComment, type Comment } from '../lib/docstore'
 import { trackEvent } from '../lib/telemetry'
@@ -1236,28 +1237,14 @@ export function Reader() {
         </div>
       )}
 
-      {/* Delight #25: Minibar outline on right edge */}
+      {/* Scroll minimap on right edge */}
       {toc.length > 2 && (
-        <div className="fixed top-16 right-1 bottom-16 w-1 z-10 opacity-30 hover:opacity-60 transition-opacity">
-          {toc.filter((t) => t.level <= 2).map((entry, i, arr) => {
-            const pct = (i / arr.length) * 100
-            const isActive = activeSection === entry.id
-            return (
-              <button
-                key={entry.id}
-                onClick={() => document.getElementById(entry.id)?.scrollIntoView({ behavior: 'smooth' })}
-                className={`absolute left-0 w-full rounded-full transition-all ${isActive ? 'bg-blue-500 h-2' : 'bg-gray-400 dark:bg-gray-600 h-1'}`}
-                style={{ top: `${pct}%` }}
-                title={entry.text}
-              />
-            )
-          })}
-          {/* Current position indicator */}
-          <div
-            className="absolute left-0 w-full h-3 bg-blue-500/50 rounded-full"
-            style={{ top: `${readingProgress}%` }}
-          />
-        </div>
+        <ScrollMinimap
+          toc={toc}
+          activeSection={activeSection}
+          readingProgress={readingProgress}
+          contentRef={contentRef}
+        />
       )}
 
       {/* Delight #2: Back to top button */}
