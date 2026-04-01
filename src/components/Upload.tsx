@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, useEffect } from 'react'
 import { Upload as UploadIcon, Link, FileText, Library, PenLine, ArrowRight, Clock, FolderOpen, Chrome, Code2, Shield, Cpu, Eye, Headphones, Map, GraduationCap } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { getAllDocuments, type StoredDocument } from '../lib/docstore'
+import { SAMPLE_MARKDOWN } from '../lib/sample-doc'
 
 type Mode = 'home' | 'editor'
 
@@ -165,99 +166,7 @@ export function Upload() {
   }, [setWorkspaceMode, setViewMode])
 
   const loadSample = () => {
-    const sample = `# Welcome to md-reader
-
-> The AI-native markdown reader. Read, understand, and explore your documents.
-
-## What is md-reader?
-
-md-reader is a **reading-first** markdown tool. Unlike editors that focus on writing, md-reader is designed to help you **consume and comprehend** markdown content effectively.
-
-### Key Features
-
-- **Beautiful reading experience** — Kindle-like, distraction-free
-- **AI-powered Q&A** — Ask questions about your document
-- **Smart summaries** — Get the gist without reading everything
-- **Visual exploration** — Mind maps, knowledge graphs, treemaps
-- **Markdown-aware TTS** — Listen to your documents read intelligently
-- **100% private** — Everything runs in your browser
-
-## Getting Started
-
-1. **Upload** a \`.md\` file or paste markdown content
-2. **Read** with a beautiful, distraction-free interface
-3. **Ask** the AI assistant questions about the content
-4. **Explore** visually with mind maps and graphs
-
-## Why md-reader?
-
-In the age of LLMs, markdown has become the primary artifact format. Yet every tool focuses on *writing* markdown — not reading it. Documentation fatigue is real. Long READMEs are painful to consume. md-reader changes that.
-
-### The Problem
-
-- 20+ markdown editors exist, all focused on writing
-- No tool does AI-powered markdown comprehension
-- TTS tools read raw markdown syntax literally (\`#\`, \`**\`, \`[]()\`)
-- No visual exploration of document structure
-
-### The Solution
-
-md-reader is the **consumption layer** for markdown. Upload any \`.md\` file and instantly get:
-
-| Feature | Status |
-|---------|--------|
-| Reader mode | Available |
-| Table of contents | Available |
-| Reading progress | Available |
-| AI Chat | Available |
-| Mind maps | Available |
-| Knowledge graph | Available |
-| Visual coach | Available |
-| TTS read-aloud | Available |
-
-## Technical Details
-
-Built with modern web technologies:
-
-\`\`\`typescript
-const stack = {
-  frontend: 'React + Tailwind CSS',
-  markdown: 'unified / remark ecosystem',
-  ai: 'Ollama (local GPU) + WebLLM (in-browser)',
-  visualization: 'Markmap + D3.js + Cytoscape.js',
-  tts: 'Web Speech API + Piper WASM',
-  storage: 'IndexedDB via Dexie.js',
-  search: 'MiniSearch (BM25)',
-}
-\`\`\`
-
-### Multi-Document Intelligence
-
-Upload multiple markdown files and md-reader will:
-
-- **Find connections** between documents using TF-IDF cosine similarity
-- **Detect duplicates** via SimHash fingerprinting
-- **Cluster topics** using Louvain community detection
-- **Visualize relationships** with force-directed graphs and UMAP similarity maps
-- **Answer questions** across all documents with hierarchical RAG
-
-### Architecture
-
-The app follows a **progressive enhancement** approach:
-
-1. **Core**: Beautiful markdown rendering (no AI needed)
-2. **Enhanced**: AI features via local Ollama or WebLLM
-3. **Premium**: Cloud API for best quality (future)
-
-## Contributing
-
-md-reader is open source. Contributions welcome!
-
----
-
-*Built with love for the markdown community.*
-`
-    setMarkdown(sample, 'sample.md')
+    setMarkdown(SAMPLE_MARKDOWN, 'welcome.md')
   }
 
   // Delight #6: Ctrl+V paste-to-open globally on upload screen

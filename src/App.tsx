@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspen
 import { MessageSquare, MessageSquareText, PanelLeftClose, PanelLeftOpen, Loader2, Menu, Volume2, X } from 'lucide-react'
 import { useStore, type ViewMode } from './store/useStore'
 import { getCommentCount } from './lib/docstore'
+import { SAMPLE_MARKDOWN } from './lib/sample-doc'
 import { extractToc } from './lib/markdown'
 import { Upload } from './components/Upload'
 import { Reader } from './components/Reader'
@@ -108,6 +109,34 @@ function App() {
     window.addEventListener('message', handleMessage)
     return () => window.removeEventListener('message', handleMessage)
   }, [setMarkdown])
+
+  // Demo mode: ?demo=true loads sample document for first-time visitors
+  // CLI mode: ?cli=true fetches content served by `npx md-reader file.md`
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+
+    // Demo mode
+    if (params.get('demo') === 'true' && !markdown) {
+      setMarkdown(SAMPLE_MARKDOWN, 'welcome.md')
+      window.history.replaceState(null, '', window.location.pathname)
+      return
+    }
+
+    // CLI mode: fetch content served by `npx md-reader file.md`
+    if (params.get('cli') === 'true') {
+      fetch('/__cli__/content')
+        .then(res => res.json())
+        .then(data => {
+          if (data.markdown) {
+            setMarkdown(data.markdown, data.fileName || 'document.md')
+          }
+          window.history.replaceState(null, '', window.location.pathname)
+        })
+        .catch(() => {
+          // Not running via CLI, ignore
+        })
+    }
+  }, [markdown, setMarkdown])
 
   // MCP integration: handle #file=<path>&view=<mode> from MCP server
   useEffect(() => {
