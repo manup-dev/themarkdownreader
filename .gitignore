@@ -63,3 +63,6 @@ docs/learnings/
 
 # Superpowers specs/plans
 docs/superpowers/
+
+# CLI build output
+cli/dist/
