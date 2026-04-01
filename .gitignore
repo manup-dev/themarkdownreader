@@ -66,3 +66,6 @@ docs/superpowers/
 
 # CLI build output
 cli/dist/
+
+# Bundle analysis
+dist/bundle-stats.html

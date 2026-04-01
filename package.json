@@ -31,6 +31,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "eval": "tsx scripts/eval/runner.ts",
+    "analyze": "ANALYZE=true npm run build",
     "build:cli": "npm run build && cp -r dist cli/dist"
   },
   "dependencies": {
@@ -82,6 +83,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
     "jsdom": "^29.0.1",
+    "rollup-plugin-visualizer": "^7.0.1",
     "tailwindcss": "^4.2.2",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.57.0",

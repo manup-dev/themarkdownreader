@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { visualizer } from 'rollup-plugin-visualizer'
 import fs from 'fs'
 import path from 'path'
 
@@ -9,6 +10,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    ...(process.env.ANALYZE ? [visualizer({ open: true, gzipSize: true, filename: 'dist/bundle-stats.html' })] : []),
     {
       name: 'md-reader-file-api',
       configureServer(server) {
@@ -63,6 +65,11 @@ export default defineConfig({
           if (id.includes('node_modules/d3')) return 'd3'
           if (id.includes('node_modules/markmap')) return 'markmap'
           if (id.includes('node_modules/graphology')) return 'graphology'
+          if (id.includes('node_modules/@excalidraw')) return 'excalidraw'
+          if (id.includes('node_modules/react-markdown') || id.includes('node_modules/remark') || id.includes('node_modules/rehype') || id.includes('node_modules/unified')) return 'markdown'
+          if (id.includes('node_modules/@mlc-ai')) return 'webllm'
+          if (id.includes('node_modules/katex')) return 'katex'
+          if (id.includes('node_modules/posthog')) return 'posthog'
         },
       },
     },
