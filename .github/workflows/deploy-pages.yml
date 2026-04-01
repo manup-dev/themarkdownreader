@@ -32,6 +32,29 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Install extension dependencies
+        run: npm ci
+        working-directory: vscode-extension
+
+      - name: Build extension host
+        run: node esbuild.mjs
+        working-directory: vscode-extension
+
+      - name: Install webview dependencies
+        run: npm ci
+        working-directory: vscode-extension/webview
+
+      - name: Build webview
+        run: npx vite build
+        working-directory: vscode-extension/webview
+
+      - name: Package VS Code extension
+        run: npx @vscode/vsce package --allow-missing-repository
+        working-directory: vscode-extension
+
+      - name: Copy .vsix to dist with stable name
+        run: cp vscode-extension/*.vsix dist/md-reader-latest.vsix
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

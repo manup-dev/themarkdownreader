@@ -499,8 +499,8 @@ md-reader is open source. Contributions welcome!
             <span className="text-gray-600 dark:text-gray-300">Chrome Extension</span>
           </a>
           <a
-            href="https://marketplace.visualstudio.com/items?itemName=manup-dev.md-reader"
-            target="_blank"
+            href="https://manup-dev.github.io/themarkdownreader/md-reader-latest.vsix"
+            download="md-reader-latest.vsix"
             rel="noopener"
             className="flex-1 flex items-center gap-2.5 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-sm transition-all text-sm"
           >
