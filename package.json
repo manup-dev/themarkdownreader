@@ -1,7 +1,7 @@
 {
   "name": "md-reader",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "license": "MIT",
   "description": "The AI-native markdown reader. Read, understand, and explore your documents.",
