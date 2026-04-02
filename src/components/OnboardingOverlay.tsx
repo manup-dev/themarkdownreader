@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useStore } from '../store/useStore'
 
 const STEPS = [
   {
@@ -22,6 +23,8 @@ const STEPS = [
 ]
 
 export function OnboardingOverlay({ onComplete }: { onComplete: () => void }) {
+  const theme = useStore((s) => s.theme)
+  const isSepia = theme === 'sepia'
   const [step, setStep] = useState(0)
   const [spotlightRect, setSpotlightRect] = useState<DOMRect | null>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -106,20 +109,20 @@ export function OnboardingOverlay({ onComplete }: { onComplete: () => void }) {
       {/* Spotlight border ring */}
       {spotlightRect && (
         <div
-          className="absolute border-2 border-blue-400 rounded-lg pointer-events-none"
+          className="absolute border-2 border-blue-400 sepia:border-amber-600 rounded-lg pointer-events-none"
           style={{
             left: spotlightRect.left - pad,
             top: spotlightRect.top - pad,
             width: spotlightRect.width + pad * 2,
             height: spotlightRect.height + pad * 2,
-            boxShadow: '0 0 0 4px rgba(59, 130, 246, 0.2)',
+            boxShadow: isSepia ? '0 0 0 4px rgba(180, 83, 9, 0.2)' : '0 0 0 4px rgba(59, 130, 246, 0.2)',
           }}
         />
       )}
 
       {/* Coach mark card */}
       <div
-        className="absolute bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-5 max-w-xs animate-scale-in"
+        className="absolute bg-white dark:bg-gray-800 sepia:bg-sepia-50 rounded-xl shadow-2xl p-5 max-w-xs animate-scale-in"
         style={getCardStyle()}
       >
         <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">{current.title}</p>

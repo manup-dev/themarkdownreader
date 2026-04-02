@@ -183,7 +183,8 @@ export function KeyboardShortcuts() {
             const el = document.getElementById(activeSection)
             if (el) {
               el.style.transition = 'background 300ms'
-              el.style.background = set.has(activeSection) ? 'rgba(251,191,36,0.15)' : ''
+              const isSepia = document.documentElement.classList.contains('sepia')
+              el.style.background = set.has(activeSection) ? (isSepia ? 'rgba(180,83,9,0.15)' : 'rgba(251,191,36,0.15)') : ''
               setTimeout(() => { el.style.background = '' }, 800)
             }
             return
@@ -260,6 +261,7 @@ export function KeyboardShortcuts() {
                 if (dist < closestDist) { closestDist = dist; closest = child }
               }
               closest?.classList.add('fp-active')
+              closest?.scrollIntoView({ behavior: 'smooth', block: 'center' })
               const idx = children.indexOf(closest)
               if (idx > 0) children[idx - 1]?.classList.add('fp-adjacent')
               if (idx < children.length - 1) children[idx + 1]?.classList.add('fp-adjacent')
@@ -313,7 +315,10 @@ export function KeyboardShortcuts() {
               span.setAttribute('data-freq-highlight', '1')
               const termFreq = freq.get(m[0].toLowerCase()) ?? 1
               const intensity = Math.round((termFreq / maxFreq) * 100)
-              span.style.background = `rgba(59,130,246,${0.08 + (intensity / 100) * 0.25})`
+              const isSepia = document.documentElement.classList.contains('sepia')
+              span.style.background = isSepia
+                ? `rgba(180,83,9,${0.08 + (intensity / 100) * 0.25})`
+                : `rgba(59,130,246,${0.08 + (intensity / 100) * 0.25})`
               span.style.borderRadius = '2px'
               span.style.padding = '0 1px'
               span.title = `"${m[0]}" appears ${termFreq}× in this document`
@@ -396,7 +401,8 @@ export function KeyboardShortcuts() {
           if (codeBlocks.length === 0) return
           const idx = codeBlockIdxRef.current % codeBlocks.length
           codeBlocks[idx].scrollIntoView({ behavior: 'smooth', block: 'center' })
-          ;(codeBlocks[idx] as HTMLElement).style.outline = '2px solid #3b82f6'
+          const outlineColor = document.documentElement.classList.contains('sepia') ? '#92400e' : '#3b82f6'
+          ;(codeBlocks[idx] as HTMLElement).style.outline = `2px solid ${outlineColor}`
           ;(codeBlocks[idx] as HTMLElement).style.outlineOffset = '4px'
           setTimeout(() => { (codeBlocks[idx] as HTMLElement).style.outline = '' }, 2000)
           codeBlockIdxRef.current = idx + 1
@@ -603,6 +609,22 @@ export function KeyboardShortcuts() {
     }
   }, [])
 
+  // Cancel auto-scroll on manual scroll (wheel or touch)
+  useEffect(() => {
+    const cancelAutoScroll = () => {
+      if (autoScrollRef.current) {
+        clearInterval(autoScrollRef.current)
+        autoScrollRef.current = null
+      }
+    }
+    window.addEventListener('wheel', cancelAutoScroll, { passive: true })
+    window.addEventListener('touchmove', cancelAutoScroll, { passive: true })
+    return () => {
+      window.removeEventListener('wheel', cancelAutoScroll)
+      window.removeEventListener('touchmove', cancelAutoScroll)
+    }
+  }, [])
+
   return (
     <>
       {/* Focus mode hint */}
@@ -626,7 +648,7 @@ export function KeyboardShortcuts() {
           onClick={() => setShowHelp(false)}
         >
           <div
-            className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-2xl p-6 w-96"
+            className="bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 rounded-2xl shadow-2xl p-6 w-96"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-4">Keyboard Shortcuts</h3>
@@ -658,7 +680,7 @@ export function KeyboardShortcuts() {
             glanceDismissing ? 'glance-preview-out' : 'glance-preview-in'
           }`}
         >
-          <div className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 rounded-2xl shadow-2xl p-5">
+          <div className="bg-white/80 dark:bg-gray-900/80 sepia:bg-sepia-50/80 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 sepia:border-sepia-200/50 rounded-2xl shadow-2xl p-5">
             <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5">Next section</p>
             <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">{glancePreview.heading}</h4>
             {glancePreview.text && (

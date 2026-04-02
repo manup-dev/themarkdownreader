@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
-import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap, GitBranch, Library, ArrowLeft, Save, Check, Settings, Contrast, Type, Maximize, Printer, Palette, SlidersHorizontal, ChevronDown } from 'lucide-react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap, GitBranch, Library, ArrowLeft, Save, Check, Settings, Contrast, Type, Maximize, Printer, Palette, SlidersHorizontal, ChevronDown, Download } from 'lucide-react'
 import { AiSettings } from './AiSettings'
 import { useStore, type Theme, type ViewMode } from '../store/useStore'
 import { addDocument } from '../lib/docstore'
@@ -56,6 +56,8 @@ export function Toolbar() {
     { value: 'sepia', icon: <BookOpen className="h-4 w-4" />, label: 'Sepia' },
     { value: 'high-contrast', icon: <Contrast className="h-4 w-4" />, label: 'High Contrast' },
   ]
+
+  const wordCount = useMemo(() => markdown?.split(/\s+/).filter(Boolean).length ?? 0, [markdown])
 
   const isWorkspaceView = viewMode === 'workspace' || viewMode === 'cross-doc-graph' || viewMode === 'correlation' || viewMode === 'similarity-map' || viewMode === 'collection'
   const showDocTabs = markdown && !isWorkspaceView
@@ -130,7 +132,7 @@ export function Toolbar() {
   }, [markdown, fileName, doClose])
 
   return (
-    <div className="border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm sticky top-0 z-40">
+    <div className="border-b border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white/80 dark:bg-gray-900/80 sepia:bg-sepia-50/80 backdrop-blur-sm sticky top-0 z-40">
       {/* Top row */}
       <div className="flex items-center justify-between px-4 py-2">
         {/* Left: back + filename + progress + save */}
@@ -177,6 +179,12 @@ export function Toolbar() {
               >
                 {Math.round(readingProgress)}%
               </span>
+              <span className="text-xs text-gray-400 hidden sm:inline" title="Estimated reading time remaining">
+                {(() => {
+                  const remaining = Math.ceil((wordCount * (1 - readingProgress / 100)) / 230)
+                  return remaining > 0 ? `· ${remaining}m left` : '· Done'
+                })()}
+              </span>
 
               {/* Save to library button */}
               {!activeDocId && (
@@ -216,7 +224,7 @@ export function Toolbar() {
               <ChevronDown className={`h-3 w-3 transition-transform ${showAppearance ? 'rotate-180' : ''}`} />
             </button>
             {showAppearance && (
-              <div className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-3 z-50">
+              <div className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-xl p-3 z-50">
                 {/* Themes */}
                 <div className="text-[10px] uppercase tracking-wider text-gray-400 mb-1.5 font-medium">Theme</div>
                 <div className="flex items-center gap-1 mb-3">
@@ -289,7 +297,7 @@ export function Toolbar() {
               <ChevronDown className={`h-3 w-3 transition-transform ${showMode ? 'rotate-180' : ''}`} />
             </button>
             {showMode && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-1.5 z-50">
+              <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-xl p-1.5 z-50">
                 {viewMode === 'read' && markdown && (
                   <>
                     <button
@@ -310,6 +318,25 @@ export function Toolbar() {
                     </button>
                   </>
                 )}
+                <button
+                  onClick={() => {
+                    const state = useStore.getState()
+                    if (!state.markdown) return
+                    const blob = new Blob([state.markdown], { type: 'text/markdown' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = state.fileName || 'document.md'
+                    a.click()
+                    URL.revokeObjectURL(url)
+                    trackEvent('export_markdown')
+                    setShowMode(false)
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download as Markdown
+                </button>
                 <button
                   onClick={() => { window.print(); trackEvent('export_pdf'); setShowMode(false) }}
                   className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -363,7 +390,7 @@ export function Toolbar() {
 
           {/* AI Settings dropdown panel */}
           {showSettings && (
-            <div className="absolute right-0 top-full mt-1 w-80 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50">
+            <div className="absolute right-0 top-full mt-1 w-80 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-xl z-50">
               <AiSettings onClose={() => { setShowSettings(false); setAiBackend(getActiveBackend()) }} />
             </div>
           )}
@@ -372,7 +399,7 @@ export function Toolbar() {
       {/* Close Confirm Modal */}
       {showCloseConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setShowCloseConfirm(false)}>
-          <div onClick={(e) => e.stopPropagation()} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4">
+          <div onClick={(e) => e.stopPropagation()} className="bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4">
             <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">Close without saving?</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">This document hasn't been saved to your library yet.</p>
             <div className="flex flex-col gap-2">
@@ -401,7 +428,7 @@ export function Toolbar() {
 
       {/* View mode tabs */}
       {showDocTabs && (
-        <div data-view-tabs className="flex items-center gap-1 px-4 pb-2 overflow-x-auto" style={{ maskImage: 'linear-gradient(to right, black 90%, transparent)', WebkitMaskImage: 'linear-gradient(to right, black 90%, transparent)' }}>
+        <nav data-view-tabs aria-label="View modes" className="flex items-center gap-1 px-4 pb-2 overflow-x-auto" style={{ maskImage: 'linear-gradient(to right, black 90%, transparent)', WebkitMaskImage: 'linear-gradient(to right, black 90%, transparent)' }}>
           {singleDocModes.map((vm) => (
             <button
               key={vm.value}
@@ -420,7 +447,7 @@ export function Toolbar() {
               )}
             </button>
           ))}
-        </div>
+        </nav>
       )}
     </div>
   )

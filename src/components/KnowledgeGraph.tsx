@@ -13,7 +13,8 @@ function highlightTextInReader(term: string) {
     if (node.textContent?.toLowerCase().includes(term.toLowerCase())) {
       const el = node.parentElement
       if (el && el.closest('article')) {
-        el.style.background = '#fef08a'
+        const isSepia = document.documentElement.classList.contains('sepia')
+        el.style.background = isSepia ? '#e8d5be' : '#fef08a'
         el.style.transition = 'background 300ms'
         if (count === 0) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
         count++
@@ -113,6 +114,7 @@ export function KnowledgeGraphView() {
     const width = svgRef.current.clientWidth
     const height = svgRef.current.clientHeight
     const isDark = theme === 'dark'
+    const isSepia = theme === 'sepia'
 
     svg.selectAll('*').remove()
 
@@ -140,7 +142,7 @@ export function KnowledgeGraphView() {
       .selectAll('line')
       .data(edges)
       .join('line')
-      .attr('stroke', isDark ? '#4b5563' : '#d1d5db')
+      .attr('stroke', isSepia ? '#d6c4a8' : isDark ? '#4b5563' : '#d1d5db')
       .attr('stroke-width', 1.5)
 
     // Edge labels
@@ -150,7 +152,7 @@ export function KnowledgeGraphView() {
       .join('text')
       .text((d) => d.label)
       .attr('font-size', '9px')
-      .attr('fill', isDark ? '#6b7280' : '#9ca3af')
+      .attr('fill', isSepia ? '#78716c' : isDark ? '#6b7280' : '#9ca3af')
       .attr('text-anchor', 'middle')
 
     // Nodes
@@ -205,7 +207,7 @@ export function KnowledgeGraphView() {
     node.append('circle')
       .attr('r', 20)
       .attr('fill', (d) => TYPE_COLORS[d.type] ?? TYPE_COLORS.default)
-      .attr('stroke', isDark ? '#1f2937' : '#ffffff')
+      .attr('stroke', isSepia ? '#e8d5be' : isDark ? '#1f2937' : '#ffffff')
       .attr('stroke-width', 2.5)
       .style('cursor', 'pointer')
 
@@ -213,7 +215,7 @@ export function KnowledgeGraphView() {
       .text((d) => d.label)
       .attr('font-size', '11px')
       .attr('font-weight', '600')
-      .attr('fill', isDark ? '#e5e7eb' : '#374151')
+      .attr('fill', isSepia ? '#3d3122' : isDark ? '#e5e7eb' : '#374151')
       .attr('text-anchor', 'middle')
       .attr('dy', 32)
 

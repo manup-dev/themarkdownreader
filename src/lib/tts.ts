@@ -174,6 +174,9 @@ class MarkdownTts {
   private voice: SpeechSynthesisVoice | null = null
   private onStateChange: ((state: TtsState) => void) | null = null
   private stopped = false
+  private _paused = false
+  // Chrome bug workaround: periodically re-pause to prevent auto-resume
+  private pauseWatchdog: ReturnType<typeof setInterval> | null = null
 
   getVoices(): SpeechSynthesisVoice[] {
     return this.synth.getVoices().filter((v) => v.lang.startsWith('en'))
@@ -193,8 +196,8 @@ class MarkdownTts {
 
   private emitState(overrides: Partial<TtsState> = {}) {
     this.onStateChange?.({
-      speaking: this.synth.speaking,
-      paused: this.synth.paused,
+      speaking: this.synth.speaking || this._paused,
+      paused: this._paused,
       currentSection: this.currentSectionIdx,
       currentSentence: this.currentSegmentIdx,
       totalSections: this.sectionSegments.length,
@@ -214,9 +217,15 @@ class MarkdownTts {
   async play(fromSection = 0) {
     this.stop()
     this.stopped = false
+    this._paused = false
     this.currentSectionIdx = fromSection
 
     for (let i = fromSection; i < this.sectionSegments.length; i++) {
+      if (this.stopped) break
+      // Wait while paused
+      while (this._paused && !this.stopped) {
+        await this.sleep(100)
+      }
       if (this.stopped) break
       this.currentSectionIdx = i
       const segments = this.sectionSegments[i]
@@ -228,12 +237,23 @@ class MarkdownTts {
 
       for (let j = 0; j < segments.length; j++) {
         if (this.stopped) break
+        // Wait while paused
+        while (this._paused && !this.stopped) {
+          await this.sleep(100)
+        }
+        if (this.stopped) break
         this.currentSegmentIdx = j
         this.emitState({ speaking: true })
 
         const seg = segments[j]
         if (seg.text) {
           await this.speakSegment(seg)
+          // If paused during speech, cancel() killed the utterance.
+          // Replay this segment on resume instead of advancing.
+          if (this._paused) {
+            j-- // will re-enter the pause-wait loop, then replay this segment
+            continue
+          }
         }
         if (seg.pause) {
           await this.sleep(seg.pause)
@@ -270,23 +290,57 @@ class MarkdownTts {
   }
 
   pause() {
-    this.synth.pause()
-    this.emitState({ paused: true })
+    this._paused = true
+    // Use cancel() instead of pause() — Chrome's pause() is unreliable and
+    // can auto-resume speech when switching tabs or after ~15 seconds.
+    // Trade-off: cancel() destroys the current utterance, so on resume the
+    // current segment replays from the beginning rather than mid-sentence.
+    // This is preferable to ghost speech that can't be stopped.
+    this.synth.cancel()
+    // Watchdog: keep cancelling in case Chrome tries to auto-resume
+    this.clearPauseWatchdog()
+    this.pauseWatchdog = setInterval(() => {
+      if (this._paused && this.synth.speaking) {
+        this.synth.cancel()
+      }
+    }, 500)
+    this.emitState({ paused: true, speaking: true })
   }
 
   resume() {
-    this.synth.resume()
-    this.emitState({ paused: false })
+    this._paused = false
+    this.clearPauseWatchdog()
+    this.emitState({ paused: false, speaking: true })
+    // Note: the play() loop will re-speak the current segment from the start
+    // since cancel() destroyed the in-flight utterance. This replays ~1 sentence
+    // which is better UX than skipping forward.
   }
 
   stop() {
     this.stopped = true
+    this._paused = false
+    this.clearPauseWatchdog()
     this.synth.cancel()
     this.emitState({ speaking: false, paused: false })
   }
 
+  private clearPauseWatchdog() {
+    if (this.pauseWatchdog) {
+      clearInterval(this.pauseWatchdog)
+      this.pauseWatchdog = null
+    }
+  }
+
   get sectionCount() {
     return this.sectionSegments.length
+  }
+
+  get isPaused() {
+    return this._paused
+  }
+
+  get isSpeaking() {
+    return !this.stopped && (this.synth.speaking || this._paused)
   }
 }
 

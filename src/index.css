@@ -2,6 +2,7 @@
 @plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:where(.dark, .dark *));
+@custom-variant sepia (&:where(.sepia, .sepia *));
 
 @theme {
   --color-sepia-50: #faf6f1;
@@ -21,6 +22,7 @@ html, body, #root {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #a0aec0; border-radius: 3px; }
 .dark ::-webkit-scrollbar-thumb { background: #4a5568; }
+.sepia ::-webkit-scrollbar-thumb { background: #c4a882; }
 
 /* Code block syntax highlighting — light theme */
 .hljs { background: #f8f9fa !important; color: #24292e; }
@@ -98,6 +100,7 @@ article *, article *::before, article *::after { transition: none; }
   pointer-events: none;
 }
 .dark .toast-notify { background: #374151; }
+.sepia .toast-notify { background: #5c4a32; color: #faf6f1; }
 
 /* Directional view transitions */
 @keyframes slideInFromRight { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
@@ -130,6 +133,12 @@ article *, article *::before, article *::after { transition: none; }
   100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
 }
 [data-search-highlight] { animation: searchPulse 1s ease-out; border-radius: 2px; }
+.sepia [data-search-highlight] { animation: searchPulseSepia 1s ease-out; }
+@keyframes searchPulseSepia {
+  0% { box-shadow: 0 0 0 0 rgba(180, 83, 9, 0.6); }
+  70% { box-shadow: 0 0 0 6px rgba(180, 83, 9, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(180, 83, 9, 0); }
+}
 
 /* Mobile TOC: hidden by default on desktop */
 .mobile-toc-hamburger { display: none !important; }
@@ -173,7 +182,7 @@ article *, article *::before, article *::after { transition: none; }
 
 /* High contrast theme */
 .high-contrast { background: #000 !important; color: #fff !important; }
-.high-contrast a { color: #00ffff !important; }
+.high-contrast a { color: #5ef5f5 !important; text-decoration: underline; }
 .high-contrast strong, .high-contrast h1, .high-contrast h2, .high-contrast h3 { color: #ffff00 !important; }
 .high-contrast code { color: #00ff00 !important; background: #111 !important; }
 .high-contrast pre { background: #111 !important; border: 1px solid #333 !important; }
@@ -215,6 +224,23 @@ article table tbody tr:hover { background: rgba(59, 130, 246, 0.05); }
 
 /* Feature 20: Diff highlight for changed paragraphs */
 .diff-changed { border-left: 3px solid #22c55e; padding-left: 8px; transition: border-color 300ms; }
+
+/* Skip to content link for accessibility */
+.skip-to-content {
+  position: absolute;
+  left: -9999px;
+  z-index: 999;
+  padding: 0.5rem 1rem;
+  background: #2563eb;
+  color: white;
+  font-size: 0.875rem;
+  border-radius: 0 0 0.5rem 0;
+  text-decoration: none;
+}
+.skip-to-content:focus {
+  left: 0;
+  top: 0;
+}
 
 /* Print stylesheet */
 @media print {

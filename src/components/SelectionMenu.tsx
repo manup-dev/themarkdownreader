@@ -169,7 +169,7 @@ export function SelectionMenu() {
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' })
           // Flash highlight
-          el.style.background = '#fef08a'
+          el.style.background = document.documentElement.classList.contains('sepia') ? '#e8d5be' : '#fef08a'
           setTimeout(() => { el.style.background = '' }, 2000)
           found = true
         }
@@ -255,7 +255,7 @@ export function SelectionMenu() {
         >
           {/* AI response popup */}
           {(aiResponse || aiLoading) && (
-            <div className="mb-2 w-80 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-3 max-h-60 overflow-y-auto">
+            <div className="mb-2 w-80 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 rounded-xl shadow-xl p-3 max-h-60 overflow-y-auto">
               {aiLoading ? (
                 <div className="flex items-center gap-2 text-gray-400 text-sm">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -284,7 +284,7 @@ export function SelectionMenu() {
           })()}
 
           {/* Action buttons — two rows for clarity */}
-          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-2 space-y-1.5 min-w-[280px]">
+          <div className="bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 rounded-xl shadow-xl p-2 space-y-1.5 min-w-[280px]">
             {/* Row 1: Highlight colors + comment */}
             <div className="flex items-center gap-1.5">
               {COLORS.map((c) => (
@@ -439,7 +439,7 @@ export function SelectionMenu() {
 
           {/* Inline comment input */}
           {showCommentInput && (
-            <div className="mt-1.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-2 w-72">
+            <div className="mt-1.5 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 rounded-xl shadow-xl p-2 w-72">
               <textarea
                 rows={2}
                 autoFocus
@@ -503,7 +503,7 @@ export function SelectionMenu() {
 
       {/* Glossary panel */}
       {showGlossary && (
-        <div className="fixed bottom-16 right-16 z-20 w-80 max-h-96 overflow-y-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-3 space-y-2 animate-pop-in">
+        <div className="fixed bottom-16 right-16 z-20 w-80 max-h-96 overflow-y-auto bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 rounded-xl shadow-xl p-3 space-y-2 animate-pop-in">
           <div className="flex items-center justify-between mb-1">
             <h4 className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Glossary</h4>
             <button onClick={() => setShowGlossary(false)} className="text-gray-400 hover:text-gray-600">
@@ -539,7 +539,7 @@ export function SelectionMenu() {
 
       {/* Highlights panel */}
       {showHighlights && (
-        <div className="fixed bottom-16 left-6 z-20 w-80 max-h-96 overflow-y-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-3 space-y-2">
+        <div className="fixed bottom-16 left-6 z-20 w-80 max-h-96 overflow-y-auto bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 rounded-xl shadow-xl p-3 space-y-2">
           <div className="flex items-center justify-between mb-1">
             <h4 className="text-xs font-semibold uppercase text-gray-400 tracking-wider">
               Highlights & Notes

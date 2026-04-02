@@ -215,3 +215,13 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
     activeDocId: state.activeDocId,
   }) as unknown as DocumentState, // Safe: persist only serializes these fields; missing fields use defaults on rehydration
 }), { name: 'md-reader', enabled: import.meta.env.DEV }))
+
+// Listen for OS dark mode changes — auto-switch if user is on light/dark (not sepia/high-contrast)
+if (typeof window !== 'undefined') {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+    const saved = localStorage.getItem('md-reader-theme')
+    if (!saved || saved === 'light' || saved === 'dark') {
+      useStore.getState().setTheme(e.matches ? 'dark' : 'light')
+    }
+  })
+}

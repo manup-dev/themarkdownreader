@@ -31,6 +31,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "eval": "tsx scripts/eval/runner.ts",
+    "e2e": "npx playwright test",
+    "e2e:headed": "npx playwright test --headed",
     "analyze": "ANALYZE=true npm run build",
     "build:cli": "npm run build && cp -r dist cli/dist"
   },
@@ -66,6 +68,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.59.0",
     "@tailwindcss/typography": "^0.5.19",
     "@tailwindcss/vite": "^4.2.2",
     "@testing-library/jest-dom": "^6.9.1",

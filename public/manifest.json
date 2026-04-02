@@ -1,8 +1,9 @@
 {
-  "name": "md-reader",
+  "name": "md-reader — AI Markdown Reader",
   "short_name": "md-reader",
-  "description": "AI-native markdown reader with mind maps, TTS, visual exploration, and AI chat",
-  "start_url": "/",
+  "description": "The AI-native markdown reader. Read, understand, and explore your documents with mind maps, AI chat, and text-to-speech.",
+  "version": "1.0.0",
+  "start_url": "/?source=pwa",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#2563eb",
@@ -13,5 +14,8 @@
       "type": "image/svg+xml"
     }
   ],
-  "categories": ["productivity", "education", "utilities"]
+  "categories": ["productivity", "education", "utilities"],
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  }
 }

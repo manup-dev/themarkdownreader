@@ -61,7 +61,7 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
       const el = document.getElementById(sectionId)
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        el.style.background = '#bfdbfe'
+        el.style.background = document.documentElement.classList.contains('sepia') ? '#e8d5be' : '#bfdbfe'
         setTimeout(() => { el.style.background = '' }, 2000)
       }
     }, 200)

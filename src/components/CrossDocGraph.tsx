@@ -43,6 +43,7 @@ export function CrossDocGraph() {
     const width = svgRef.current.clientWidth
     const height = svgRef.current.clientHeight
     const isDark = theme === 'dark'
+    const isSepia = theme === 'sepia'
 
     svg.selectAll('*').remove()
 
@@ -83,7 +84,7 @@ export function CrossDocGraph() {
       .selectAll('line')
       .data(edges)
       .join('line')
-      .attr('stroke', isDark ? '#4b5563' : '#d1d5db')
+      .attr('stroke', isSepia ? '#d6c4a8' : isDark ? '#4b5563' : '#d1d5db')
       .attr('stroke-width', (d) => 1 + d.strength * 6)
       .attr('stroke-opacity', (d) => 0.3 + d.strength * 0.7)
 
@@ -94,7 +95,7 @@ export function CrossDocGraph() {
       .join('text')
       .text((d) => d.sharedTerms.slice(0, 3).join(', '))
       .attr('font-size', '8px')
-      .attr('fill', isDark ? '#6b7280' : '#9ca3af')
+      .attr('fill', isSepia ? '#78716c' : isDark ? '#6b7280' : '#9ca3af')
       .attr('text-anchor', 'middle')
 
     // Doc nodes
@@ -134,7 +135,7 @@ export function CrossDocGraph() {
     node.append('circle')
       .attr('r', (d) => radiusScale(d.wordCount))
       .attr('fill', (_d, i) => colors[i % colors.length])
-      .attr('stroke', isDark ? '#1f2937' : '#ffffff')
+      .attr('stroke', isSepia ? '#e8d5be' : isDark ? '#1f2937' : '#ffffff')
       .attr('stroke-width', 3)
       .attr('fill-opacity', 0.85)
 
@@ -145,7 +146,7 @@ export function CrossDocGraph() {
       })
       .attr('font-size', '10px')
       .attr('font-weight', '600')
-      .attr('fill', isDark ? '#e5e7eb' : '#374151')
+      .attr('fill', isSepia ? '#3d3122' : isDark ? '#e5e7eb' : '#374151')
       .attr('text-anchor', 'middle')
       .attr('dy', (d) => radiusScale(d.wordCount) + 14)
 

@@ -27,7 +27,8 @@ function HeadingRenderer(level: number) {
       const el = document.getElementById(id)
       if (el) {
         el.style.transition = 'background 300ms'
-        el.style.background = 'rgba(59,130,246,0.15)'
+        const isSepia = document.documentElement.classList.contains('sepia')
+        el.style.background = isSepia ? 'rgba(180,83,9,0.15)' : 'rgba(59,130,246,0.15)'
         setTimeout(() => { el.style.background = '' }, 800)
       }
       showToast('Link copied!')
@@ -69,13 +70,13 @@ function CodeBlockRenderer({ children, className, ...props }: React.HTMLAttribut
   return (
     <div className="relative group">
       {language && (
-        <span className="absolute top-2 left-2 px-1.5 py-0.5 text-[10px] rounded bg-gray-700/80 text-gray-400 font-mono">
+        <span className="absolute top-2 left-2 px-1.5 py-0.5 text-[10px] rounded bg-gray-700/80 sepia:bg-sepia-800/80 text-gray-400 sepia:text-sepia-200 font-mono">
           {language}
         </span>
       )}
       <button
         onClick={handleCopy}
-        className="absolute top-2 right-2 px-2 py-1 text-[10px] rounded bg-gray-700/80 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-600 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none"
+        className="absolute top-2 right-2 px-2 py-1 text-[10px] rounded bg-gray-700/80 sepia:bg-sepia-800/80 text-gray-300 sepia:text-sepia-200 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-600 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none"
       >
         {copied ? (language ? `Copied! (${language})` : 'Copied!') : 'Copy'}
       </button>
@@ -126,7 +127,8 @@ const markdownComponents = {
             if (el) {
               el.scrollIntoView({ behavior: 'smooth', block: 'start' })
               el.style.transition = 'background 300ms'
-              el.style.background = 'rgba(59,130,246,0.15)'
+              const isSepia = document.documentElement.classList.contains('sepia')
+              el.style.background = isSepia ? 'rgba(180,83,9,0.15)' : 'rgba(59,130,246,0.15)'
               setTimeout(() => { el.style.background = '' }, 1500)
             }
           }}
@@ -351,7 +353,7 @@ export function Reader() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     // Background
-    ctx.fillStyle = '#2563eb'
+    ctx.fillStyle = document.documentElement.classList.contains('sepia') ? '#92400e' : document.documentElement.classList.contains('dark') ? '#374151' : '#2563eb'
     ctx.beginPath()
     ctx.arc(16, 16, 15, 0, Math.PI * 2)
     ctx.fill()
@@ -668,11 +670,14 @@ export function Reader() {
 
         const span = document.createElement('span')
         span.setAttribute('data-comment-highlight', String(comment.id))
-        span.style.cssText = 'background: rgba(45, 212, 191, 0.15); border-bottom: 2px solid rgb(45, 212, 191); cursor: pointer; position: relative; padding: 1px 0;'
+        const isSepia = document.documentElement.classList.contains('sepia')
+        const highlightColor = isSepia ? 'rgba(180, 83, 9, 0.15)' : 'rgba(45, 212, 191, 0.15)'
+        const borderColor = isSepia ? 'rgb(180, 83, 9)' : 'rgb(45, 212, 191)'
+        span.style.cssText = `background: ${highlightColor}; border-bottom: 2px solid ${borderColor}; cursor: pointer; position: relative; padding: 1px 0;`
 
         const badge = document.createElement('span')
         badge.setAttribute('data-comment-badge', 'true')
-        badge.style.cssText = 'display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; background: rgb(45, 212, 191); color: white; border-radius: 50%; font-size: 10px; margin-left: 2px; cursor: pointer; vertical-align: super; line-height: 1;'
+        badge.style.cssText = `display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; background: ${borderColor}; color: white; border-radius: 50%; font-size: 10px; margin-left: 2px; cursor: pointer; vertical-align: super; line-height: 1;`
         badge.textContent = '\uD83D\uDCAC'
         badge.title = `${comment.author}: ${comment.comment.slice(0, 60)}`
 
@@ -1297,7 +1302,7 @@ export function Reader() {
               </div>
               <div className="w-16 h-16">
                 <svg viewBox="0 0 36 36" className="w-full h-full">
-                  <circle cx="18" cy="18" r="16" fill="none" stroke="currentColor" className="text-gray-200 dark:text-gray-700" strokeWidth="3" />
+                  <circle cx="18" cy="18" r="16" fill="none" stroke="currentColor" className="text-gray-200 dark:text-gray-700 sepia:text-sepia-200" strokeWidth="3" />
                   <circle cx="18" cy="18" r="16" fill="none" stroke="currentColor" className="text-blue-500" strokeWidth="3"
                     strokeDasharray={`${Math.round(readingProgress)} 100`}
                     strokeLinecap="round" transform="rotate(-90 18 18)" />

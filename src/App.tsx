@@ -58,8 +58,10 @@ function App() {
   const [fabMenuOpen, setFabMenuOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [mobileTocOpen, setMobileTocOpen] = useState(false)
+  const [isOffline, setIsOffline] = useState(!navigator.onLine)
   const setMarkdown = useStore((s) => s.setMarkdown)
   const activeDocId = useStore((s) => s.activeDocId)
+  const dyslexicFont = useStore((s) => s.dyslexicFont)
 
   // Browser extension: handle incoming markdown from extension
   useEffect(() => {
@@ -299,6 +301,15 @@ function App() {
     return () => window.removeEventListener('keydown', handleKey)
   }, [])
 
+  // Offline detection
+  useEffect(() => {
+    const goOffline = () => setIsOffline(true)
+    const goOnline = () => setIsOffline(false)
+    window.addEventListener('offline', goOffline)
+    window.addEventListener('online', goOnline)
+    return () => { window.removeEventListener('offline', goOffline); window.removeEventListener('online', goOnline) }
+  }, [])
+
   // Use getState() to avoid stale closures during rapid dragging
   const handleSidebarResize = useCallback((delta: number) => {
     const cur = useStore.getState().sidebarWidth
@@ -322,24 +333,25 @@ function App() {
   const showTts = !!markdown && !isWorkspaceView
 
   return (
-    <div className={`flex h-screen ${themeClasses[theme]} ${focusMode ? 'focus-mode' : ''}`}>
+    <div className={`flex h-screen ${themeClasses[theme]} ${focusMode ? 'focus-mode' : ''} ${dyslexicFont ? 'font-dyslexic' : ''}`}>
+      <a href="#main-content" className="skip-to-content">Skip to content</a>
       <KeyboardShortcuts />
 
       {/* Sidebar: TOC (resizable, collapsible) */}
       {showSidebar && (
         <>
           <aside
-            className="shrink-0 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-y-auto p-4"
+            className="shrink-0 border-r border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white dark:bg-gray-900 sepia:bg-sepia-50 overflow-y-auto p-4"
             style={{ width: sidebarWidth }}
           >
             <div className="flex items-center justify-between mb-4">
               <div>
-                <span className="text-sm font-bold text-gray-700 dark:text-gray-200">md-reader</span>
+                <span className="text-sm font-bold text-gray-700 dark:text-gray-200 sepia:text-sepia-800">md-reader</span>
                 <span className="block text-[9px] text-gray-400 -mt-0.5">Table of Contents</span>
               </div>
               <button
                 onClick={() => setSidebarOpen(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 sepia:text-sepia-800"
               >
                 <PanelLeftClose className="h-4 w-4" />
               </button>
@@ -351,14 +363,14 @@ function App() {
       )}
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div id="main-content" className="flex-1 flex flex-col min-w-0" role="main">
         <Toolbar />
         <div className="flex-1 flex min-h-0">
           {/* Sidebar toggle */}
           {!showSidebar && markdown && (viewMode === 'read' || viewMode === 'coach') && (
             <button
               onClick={() => setSidebarOpen(true)}
-              className="absolute top-24 left-2 z-10 p-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none"
+              className="absolute top-24 left-2 z-10 p-1.5 bg-white dark:bg-gray-800 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none"
             >
               <PanelLeftOpen className="h-4 w-4" />
             </button>
@@ -391,7 +403,7 @@ function App() {
             <>
               <ResizeHandle onResize={handleChatResize} />
               <aside
-                className="shrink-0 border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900"
+                className="shrink-0 max-w-[100vw] border-l border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white dark:bg-gray-900 sepia:bg-sepia-50"
                 style={{ width: chatWidth }}
               >
                 <Suspense fallback={<LazyFallback />}>
@@ -408,7 +420,7 @@ function App() {
             <>
               <ResizeHandle onResize={handleChatResize} />
               <aside
-                className="shrink-0 border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900"
+                className="shrink-0 max-w-[100vw] border-l border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white dark:bg-gray-900 sepia:bg-sepia-50"
                 style={{ width: chatWidth }}
               >
                 <Suspense fallback={<LazyFallback />}>
@@ -491,7 +503,7 @@ function App() {
       {markdown && (viewMode === 'read' || viewMode === 'coach') && (
         <button
           onClick={() => setMobileTocOpen(!mobileTocOpen)}
-          className="mobile-toc-hamburger fixed top-2 left-2 z-30 p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+          className="mobile-toc-hamburger fixed top-2 left-2 z-30 p-2 bg-white dark:bg-gray-800 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
           title="Table of Contents"
         >
           <Menu className="h-4 w-4" />
@@ -502,11 +514,11 @@ function App() {
       {mobileTocOpen && (
         <div className="mobile-toc-panel fixed inset-0 z-40" onClick={() => setMobileTocOpen(false)}>
           <div
-            className="absolute left-0 top-0 h-full w-72 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 p-4 overflow-y-auto shadow-xl animate-slide-in-left"
+            className="absolute left-0 top-0 h-full w-72 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border-r border-gray-200 dark:border-gray-800 sepia:border-sepia-200 p-4 overflow-y-auto shadow-xl animate-slide-in-left"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <span className="text-sm font-bold text-gray-700 dark:text-gray-200">Table of Contents</span>
+              <span className="text-sm font-bold text-gray-700 dark:text-gray-200 sepia:text-sepia-800">Table of Contents</span>
               <button onClick={() => setMobileTocOpen(false)} className="p-1 text-gray-400 hover:text-gray-600">&times;</button>
             </div>
             <TableOfContents />
@@ -517,6 +529,13 @@ function App() {
 
       {/* Onboarding overlay for first-time users */}
       {showOnboarding && <OnboardingOverlay onComplete={() => setShowOnboarding(false)} />}
+
+      {/* Offline indicator */}
+      {isOffline && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-white text-xs text-center py-1 font-medium">
+          You're offline — AI features are unavailable
+        </div>
+      )}
 
       {/* Telemetry opt-in banner (shows once) */}
       <TelemetryBanner />

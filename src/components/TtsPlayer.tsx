@@ -35,7 +35,19 @@ export function TtsPlayer() {
     loadVoices()
     window.speechSynthesis.onvoiceschanged = loadVoices
 
-    return () => { tts.stop(); window.speechSynthesis.onvoiceschanged = null }
+    // Pause TTS when user switches to another tab (prevents ghost speech)
+    const handleVisibility = () => {
+      if (document.hidden && !tts.isPaused && tts.isSpeaking) {
+        tts.pause()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      tts.stop()
+      window.speechSynthesis.onvoiceschanged = null
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }, [markdown, setTtsPlaying, setTtsSectionIndex])
 
   const handlePlay = useCallback(() => {
@@ -89,7 +101,7 @@ export function TtsPlayer() {
   }
 
   return (
-    <div className="fixed bottom-6 left-6 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-xl p-4 z-20 w-80">
+    <div className="fixed bottom-6 left-6 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 rounded-2xl shadow-xl p-4 z-20 w-80">
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
           Read Aloud

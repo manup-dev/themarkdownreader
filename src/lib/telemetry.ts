@@ -37,7 +37,7 @@ export type TelemetryEvent =
   | 'ai_chat' | 'ai_summarize' | 'ai_explain' | 'ai_coach' | 'ai_quiz'
   | 'tts_play'
   | 'highlight_added' | 'comment_added'
-  | 'export_chat' | 'export_highlights' | 'export_pdf'
+  | 'export_chat' | 'export_highlights' | 'export_pdf' | 'export_markdown'
   | 'prompt_builder_opened' | 'prompt_builder_copied' | 'prompt_builder_terminal'
   | 'keyboard_shortcut'
   | 'theme_dark' | 'theme_sepia' | 'theme_light' | 'theme_high_contrast'

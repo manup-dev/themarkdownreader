@@ -34,6 +34,7 @@ export function SimilarityMap() {
       const width = svgRef.current.clientWidth
       const height = svgRef.current.clientHeight
       const isDark = theme === 'dark'
+      const isSepia = theme === 'sepia'
 
       svg.selectAll('*').remove()
 
@@ -61,7 +62,7 @@ export function SimilarityMap() {
           g.append('path')
             .attr('d', `M${hull.map((p) => p.join(',')).join('L')}Z`)
             .attr('fill', COMMUNITY_COLORS[communityId % COMMUNITY_COLORS.length])
-            .attr('fill-opacity', isDark ? 0.08 : 0.06)
+            .attr('fill-opacity', isSepia ? 0.1 : isDark ? 0.08 : 0.06)
             .attr('stroke', COMMUNITY_COLORS[communityId % COMMUNITY_COLORS.length])
             .attr('stroke-opacity', 0.2)
             .attr('stroke-width', 1)
@@ -80,7 +81,7 @@ export function SimilarityMap() {
         .attr('cy', (d) => yScale(d.y))
         .attr('r', 8)
         .attr('fill', (d) => COMMUNITY_COLORS[d.communityId % COMMUNITY_COLORS.length])
-        .attr('stroke', isDark ? '#1f2937' : '#ffffff')
+        .attr('stroke', isSepia ? '#e8d5be' : isDark ? '#1f2937' : '#ffffff')
         .attr('stroke-width', 2)
         .attr('cursor', 'pointer')
         .on('dblclick', (_event, d) => {
@@ -109,7 +110,7 @@ export function SimilarityMap() {
           return name.length > 20 ? name.slice(0, 19) + '...' : name
         })
         .attr('font-size', '9px')
-        .attr('fill', isDark ? '#9ca3af' : '#6b7280')
+        .attr('fill', isSepia ? '#5c4a32' : isDark ? '#9ca3af' : '#6b7280')
         .attr('text-anchor', 'middle')
         .style('pointer-events', 'none')
 

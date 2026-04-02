@@ -69,3 +69,8 @@ cli/dist/
 
 # Bundle analysis
 dist/bundle-stats.html
+
+# Playwright
+test-results/
+playwright-report/
+dist-e2e/

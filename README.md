@@ -1,19 +1,89 @@
-[![CI](https://github.com/manup-dev/themarkdownreader/actions/workflows/ci.yml/badge.svg)](https://github.com/manup-dev/themarkdownreader/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
+<div align="center">
 
 # md-reader
-export type first = {second}
-> The AI-native markdown reader. Read, understand, and explore your documents.
 
-![md-reader reader view](docs/screenshots/reader.png)
+**The AI-native markdown reader.**
+*Obsidian is for writing. md-reader is for understanding.*
 
-**md-reader** is the first markdown tool built for **reading**, not writing. Upload any `.md` file and instantly get a beautiful reading experience with mind maps, AI-powered Q&A, visual exploration, and text-to-speech — all running locally in your browser.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/manup-dev/themarkdownreader/actions/workflows/ci.yml/badge.svg)](https://github.com/manup-dev/themarkdownreader/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/version-1.0.0-green.svg)](CHANGELOG.md)
 
-## Prerequisites
+**[▶ Try Live Demo](https://manup-dev.github.io/themarkdownreader/?demo=true)** · **[Install CLI](#install)** · **[VS Code Extension](#vs-code-extension)**
 
-- **Node.js >= 20** ([download](https://nodejs.org/))
-- **Docker** (optional, for GPU-accelerated AI via Ollama)
+</div>
+
+<div align="center">
+  <img src="docs/screenshots/hero-reader.png" alt="md-reader reading view" width="800" />
+  <p><em>Beautiful reading with AI chat, highlights, and TTS</em></p>
+</div>
+
+---
+
+## Why md-reader?
+
+Every markdown tool is built for **writing**. md-reader is the first one built for **reading**.
+
+Drop a markdown file and instantly get: AI chat, mind maps, knowledge graphs, text-to-speech, and a beautiful reading experience — all running locally, no API keys required.
+
+```bash
+npx md-reader README.md
+```
+
+One command. Local AI. No API keys. No signup.
+
+### How is this different?
+
+| | md-reader | Obsidian | Typora | VS Code Preview |
+|---|---|---|---|---|
+| **Purpose** | Reading & understanding | Writing & PKM | Writing & export | Quick preview |
+| **AI Chat** | ✅ Built-in (3 backends) | ❌ Plugin required | ❌ | ❌ |
+| **Mind Maps** | ✅ Auto-generated | ❌ Plugin required | ❌ | ❌ |
+| **Knowledge Graph** | ✅ AI-extracted concepts | ⚠️ Link-based only | ❌ | ❌ |
+| **TTS** | ✅ Smart narration | ❌ | ❌ | ❌ |
+| **Local AI** | ✅ Ollama + WebLLM | ❌ | ❌ | ❌ |
+| **No account** | ✅ | ✅ | ⚠️ License | ✅ |
+| **Browser-based** | ✅ | ❌ | ❌ | ❌ |
+| **Open source** | ✅ MIT | ❌ | ❌ | ✅ |
+| **Price** | Free | Freemium | $15 | Free |
+
+---
+
+## Install
+
+### Quick start (no install)
+
+```bash
+npx md-reader README.md
+```
+
+### Global install
+
+```bash
+npm install -g md-reader
+md-reader my-doc.md
+```
+
+### Pipe from stdin
+
+```bash
+cat README.md | md-reader
+gh repo view --json body -q .body | md-reader
+```
+
+### Web app
+
+Visit the **[live demo](https://manup-dev.github.io/themarkdownreader/?demo=true)** — no install needed.
+
+### Docker (with local AI)
+
+```bash
+git clone https://github.com/manup-dev/themarkdownreader.git
+cd themarkdownreader
+./startup.sh  # Starts app + Ollama with GPU
+```
+
+---
 
 ## Features
 
@@ -32,7 +102,10 @@ export type first = {second}
 
 ### Visual Exploration
 
-![Mind map view](docs/screenshots/mindmap.png)
+<div align="center">
+  <img src="docs/screenshots/hero-mindmap.png" alt="md-reader mind map" width="800" />
+  <p><em>Auto-generated interactive mind maps</em></p>
+</div>
 
 - **Interactive mind map** from heading hierarchy (download as PNG, Ctrl+click to navigate)
 - **Treemap** showing relative section sizes with dynamic text contrast

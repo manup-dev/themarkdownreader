@@ -44,6 +44,7 @@ export function TreemapView() {
       .attr('height', height)
 
     const isDark = theme === 'dark'
+    const isSepia = theme === 'sepia'
 
     const leaves = root.leaves() as HierarchyRectangularNode<TreemapNode>[]
 
@@ -73,8 +74,8 @@ export function TreemapView() {
       .attr('height', (d) => Math.max(0, d.y1! - d.y0!))
       .attr('rx', 4)
       .attr('fill', (_d, i) => COLORS[i % COLORS.length])
-      .attr('fill-opacity', isDark ? 0.7 : 0.85)
-      .attr('stroke', isDark ? '#1f2937' : '#ffffff')
+      .attr('fill-opacity', isSepia ? 0.75 : isDark ? 0.7 : 0.85)
+      .attr('stroke', isSepia ? '#e8d5be' : isDark ? '#1f2937' : '#ffffff')
       .attr('stroke-width', 2)
 
     // Dynamic text color based on background luminance for WCAG contrast

@@ -2,6 +2,15 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Search, X, ChevronUp, ChevronDown } from 'lucide-react'
 import { useStore } from '../store/useStore'
 
+/** Theme-aware search highlight color — reads DOM classes directly (no React dependency) */
+function getHighlightColor(active: boolean): string {
+  const isSepia = document.documentElement.classList.contains('sepia')
+  const isDark = document.documentElement.classList.contains('dark')
+  if (isSepia) return active ? 'rgba(180, 83, 9, 0.4)' : 'rgba(180, 83, 9, 0.2)'
+  if (isDark) return active ? 'rgba(251, 191, 36, 0.5)' : 'rgba(251, 191, 36, 0.2)'
+  return active ? 'rgba(251, 191, 36, 0.6)' : 'rgba(251, 191, 36, 0.3)'
+}
+
 /**
  * In-document search overlay (Ctrl+K or /)
  * Finds and highlights text matches, navigates between them.
@@ -38,6 +47,18 @@ export function SearchOverlay() {
     if (open) inputRef.current?.focus()
   }, [open])
 
+  // Clear search highlights when view changes
+  const prevViewModeRef = useRef(viewMode)
+  useEffect(() => {
+    if (prevViewModeRef.current !== viewMode) {
+      prevViewModeRef.current = viewMode
+      document.querySelectorAll('[data-search-highlight]').forEach((el) => {
+        el.removeAttribute('data-search-highlight')
+        ;(el as HTMLElement).style.background = ''
+      })
+    }
+  }, [viewMode])
+
   // Search logic
   const doSearch = useCallback((q: string) => {
     // Clear previous highlights
@@ -65,7 +86,7 @@ export function SearchOverlay() {
         const el = node.parentElement
         if (el && !el.closest('pre')) { // Don't highlight inside code blocks
           el.setAttribute('data-search-highlight', 'true')
-          el.style.background = 'rgba(251, 191, 36, 0.3)'
+          el.style.background = getHighlightColor(false)
           found.push(el)
         }
       }
@@ -75,7 +96,7 @@ export function SearchOverlay() {
     setCurrentMatch(0)
     if (found.length > 0) {
       found[0].scrollIntoView({ behavior: 'smooth', block: 'center' })
-      found[0].style.background = 'rgba(251, 191, 36, 0.6)'
+      found[0].style.background = getHighlightColor(true)
     }
   }, [])
 
@@ -84,7 +105,7 @@ export function SearchOverlay() {
 
     // Safety: check element is still in DOM before styling
     const cur = matches[currentMatch]
-    if (cur?.isConnected) cur.style.setProperty('background', 'rgba(251, 191, 36, 0.3)')
+    if (cur?.isConnected) cur.style.setProperty('background', getHighlightColor(false))
 
     const next = direction === 'next'
       ? (currentMatch + 1) % matches.length
@@ -94,7 +115,7 @@ export function SearchOverlay() {
     const nextEl = matches[next]
     if (nextEl?.isConnected) {
       nextEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      nextEl.style.setProperty('background', 'rgba(251, 191, 36, 0.6)')
+      nextEl.style.setProperty('background', getHighlightColor(true))
     }
   }, [matches, currentMatch])
 
@@ -128,7 +149,7 @@ export function SearchOverlay() {
     : []
 
   return (
-    <div className="fixed top-14 right-4 z-40 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl w-80 animate-scale-in">
+    <div className="fixed top-14 right-4 z-40 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 rounded-xl shadow-xl w-80 animate-scale-in">
       <div className="p-2 flex items-center gap-2">
         <Search className="h-4 w-4 text-gray-400 shrink-0" />
         <input
