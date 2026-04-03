@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Key, Server, Zap, Check, X, Eye, EyeOff, ExternalLink, Settings, BarChart3, Brain, Trash2 } from 'lucide-react'
 import { setApiKey, getApiKey, clearApiKey, detectBestBackend, getActiveBackend, checkOllamaHealth, getPreferredBackend, setPreferredBackend } from '../lib/ai'
-import { getModelState, onModelProgress } from '../lib/inference/model-manager'
+import { getModelState, onModelProgress, preloadGemma } from '../lib/inference/model-manager'
 import { unloadGemma } from '../lib/inference/gemma-engine'
+import { RefreshCw } from 'lucide-react'
 import { isTelemetryEnabled, enableTelemetry, disableTelemetry, exportTelemetry, clearTelemetry, TRACKED_EVENTS } from '../lib/telemetry'
 
 // Use same key as ai.ts to avoid duplication
@@ -127,6 +128,18 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
             >
               <Trash2 className="h-3 w-3" />
               Clear cache
+            </button>
+          )}
+          {gemmaState.status === 'failed' && (
+            <button
+              onClick={() => {
+                preloadGemma()
+                setGemmaState({ status: 'downloading', progress: 0, progressText: 'Retrying…' })
+              }}
+              className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-500"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Retry
             </button>
           )}
         </div>

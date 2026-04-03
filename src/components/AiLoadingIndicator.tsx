@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Brain } from 'lucide-react'
 import { onModelProgress, getModelState } from '../lib/inference/model-manager'
 import type { ModelState } from '../lib/inference/model-manager'
+import { getActiveBackend } from '../lib/ai'
 
 export function AiLoadingIndicator() {
   const [state, setState] = useState<ModelState>(getModelState)
@@ -13,6 +14,9 @@ export function AiLoadingIndicator() {
   if (state.status === 'idle' || state.status === 'ready') return null
 
   if (state.status === 'failed') {
+    // Only show "AI unavailable" if no fallback backend is active
+    const backend = getActiveBackend()
+    if (backend !== 'none') return null
     return (
       <div className="flex items-center gap-1.5 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] text-red-400">
         <Brain className="h-3 w-3" />

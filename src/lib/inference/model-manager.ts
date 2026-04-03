@@ -79,10 +79,11 @@ export function waitForReady(): Promise<void> {
 
 /**
  * Schedules a background preload of the Gemma model after first paint.
- * Safe to call multiple times — idempotent.
+ * Safe to call multiple times — idempotent (unless previous attempt failed).
  */
 export function preloadGemma(): void {
-  if (preloadScheduled) return
+  // Allow retry after failure
+  if (preloadScheduled && state.status !== 'failed') return
   preloadScheduled = true
 
   // Wire up progress bridging from gemma-engine → ModelState
