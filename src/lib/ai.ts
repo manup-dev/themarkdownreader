@@ -5,7 +5,7 @@
  */
 
 import { PROMPTS, PROMPT_CONFIG } from './prompts'
-import { gemmaChat, getGemmaStatus, loadGemmaModel } from './inference/gemma-engine'
+import { gemmaChat, loadGemmaModel } from './inference/gemma-engine'
 import { getModelState, waitForReady } from './inference/model-manager'
 
 // ─── Config ────────────────────────────────────────────────────────────────
