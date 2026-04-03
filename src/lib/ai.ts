@@ -1,10 +1,12 @@
 /**
  * AI inference layer with streaming support.
- * Backend priority: 1) OpenRouter (cloud)  2) Ollama (local)  3) WebLLM (browser)
+ * Backend priority: 1) Gemma 4 (browser WebGPU)  2) WebLLM (browser)  3) Ollama (local)  4) OpenRouter (cloud)
  * Supports streaming via onToken callback for all backends.
  */
 
 import { PROMPTS, PROMPT_CONFIG } from './prompts'
+import { gemmaChat, getGemmaStatus, loadGemmaModel } from './inference/gemma-engine'
+import { getModelState, waitForReady } from './inference/model-manager'
 
 // ─── Config ────────────────────────────────────────────────────────────────
 
@@ -36,7 +38,7 @@ interface WebLLMEngine {
   }
 }
 
-type Backend = 'openrouter' | 'ollama' | 'webllm' | 'none'
+type Backend = 'gemma4' | 'webllm' | 'ollama' | 'openrouter' | 'none'
 let activeBackend: Backend = 'none'
 let backendDetected = false
 let detectPromise: Promise<Backend> | null = null  // mutex: prevents concurrent detection
@@ -57,6 +59,23 @@ export function getApiKey(): string | null {
 
 export function clearApiKey(): void {
   localStorage.removeItem(OPENROUTER_KEY_STORAGE)
+  backendDetected = false
+}
+
+// ─── Preferred backend override ────────────────────────────────────────────
+
+const LS_PREFERRED_BACKEND = 'md-reader-preferred-backend'
+
+export function getPreferredBackend(): string | null {
+  return typeof localStorage !== 'undefined' ? localStorage.getItem(LS_PREFERRED_BACKEND) : null
+}
+
+export function setPreferredBackend(backend: string | null): void {
+  if (backend) {
+    localStorage.setItem(LS_PREFERRED_BACKEND, backend)
+  } else {
+    localStorage.removeItem(LS_PREFERRED_BACKEND)
+  }
   backendDetected = false
 }
 
@@ -89,30 +108,24 @@ async function checkOpenRouter(): Promise<boolean> {
 
 export async function detectBestBackend(): Promise<Backend> {
   if (backendDetected) return activeBackend
-  // Mutex: if detection is already running, wait for it instead of starting another
   if (detectPromise) return detectPromise
   detectPromise = (async () => {
     try {
-      // 1. OpenRouter — if user has set an API key
-      if (await checkOpenRouter()) {
-        activeBackend = 'openrouter'
-        backendDetected = true
-        return activeBackend
+      const preferred = getPreferredBackend()
+      if (preferred && preferred !== 'auto') {
+        if (preferred === 'gemma4' && await checkWebGPU()) { activeBackend = 'gemma4'; backendDetected = true; return activeBackend }
+        if (preferred === 'webllm' && await checkWebGPU()) { activeBackend = 'webllm'; backendDetected = true; return activeBackend }
+        if (preferred === 'ollama' && await checkOllamaHealth()) { activeBackend = 'ollama'; backendDetected = true; return activeBackend }
+        if (preferred === 'openrouter' && await checkOpenRouter()) { activeBackend = 'openrouter'; backendDetected = true; return activeBackend }
+        // preferred not available, fall through to auto-detect
       }
 
-      // 2. Ollama — local server
-      if (await checkOllamaHealth()) {
-        activeBackend = 'ollama'
-        backendDetected = true
-        return activeBackend
-      }
-
-      // 3. WebLLM — needs WebGPU
-      if (await checkWebGPU()) {
-        activeBackend = 'webllm'
-        backendDetected = true
-        return activeBackend
-      }
+      // Auto: browser-first
+      // Note: WebLLM is NOT in auto-detect because Gemma4 also uses WebGPU and is preferred.
+      // WebLLM is only available as explicit override or as fallback within the chat() function when Gemma4 fails.
+      if (await checkWebGPU()) { activeBackend = 'gemma4'; backendDetected = true; return activeBackend }
+      if (await checkOllamaHealth()) { activeBackend = 'ollama'; backendDetected = true; return activeBackend }
+      if (await checkOpenRouter()) { activeBackend = 'openrouter'; backendDetected = true; return activeBackend }
 
       activeBackend = 'none'
       backendDetected = true
@@ -173,6 +186,23 @@ async function getWebLLMEngine(): Promise<WebLLMEngine> {
   }
   })()
   return webllmLoadPromise
+}
+
+// ─── WebLLM chat ───────────────────────────────────────────────────────────
+
+async function chatWebLLM(
+  messages: ChatMessage[],
+  onToken?: (token: string) => void,
+): Promise<string> {
+  const engine = await getWebLLMEngine()
+  const reply = await engine.chat.completions.create({
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    temperature: PROMPT_CONFIG.temperature,
+    max_tokens: PROMPT_CONFIG.maxTokens,
+  })
+  const content = reply.choices[0]?.message?.content ?? ''
+  onToken?.(content)
+  return content
 }
 
 // ─── OpenRouter streaming chat (SSE, OpenAI-compatible) ───────────────────
@@ -302,51 +332,60 @@ export async function chat(
 ): Promise<string> {
   if (!backendDetected) await detectBestBackend()
 
-  // Try OpenRouter
-  if (activeBackend === 'openrouter') {
+  // Gemma 4 (primary)
+  if (activeBackend === 'gemma4') {
     try {
-      return await chatOpenRouterStream(messages, onToken, signal)
+      const modelState = getModelState()
+      if (modelState.status === 'downloading') {
+        await waitForReady()
+      } else if (modelState.status !== 'ready') {
+        await loadGemmaModel()
+      }
+      return await gemmaChat(messages, onToken, signal)
     } catch (e) {
-      console.warn('OpenRouter failed, trying fallbacks:', e)
-      backendDetected = false  // Re-probe on next call (transient failure recovery)
-      const ollamaOk = await checkOllamaHealth()
-      if (ollamaOk) return chatOllamaStream(messages, onToken, signal)
-      const hasGPU = await checkWebGPU()
-      if (hasGPU) { activeBackend = 'webllm' }
-      else throw new Error(`OpenRouter failed: ${e instanceof Error ? e.message : e}`)
+      console.warn('Gemma 4 failed, trying fallbacks:', e)
+      try {
+        if (await checkWebGPU()) return await chatWebLLM(messages, onToken)
+      } catch { /* fall through */ }
+      if (await checkOllamaHealth()) return chatOllamaStream(messages, onToken, signal)
+      if (await checkOpenRouter()) return chatOpenRouterStream(messages, onToken, signal)
+      throw new Error(`Gemma 4 failed: ${e instanceof Error ? e.message : e}`)
     }
   }
 
-  // Try WebLLM
+  // WebLLM
   if (activeBackend === 'webllm') {
     try {
-      const engine = await getWebLLMEngine()
-      const reply = await engine.chat.completions.create({
-        messages: messages.map((m) => ({ role: m.role, content: m.content })),
-        temperature: PROMPT_CONFIG.temperature,
-        max_tokens: PROMPT_CONFIG.maxTokens,
-      })
-      const content = reply.choices[0]?.message?.content ?? ''
-      onToken?.(content)
-      return content
+      return await chatWebLLM(messages, onToken)
     } catch {
-      backendDetected = false  // Re-probe on next call
-      const ollamaOk = await checkOllamaHealth()
-      if (ollamaOk) return chatOllamaStream(messages, onToken, signal)
+      backendDetected = false
+      if (await checkOllamaHealth()) return chatOllamaStream(messages, onToken, signal)
       throw new Error('No AI backend available')
     }
   }
 
-  // Try Ollama
+  // Ollama
   if (activeBackend === 'ollama') {
     return chatOllamaStream(messages, onToken, signal)
   }
 
+  // OpenRouter
+  if (activeBackend === 'openrouter') {
+    try {
+      return await chatOpenRouterStream(messages, onToken, signal)
+    } catch (e) {
+      console.warn('OpenRouter failed:', e)
+      backendDetected = false
+      if (await checkOllamaHealth()) return chatOllamaStream(messages, onToken, signal)
+      throw new Error(`OpenRouter failed: ${e instanceof Error ? e.message : e}`)
+    }
+  }
+
   throw new Error(
     'No AI backend available.\n' +
-    '• Set an OpenRouter API key in Settings for cloud AI (free models available)\n' +
+    '• Use a WebGPU-capable browser (Chrome/Edge) for in-browser AI with Gemma 4\n' +
     '• Start Ollama locally (docker compose up)\n' +
-    '• Use a WebGPU-capable browser (Chrome/Edge) for in-browser AI',
+    '• Set an OpenRouter API key in Settings for cloud AI',
   )
 }
 
@@ -356,9 +395,10 @@ export { PROMPTS, PROMPT_CONFIG } from './prompts'
 // ─── High-level AI functions ───────────────────────────────────────────────
 
 export async function summarize(text: string, signal?: AbortSignal, onToken?: (t: string) => void): Promise<string> {
+  const maxInput = activeBackend === 'gemma4' ? 6000 : PROMPT_CONFIG.summarizeMaxInput
   return chat([
     { role: 'system', content: PROMPTS.summarize },
-    { role: 'user', content: text.slice(0, PROMPT_CONFIG.summarizeMaxInput) },
+    { role: 'user', content: text.slice(0, maxInput) },
   ], signal, onToken)
 }
 
@@ -375,7 +415,8 @@ export async function askAboutDocument(
   signal?: AbortSignal,
   onToken?: (t: string) => void,
 ): Promise<string> {
-  const numbered = contextChunks.map((c, i) => `[${i + 1}] ${c.slice(0, PROMPT_CONFIG.qaMaxChunkLen)}`).join('\n\n')
+  const maxChunk = activeBackend === 'gemma4' ? 1500 : PROMPT_CONFIG.qaMaxChunkLen
+  const numbered = contextChunks.map((c, i) => `[${i + 1}] ${c.slice(0, maxChunk)}`).join('\n\n')
   return chat([
     { role: 'system', content: PROMPTS.askDocument },
     { role: 'user', content: `Context:\n${numbered}\n\nQ: ${question}` },
@@ -531,3 +572,6 @@ export async function listModels(): Promise<string[]> {
     return (data.models ?? []).map((m: { name: string }) => m.name)
   } catch { return [] }
 }
+
+export { getModelState, onModelProgress, preloadGemma } from './inference/model-manager'
+export { getGemmaStatus, unloadGemma } from './inference/gemma-engine'
