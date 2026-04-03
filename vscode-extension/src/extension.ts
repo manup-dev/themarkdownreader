@@ -117,21 +117,24 @@ export function activate(context: vscode.ExtensionContext) {
   // Open reader for current markdown file
   context.subscriptions.push(
     vscode.commands.registerCommand('md-reader.openReader', () => {
-      ReaderPanel.createOrShow(context, 'read')
+      const doc = vscode.window.activeTextEditor?.document
+      ReaderPanel.createOrShow(context, 'read', doc)
     }),
   )
 
   // Open mind map directly
   context.subscriptions.push(
     vscode.commands.registerCommand('md-reader.openMindMap', () => {
-      ReaderPanel.createOrShow(context, 'mindmap')
+      const doc = vscode.window.activeTextEditor?.document
+      ReaderPanel.createOrShow(context, 'mindmap', doc)
     }),
   )
 
   // Read aloud
   context.subscriptions.push(
     vscode.commands.registerCommand('md-reader.readAloud', () => {
-      ReaderPanel.createOrShow(context, 'read')
+      const doc = vscode.window.activeTextEditor?.document
+      ReaderPanel.createOrShow(context, 'read', doc)
       // Webview will receive a separate 'readAloud' message
       setTimeout(() => ReaderPanel.current?.postMessage({ type: 'readAloud' }), 500)
     }),
@@ -142,7 +145,8 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('md-reader.summarizeSelection', () => {
       const selectedText = getSelectedText()
       if (!selectedText) return
-      ReaderPanel.createOrShow(context, 'read')
+      const doc = vscode.window.activeTextEditor?.document
+      ReaderPanel.createOrShow(context, 'read', doc)
       setTimeout(() => {
         ReaderPanel.current?.postMessage({ type: 'aiAction', action: 'summarize', text: selectedText })
       }, 500)
@@ -154,7 +158,8 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('md-reader.explainSelection', () => {
       const selectedText = getSelectedText()
       if (!selectedText) return
-      ReaderPanel.createOrShow(context, 'read')
+      const doc = vscode.window.activeTextEditor?.document
+      ReaderPanel.createOrShow(context, 'read', doc)
       setTimeout(() => {
         ReaderPanel.current?.postMessage({ type: 'aiAction', action: 'explain', text: selectedText })
       }, 500)
@@ -166,7 +171,8 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('md-reader.readSelectionAloud', () => {
       const selectedText = getSelectedText()
       if (!selectedText) return
-      ReaderPanel.createOrShow(context, 'read')
+      const doc = vscode.window.activeTextEditor?.document
+      ReaderPanel.createOrShow(context, 'read', doc)
       setTimeout(() => {
         ReaderPanel.current?.postMessage({ type: 'readAloudText', text: selectedText })
       }, 500)
@@ -187,14 +193,16 @@ export function activate(context: vscode.ExtensionContext) {
   // Open Summary Cards
   context.subscriptions.push(
     vscode.commands.registerCommand('md-reader.openSummary', () => {
-      ReaderPanel.createOrShow(context, 'summary-cards')
+      const doc = vscode.window.activeTextEditor?.document
+      ReaderPanel.createOrShow(context, 'summary-cards', doc)
     }),
   )
 
   // Open Treemap
   context.subscriptions.push(
     vscode.commands.registerCommand('md-reader.openTreemap', () => {
-      ReaderPanel.createOrShow(context, 'treemap')
+      const doc = vscode.window.activeTextEditor?.document
+      ReaderPanel.createOrShow(context, 'treemap', doc)
     }),
   )
 
@@ -202,7 +210,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('md-reader.toggleToc', () => {
       if (!ReaderPanel.current) {
-        ReaderPanel.createOrShow(context, 'read')
+        const doc = vscode.window.activeTextEditor?.document
+        ReaderPanel.createOrShow(context, 'read', doc)
         return
       }
       ReaderPanel.current.postMessage({ type: 'toggleToc' })

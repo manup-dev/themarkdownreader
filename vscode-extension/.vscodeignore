@@ -10,3 +10,7 @@ tsconfig.tsbuildinfo
 esbuild.mjs
 **/*.map
 .gitignore
+e2e/**
+wdio.conf.ts
+tsconfig.e2e.json
+.wdio-vscode-service/**

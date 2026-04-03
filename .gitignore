@@ -52,7 +52,9 @@ scripts/eval/results/
 vscode-extension/dist/
 vscode-extension/webview/dist/
 vscode-extension/tsconfig.tsbuildinfo
-vscode-extension/*.vsix
+# Keep md-reader-*.vsix for download from README
+# vscode-extension/*.vsix
+vscode-extension/.wdio-vscode-service/
 .md-reader-mcp-port
 .md-reader-view
 .md-reader-trigger.json

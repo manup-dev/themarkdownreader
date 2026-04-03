@@ -26,14 +26,22 @@ export class ReaderPanel {
 
   // Pending content to send when webview is ready (set by loadContent before 'ready' fires)
   private pendingContent: { content: string; fileName: string; view?: string; section?: string } | null = null
-  private pendingContentTimer: ReturnType<typeof setTimeout> | null = null
+  private pendingDocument: vscode.TextDocument | undefined
+  private webviewReady = false
 
-  public static createOrShow(context: vscode.ExtensionContext, defaultView = 'read') {
+  public static createOrShow(context: vscode.ExtensionContext, defaultView = 'read', document?: vscode.TextDocument) {
     const column = vscode.ViewColumn.Beside
 
     if (ReaderPanel.current) {
       ReaderPanel.current.panel.reveal(column)
-      ReaderPanel.current.sendCurrentEditor()
+      ReaderPanel.current.sendCurrentEditor(document)
+      if (defaultView !== 'read') {
+        // Delay view switch: sendCurrentEditor triggers updateContent with a 300ms debounce,
+        // and setMarkdown resets viewMode to 'read'. Send view switch after that settles.
+        setTimeout(() => {
+          ReaderPanel.current?.postMessage({ type: 'config', defaultView })
+        }, 500)
+      }
       return
     }
 
@@ -51,13 +59,14 @@ export class ReaderPanel {
       },
     )
 
-    ReaderPanel.current = new ReaderPanel(panel, context.extensionUri, defaultView)
+    ReaderPanel.current = new ReaderPanel(panel, context.extensionUri, defaultView, document)
     ReaderPanel.onPanelActiveCallback?.(true)
   }
 
-  private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, defaultView: string) {
+  private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, defaultView: string, document?: vscode.TextDocument) {
     this.panel = panel
     this.extensionUri = extensionUri
+    this.pendingDocument = document
 
     this.panel.webview.html = this.getHtmlForWebview(defaultView)
 
@@ -95,23 +104,20 @@ export class ReaderPanel {
     }, 300)
   }
 
-  public sendCurrentEditor() {
-    const editor = vscode.window.activeTextEditor
-    if (editor?.document.languageId === 'markdown') {
-      this.updateContent(editor.document)
+  public sendCurrentEditor(document?: vscode.TextDocument) {
+    const doc = document ?? vscode.window.activeTextEditor?.document
+    if (doc?.languageId === 'markdown') {
+      this.updateContent(doc)
     }
   }
 
   /** Load specific content + view, handling the case where webview isn't ready yet */
   public loadContent(content: string, fileName: string, view?: string, section?: string) {
     this.pendingContent = { content, fileName, view, section }
-    // Cancel any previous pending timer to avoid double-sends
-    if (this.pendingContentTimer) clearTimeout(this.pendingContentTimer)
-    // For fresh panels: the 'ready' handler will call sendPendingContent().
-    // For already-mounted panels: retry multiple times to ensure delivery.
-    this.pendingContentTimer = setTimeout(() => this.sendPendingContent(), 300)
-    setTimeout(() => this.sendPendingContent(), 800)
-    setTimeout(() => this.sendPendingContent(), 1500)
+    // If webview is already ready, send immediately. Otherwise the 'ready' handler will pick it up.
+    if (this.webviewReady) {
+      this.sendPendingContent()
+    }
   }
 
   private sendPendingContent() {
@@ -132,19 +138,19 @@ export class ReaderPanel {
       }, 200)
     }
     this.pendingContent = null
-    // Cancel fallback timer if ready handler already sent
-    if (this.pendingContentTimer) { clearTimeout(this.pendingContentTimer); this.pendingContentTimer = null }
   }
 
   private handleMessage(message: { type: string; [key: string]: unknown }) {
     switch (message.type) {
       case 'ready':
+        this.webviewReady = true
         if (this.pendingContent) {
           this.sendConfig(true)
           this.sendPendingContent()
         } else {
           this.sendConfig()
-          this.sendCurrentEditor()
+          this.sendCurrentEditor(this.pendingDocument)
+          this.pendingDocument = undefined
         }
         break
 
