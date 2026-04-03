@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
 import { chunkMarkdown } from '../lib/markdown'
 import { searchChunks } from '../lib/embeddings'
-import { askAboutDocument, summarize, detectBestBackend, getActiveBackend, onWebLLMProgress } from '../lib/ai'
+import { askAboutDocument, summarize, detectBestBackend, getActiveBackend, onWebLLMProgress, onModelProgress } from '../lib/ai'
 import { trackEvent } from '../lib/telemetry'
 
 interface Message {
@@ -35,11 +35,25 @@ export function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    // Listen to Gemma model manager progress
+    const unsubModel = onModelProgress((state) => {
+      if (state.status === 'downloading') {
+        setModelProgressPct(state.progress)
+        setModelProgress(state.progressText)
+      } else if (state.status === 'ready') {
+        setModelProgress(null)
+      }
+    })
+
+    // Legacy WebLLM progress
     onWebLLMProgress((pct, text) => {
       setModelProgressPct(pct)
       setModelProgress(text)
     })
+
     detectBestBackend().then((b) => setBackend(b))
+
+    return unsubModel
   }, [])
 
   useEffect(() => {
