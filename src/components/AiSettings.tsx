@@ -1,14 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Key, Server, Zap, Check, X, Eye, EyeOff, ExternalLink, Settings, BarChart3 } from 'lucide-react'
-import { setApiKey, getApiKey, clearApiKey, detectBestBackend, getActiveBackend, checkOllamaHealth } from '../lib/ai'
+import { Key, Server, Zap, Check, X, Eye, EyeOff, ExternalLink, Settings, BarChart3, Brain, Trash2 } from 'lucide-react'
+import { setApiKey, getApiKey, clearApiKey, detectBestBackend, getActiveBackend, checkOllamaHealth, getPreferredBackend, setPreferredBackend } from '../lib/ai'
+import { getModelState, onModelProgress } from '../lib/inference/model-manager'
+import { unloadGemma } from '../lib/inference/gemma-engine'
 import { isTelemetryEnabled, enableTelemetry, disableTelemetry, exportTelemetry, clearTelemetry, TRACKED_EVENTS } from '../lib/telemetry'
 
 // Use same key as ai.ts to avoid duplication
 const LS_OLLAMA_URL = 'md-reader-ollama-url'
 
-type Backend = 'openrouter' | 'ollama' | 'webllm' | 'none'
+type Backend = 'gemma4' | 'openrouter' | 'ollama' | 'webllm' | 'none'
 
 const backendMeta: Record<Backend, { label: string; color: string }> = {
+  gemma4: { label: 'Gemma 4', color: 'bg-blue-600' },
   openrouter: { label: 'OpenRouter', color: 'bg-purple-500' },
   ollama: { label: 'Ollama', color: 'bg-green-500' },
   webllm: { label: 'WebLLM', color: 'bg-blue-500' },
@@ -23,6 +26,12 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
   const [ollamaReachable, setOllamaReachable] = useState<boolean | null>(null)
   const [testResult, setTestResult] = useState<'success' | 'error' | null>(null)
   const [testing, setTesting] = useState(false)
+  const [preferred, setPreferred] = useState(() => getPreferredBackend() ?? 'auto')
+  const [gemmaState, setGemmaState] = useState(() => getModelState())
+
+  useEffect(() => {
+    return onModelProgress(setGemmaState)
+  }, [])
 
   useEffect(() => {
     checkOllamaHealth().then(setOllamaReachable)
@@ -53,8 +62,9 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
       clearApiKey()
     }
     localStorage.setItem(LS_OLLAMA_URL, ollamaUrl.trim() || 'http://localhost:11434')
+    setPreferredBackend(preferred === 'auto' ? null : preferred)
     onClose()
-  }, [apiKey, ollamaUrl, onClose])
+  }, [apiKey, ollamaUrl, preferred, onClose])
 
   const meta = backendMeta[activeBackend] ?? backendMeta.none
 
@@ -73,6 +83,58 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
             {meta.label}
           </span>
         </div>
+      </div>
+
+      <hr className="border-gray-200 dark:border-gray-700" />
+
+      {/* Preferred Backend */}
+      <div className="flex flex-col gap-2">
+        <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
+          <Brain className="h-3.5 w-3.5" />
+          Preferred Backend
+        </label>
+        <select
+          value={preferred}
+          onChange={(e) => {
+            setPreferred(e.target.value)
+            setPreferredBackend(e.target.value === 'auto' ? null : e.target.value)
+          }}
+          className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-xs text-gray-800 dark:text-gray-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+        >
+          <option value="auto">Auto (Gemma 4 → WebLLM → Ollama → Cloud)</option>
+          <option value="gemma4">Gemma 4 E2B (in-browser)</option>
+          <option value="webllm">WebLLM Qwen2.5 (in-browser, lighter)</option>
+          <option value="ollama">Ollama (local server)</option>
+          <option value="openrouter">OpenRouter (cloud API)</option>
+        </select>
+      </div>
+
+      {/* Gemma 4 Status */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-gray-400">
+            Gemma 4: {gemmaState.status === 'ready' ? 'Cached & ready' : gemmaState.status === 'downloading' ? `Downloading (${Math.round(gemmaState.progress * 100)}%)` : gemmaState.status === 'failed' ? 'Failed to load' : 'Not loaded'}
+          </span>
+          {gemmaState.status === 'ready' && (
+            <button
+              onClick={() => {
+                if (window.confirm('Clear cached Gemma 4 model? It will re-download next time.')) {
+                  unloadGemma()
+                  setGemmaState({ status: 'idle', progress: 0, progressText: '' })
+                }
+              }}
+              className="flex items-center gap-1 text-[10px] text-red-400 hover:text-red-500"
+            >
+              <Trash2 className="h-3 w-3" />
+              Clear cache
+            </button>
+          )}
+        </div>
+        {gemmaState.status === 'downloading' && (
+          <div className="h-1 w-full rounded-full bg-blue-500/20 overflow-hidden">
+            <div className="h-full rounded-full bg-blue-400 transition-all duration-300" style={{ width: `${gemmaState.progress * 100}%` }} />
+          </div>
+        )}
       </div>
 
       <hr className="border-gray-200 dark:border-gray-700" />

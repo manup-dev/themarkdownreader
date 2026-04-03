@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap, GitBranch, Library, ArrowLeft, Save, Check, Settings, Contrast, Type, Maximize, Printer, Palette, SlidersHorizontal, ChevronDown, Download } from 'lucide-react'
 import { AiSettings } from './AiSettings'
+import { AiLoadingIndicator } from './AiLoadingIndicator'
 import { useStore, type Theme, type ViewMode } from '../store/useStore'
 import { addDocument } from '../lib/docstore'
 import { getActiveBackend } from '../lib/ai'
+import { preloadGemma } from '../lib/inference/model-manager'
 import { trackEvent } from '../lib/telemetry'
 
 const singleDocModes: { value: ViewMode; icon: React.ReactNode; label: string; tooltip: string }[] = [
@@ -61,6 +63,11 @@ export function Toolbar() {
 
   const isWorkspaceView = viewMode === 'workspace' || viewMode === 'cross-doc-graph' || viewMode === 'correlation' || viewMode === 'similarity-map' || viewMode === 'collection'
   const showDocTabs = markdown && !isWorkspaceView
+
+  // Start Gemma 4 background preload after first render
+  useEffect(() => {
+    preloadGemma()
+  }, [])
 
   // Close dropdowns on click outside
   useEffect(() => {
@@ -357,6 +364,7 @@ export function Toolbar() {
           </div>
 
           <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-0.5" />
+          <AiLoadingIndicator />
 
           {/* AI Settings */}
           <div ref={settingsRef} className="relative">
@@ -371,7 +379,7 @@ export function Toolbar() {
             >
               <Settings className="h-4 w-4" />
               <span className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${
-                aiBackend === 'ollama' || aiBackend === 'openrouter' ? 'bg-green-500' : aiBackend === 'webllm' ? 'bg-blue-500' : 'bg-red-400'
+                aiBackend === 'ollama' || aiBackend === 'openrouter' ? 'bg-green-500' : aiBackend === 'webllm' || aiBackend === 'gemma4' ? 'bg-blue-500' : 'bg-red-400'
               }`} title={`AI: ${aiBackend}`} />
             </button>
 
