@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.0",
+    "@huggingface/transformers": "^4.0.1",
     "@mlc-ai/web-llm": "^0.2.82",
     "d3": "^7.9.0",
     "d3-hierarchy": "^3.1.2",
