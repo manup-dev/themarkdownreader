@@ -108,6 +108,9 @@ article *, article *::before, article *::after { transition: none; }
 @keyframes slideInFromLeft { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 .animate-slide-in-left { animation: slideInFromLeft 200ms ease-out; }
 
+/* VS Code webview — hide floating overlays (scroll arrow, back-to-top, milestones) */
+.vscode-webview .fixed { display: none !important; }
+
 /* Focus mode */
 .focus-mode .fixed { display: none !important; }
 .focus-mode article { max-width: 48rem; margin: 0 auto; }

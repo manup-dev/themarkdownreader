@@ -251,7 +251,7 @@ export function VscodeApp() {
 
   if (!markdown) {
     return (
-      <div className={`flex items-center justify-center h-screen ${themeClasses[theme]}`}>
+      <div className={`vscode-webview flex items-center justify-center h-screen ${themeClasses[theme]}`}>
         <div className="text-center space-y-3">
           <h2 className="text-xl font-bold text-gray-700 dark:text-gray-200">md-reader</h2>
           <p className="text-sm text-gray-400">Open a markdown file to start reading.</p>
@@ -262,7 +262,8 @@ export function VscodeApp() {
   }
 
   return (
-    <div className={`flex h-screen ${themeClasses[theme]}`}>
+  <>
+    <div className={`vscode-webview flex h-screen ${themeClasses[theme]}`}>
       <KeyboardShortcuts />
 
       {/* Sidebar */}
@@ -380,29 +381,29 @@ export function VscodeApp() {
 
       {/* Selection menu (highlight, AI explain, comment, copy) */}
       {markdown && viewMode === 'read' && <SelectionMenu />}
-
-      {/* TTS */}
-      <TtsPlayer autoPlay={ttsAutoPlay} onAutoPlayConsumed={() => setTtsAutoPlay(false)} />
-
-      {/* Feature 6: AI Action overlay (auto-dismisses after 8s) */}
-      {aiActionResult && (
-        <div className="fixed bottom-4 right-4 max-w-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-4 z-50">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-              {aiActionResult.action === 'summarize' ? 'Summary' : 'Explanation'}
-            </span>
-            <button
-              onClick={() => setAiActionResult(null)}
-              className="text-gray-400 hover:text-gray-600 text-sm"
-            >
-              Close
-            </button>
-          </div>
-          <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-6">
-            {aiActionResult.text.slice(0, 300)}{aiActionResult.text.length > 300 ? '...' : ''}
-          </p>
-        </div>
-      )}
     </div>
+
+    {/* Render fixed-position elements outside .vscode-webview so they aren't hidden */}
+    <TtsPlayer autoPlay={ttsAutoPlay} onAutoPlayConsumed={() => setTtsAutoPlay(false)} />
+
+    {aiActionResult && (
+      <div className="fixed bottom-4 right-4 max-w-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-4 z-50">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+            {aiActionResult.action === 'summarize' ? 'Summary' : 'Explanation'}
+          </span>
+          <button
+            onClick={() => setAiActionResult(null)}
+            className="text-gray-400 hover:text-gray-600 text-sm"
+          >
+            Close
+          </button>
+        </div>
+        <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-6">
+          {aiActionResult.text.slice(0, 300)}{aiActionResult.text.length > 300 ? '...' : ''}
+        </p>
+      </div>
+    )}
+  </>
   )
 }
