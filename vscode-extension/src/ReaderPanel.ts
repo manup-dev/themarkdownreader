@@ -271,7 +271,7 @@ export class ReaderPanel {
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src http://localhost:* https://openrouter.ai; img-src ${webview.cspSource} data:; font-src ${webview.cspSource};">
   <title>md-reader</title>
   <style>
-    body { margin: 0; padding: 20px; font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); }
+    html, body { height: 100%; margin: 0; } body { padding: 20px; font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); overflow-y: auto; }
     h1 { font-size: 1.5em; margin: 0 0 8px; }
     p { color: var(--vscode-descriptionForeground); margin: 4px 0; }
     .prose { max-width: 720px; margin: 0 auto; line-height: 1.7; }
