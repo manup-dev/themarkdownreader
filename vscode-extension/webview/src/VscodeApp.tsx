@@ -76,7 +76,8 @@ export function VscodeApp() {
           break
         case 'toggleTheme': {
           const cycle: Theme[] = ['light', 'dark', 'sepia', 'high-contrast']
-          const idx = cycle.indexOf(theme)
+          const currentTheme = useStore.getState().theme
+          const idx = cycle.indexOf(currentTheme)
           setTheme(cycle[(idx + 1) % cycle.length])
           break
         }
