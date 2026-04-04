@@ -4,7 +4,7 @@ import { useStore } from '../store/useStore'
 import { tts, type TtsState } from '../lib/tts'
 import { trackEvent } from '../lib/telemetry'
 
-export function TtsPlayer() {
+export function TtsPlayer({ autoPlay, onAutoPlayConsumed }: { autoPlay?: boolean; onAutoPlayConsumed?: () => void } = {}) {
   const markdown = useStore((s) => s.markdown)
   const toc = useStore((s) => s.toc)
   const setTtsPlaying = useStore((s) => s.setTtsPlaying)
@@ -49,6 +49,18 @@ export function TtsPlayer() {
       document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, [markdown, setTtsPlaying, setTtsSectionIndex])
+
+  // Auto-play when triggered externally (e.g., VS Code readAloud command)
+  useEffect(() => {
+    if (autoPlay && markdown) {
+      setExpanded(true)
+      const timer = setTimeout(() => {
+        tts.play(0)
+        onAutoPlayConsumed?.()
+      }, 200)
+      return () => clearTimeout(timer)
+    }
+  }, [autoPlay, markdown, onAutoPlayConsumed])
 
   const handlePlay = useCallback(() => {
     if (state.paused) {

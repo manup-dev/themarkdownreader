@@ -50,6 +50,7 @@ export function VscodeApp() {
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [aiActionResult, setAiActionResult] = useState<{ action: string; text: string; result?: string } | null>(null)
   const lastScrollSectionRef = useRef<string>('')
+  const [ttsAutoPlay, setTtsAutoPlay] = useState(false)
 
   // Apply theme before paint to prevent code block flash
   useLayoutEffect(() => {
@@ -91,7 +92,7 @@ export function VscodeApp() {
           setSidebarOpen((prev) => !prev)
           break
         case 'readAloud':
-          // TTS will be handled by the TtsPlayer component
+          setTtsAutoPlay(true)
           break
         // Feature 6: AI action on selected text (summarize/explain)
         case 'aiAction': {
@@ -376,7 +377,7 @@ export function VscodeApp() {
       {markdown && viewMode === 'read' && <SelectionMenu />}
 
       {/* TTS */}
-      <TtsPlayer />
+      <TtsPlayer autoPlay={ttsAutoPlay} onAutoPlayConsumed={() => setTtsAutoPlay(false)} />
 
       {/* Feature 6: AI Action overlay (auto-dismisses after 8s) */}
       {aiActionResult && (
