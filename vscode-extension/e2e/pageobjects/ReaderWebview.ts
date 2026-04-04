@@ -101,6 +101,19 @@ export class ReaderWebview {
     }
     throw new Error(`View tab "${label}" not found`)
   }
+  async getCurrentTheme(): Promise<string> {
+    const html = await $('html')
+    const classes = (await html.getAttribute('class')) || ''
+    if (classes.includes('high-contrast')) return 'high-contrast'
+    if (classes.includes('sepia')) return 'sepia'
+    if (classes.includes('dark')) return 'dark'
+    return 'light'
+  }
+
+  async getRootHeight(): Promise<number> {
+    const root = await $('#root')
+    return root.getSize('height')
+  }
 }
 
 export const readerWebview = new ReaderWebview()

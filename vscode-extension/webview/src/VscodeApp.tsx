@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
-import { Loader2, PanelLeftClose, PanelLeftOpen, MessageSquare, Sun, Moon, BookOpen } from 'lucide-react'
+import { Loader2, PanelLeftClose, PanelLeftOpen, MessageSquare, Sun, Moon, BookOpen, Contrast } from 'lucide-react'
 import { useStore } from '@app/store/useStore'
 import { Reader } from '@app/components/Reader'
 import { TableOfContents } from '@app/components/TableOfContents'
@@ -54,9 +54,10 @@ export function VscodeApp() {
   // Apply theme before paint to prevent code block flash
   useLayoutEffect(() => {
     const root = document.documentElement
-    root.classList.remove('dark', 'sepia')
-    if (theme === 'dark') root.classList.add('dark')
+    root.classList.remove('dark', 'sepia', 'high-contrast')
+    if (theme === 'dark' || theme === 'high-contrast') root.classList.add('dark')
     if (theme === 'sepia') root.classList.add('sepia')
+    if (theme === 'high-contrast') root.classList.add('high-contrast')
   }, [theme])
 
   // Listen for messages from VS Code extension host
@@ -72,6 +73,21 @@ export function VscodeApp() {
           if (msg.theme) setTheme(msg.theme as Theme)
           if (msg.fontSize) setFontSize(msg.fontSize)
           if (msg.defaultView) setViewMode(msg.defaultView as ViewMode)
+          break
+        case 'toggleTheme': {
+          const cycle: Theme[] = ['light', 'dark', 'sepia', 'high-contrast']
+          const idx = cycle.indexOf(theme)
+          setTheme(cycle[(idx + 1) % cycle.length])
+          break
+        }
+        case 'toggleFocusMode':
+          document.documentElement.classList.toggle('focus-mode')
+          break
+        case 'setFontSize':
+          if (typeof msg.size === 'number') setFontSize(msg.size)
+          break
+        case 'toggleToc':
+          setSidebarOpen((prev) => !prev)
           break
         case 'readAloud':
           // TTS will be handled by the TtsPlayer component
@@ -228,7 +244,7 @@ export function VscodeApp() {
     setSidebarWidth(Math.max(150, Math.min(350, sidebarWidth + delta)))
   }, [sidebarWidth, setSidebarWidth])
 
-  const themeClasses = { light: 'bg-gray-50', dark: 'bg-gray-950', sepia: 'bg-sepia-100' }
+  const themeClasses: Record<Theme, string> = { light: 'bg-gray-50', dark: 'bg-gray-950', sepia: 'bg-sepia-100', 'high-contrast': 'bg-black' }
   const showSidebar = sidebarOpen && markdown && viewMode === 'read'
 
   if (!markdown) {
@@ -311,6 +327,13 @@ export function VscodeApp() {
               title="Sepia theme"
             >
               <BookOpen className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => setTheme('high-contrast')}
+              className={`p-1 rounded transition-colors ${theme === 'high-contrast' ? 'bg-gray-800 text-yellow-300' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+              title="High Contrast theme"
+            >
+              <Contrast className="h-3.5 w-3.5" />
             </button>
           </div>
           <button
