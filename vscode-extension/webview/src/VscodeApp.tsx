@@ -270,11 +270,11 @@ export function VscodeApp() {
       {showSidebar && (
         <>
           <aside
-            className="shrink-0 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-y-auto p-3"
+            className="shrink-0 border-r border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white dark:bg-gray-900 sepia:bg-sepia-50 overflow-y-auto p-3"
             style={{ width: sidebarWidth }}
           >
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Contents</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 sepia:text-sepia-800">Contents</span>
               <button onClick={() => setSidebarOpen(false)} className="p-0.5 text-gray-400 hover:text-gray-600">
                 <PanelLeftClose className="h-3.5 w-3.5" />
               </button>
@@ -288,7 +288,7 @@ export function VscodeApp() {
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* View tabs */}
-        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
+        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white/80 dark:bg-gray-900/80 sepia:bg-sepia-50/80 backdrop-blur-sm">
           {!showSidebar && viewMode === 'read' && (
             <button onClick={() => setSidebarOpen(true)} className="p-1 text-gray-400 hover:text-gray-600 mr-1">
               <PanelLeftOpen className="h-3.5 w-3.5" />
@@ -302,46 +302,46 @@ export function VscodeApp() {
                 onClick={() => setViewMode(vm.value)}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                   viewMode === vm.value
-                    ? 'bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300'
-                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                    ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-200'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
                 }`}
                 title={vm.label}
               >
-                <Icon className="h-3.5 w-3.5" />
+                <Icon className="h-4 w-4" />
                 <span className="hidden sm:inline">{vm.label}</span>
               </button>
             )
           })}
           <div className="flex-1" />
           {/* Theme toggle */}
-          <div className="flex items-center gap-1 mr-1">
+          <div className="flex items-center gap-0.5 mr-1">
             <button
               onClick={() => setTheme('light')}
               className={`p-1 rounded transition-colors ${theme === 'light' ? 'bg-amber-100 text-amber-700' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
               title="Light theme"
             >
-              <Sun className="h-3.5 w-3.5" />
+              <Sun className="h-4 w-4" />
             </button>
             <button
               onClick={() => setTheme('dark')}
               className={`p-1 rounded transition-colors ${theme === 'dark' ? 'bg-blue-950/50 text-blue-300' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
               title="Dark theme"
             >
-              <Moon className="h-3.5 w-3.5" />
+              <Moon className="h-4 w-4" />
             </button>
             <button
               onClick={() => setTheme('sepia')}
               className={`p-1 rounded transition-colors ${theme === 'sepia' ? 'bg-amber-100 text-amber-800' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
               title="Sepia theme"
             >
-              <BookOpen className="h-3.5 w-3.5" />
+              <BookOpen className="h-4 w-4" />
             </button>
             <button
               onClick={() => setTheme('high-contrast')}
               className={`p-1 rounded transition-colors ${theme === 'high-contrast' ? 'bg-gray-800 text-yellow-300' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
               title="High Contrast theme"
             >
-              <Contrast className="h-3.5 w-3.5" />
+              <Contrast className="h-4 w-4" />
             </button>
           </div>
           <button
@@ -353,7 +353,7 @@ export function VscodeApp() {
             }`}
             title="Comments & Prompt Builder"
           >
-            <MessageSquare className="h-3.5 w-3.5" />
+            <MessageSquare className="h-4 w-4" />
           </button>
         </div>
 

@@ -37,6 +37,7 @@
     "build:cli": "npm run build && cp -r dist cli/dist"
   },
   "dependencies": {
+    "@ain1084/audio-worklet-stream": "^2.0.2",
     "@excalidraw/excalidraw": "^0.18.0",
     "@huggingface/transformers": "^4.0.1",
     "@mlc-ai/web-llm": "^0.2.82",
@@ -46,6 +47,7 @@
     "graphology": "^0.26.0",
     "graphology-communities-louvain": "^2.0.2",
     "graphology-metrics": "^2.4.0",
+    "kokoro-js": "^1.2.1",
     "lucide-react": "^0.577.0",
     "markmap-common": "^0.18.9",
     "markmap-lib": "^0.18.12",

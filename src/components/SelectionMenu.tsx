@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Highlighter, Search, Bot, BookOpen, Copy, X, Loader2, Check, Quote, FileText, MessageSquare } from 'lucide-react'
+import { Highlighter, Search, Bot, BookOpen, Copy, X, Loader2, Check, Quote, FileText, MessageSquare, Shapes } from 'lucide-react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
@@ -250,7 +250,7 @@ export function SelectionMenu() {
       {menu && (
         <div
           ref={menuRef}
-          className="fixed z-50 transform -translate-x-1/2 -translate-y-full animate-pop-in"
+          className="selection-menu fixed z-50 transform -translate-x-1/2 -translate-y-full animate-pop-in"
           style={{ left: menu.x, top: menu.y }}
         >
           {/* AI response popup */}
@@ -345,6 +345,17 @@ export function SelectionMenu() {
                 title="Visualize as diagram"
               >
                 <span className="text-xs leading-none">▣</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  useStore.getState().setViewMode('diagram')
+                  setMenu(null)
+                }}
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-purple-500 dark:hover:text-purple-400 rounded transition-colors"
+                title="Diagram this"
+              >
+                <Shapes className="h-4 w-4" />
               </button>
 
               <button

@@ -35,7 +35,8 @@ const SHORTCUTS = [
     { key: 'i', desc: 'Quick document info' },
     { key: 'm', desc: 'Toggle chat button' },
     { key: 'c', desc: 'Next code block' },
-    { key: 'p', desc: 'Print / PDF' },
+    { key: 'p', desc: 'Podcast view' },
+    { key: 'v', desc: 'Diagram view' },
     { key: 'w', desc: 'Show word counts per paragraph' },
     { key: 'Esc', desc: 'Close / exit mode' },
     { key: '?', desc: 'This help' },
@@ -162,10 +163,17 @@ export function KeyboardShortcuts() {
           break
         }
         case 'p': {
-          if (e.ctrlKey || e.metaKey) return
-          e.preventDefault()
-          trackEvent('export_pdf')
-          window.print()
+          if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+            e.preventDefault()
+            setViewMode('podcast')
+          }
+          break
+        }
+        case 'v': {
+          if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+            e.preventDefault()
+            setViewMode('diagram')
+          }
           break
         }
         case 'b': {

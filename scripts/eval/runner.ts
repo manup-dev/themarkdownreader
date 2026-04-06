@@ -193,7 +193,7 @@ async function keepWarm() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'qwen2.5:1.5b', messages: [{ role: 'user', content: 'ok' }], stream: false, keep_alive: '60m' }),
-      signal: AbortSignal.timeout(90000),
+      signal: AbortSignal.timeout(300000),
     })
   } catch { /* ignore */ }
 }
@@ -214,7 +214,7 @@ async function aiJudge(prompt: string): Promise<{ score: number; reasoning: stri
         keep_alive: '60m',
         options: { temperature: 0.1, num_predict: 128 },
       }),
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(300000),
     })
     const data = await res.json()
     const content = data.message?.content ?? ''
@@ -250,7 +250,7 @@ async function evalSummarization(testCase: Record<string, unknown>): Promise<Eva
         keep_alive: '60m',
         options: { temperature: PROMPT_CONFIG.temperature, num_predict: PROMPT_CONFIG.maxTokens },
       }),
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(300000),
     })
     const data = await res.json()
     summary = data.message?.content ?? ''
@@ -335,7 +335,7 @@ async function evalQA(testCase: Record<string, unknown>): Promise<EvalResult> {
           keep_alive: '60m',
           options: { temperature: PROMPT_CONFIG.temperature, num_predict: PROMPT_CONFIG.maxTokens },
         }),
-        signal: AbortSignal.timeout(120000),
+        signal: AbortSignal.timeout(300000),
       })
       const data = await res.json()
       const answer = (data.message?.content ?? '').toLowerCase()
@@ -397,7 +397,7 @@ async function evalKnowledgeGraph(testCase: Record<string, unknown>): Promise<Ev
         keep_alive: '60m',
         options: { temperature: 0.1, num_predict: 512 },
       }),
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(300000),
     })
     const data = await res.json()
     graphJson = data.message?.content ?? ''
@@ -520,7 +520,7 @@ async function evalCoach(testCase: Record<string, unknown>): Promise<EvalResult>
         keep_alive: '60m',
         options: { temperature: PROMPT_CONFIG.temperature, num_predict: PROMPT_CONFIG.maxTokens },
       }),
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(300000),
     })
     const data = await res.json()
     explanation = data.message?.content ?? ''
@@ -617,7 +617,7 @@ async function evalCrossDocQA(testCase: Record<string, unknown>): Promise<EvalRe
           keep_alive: '60m',
           options: { temperature: PROMPT_CONFIG.temperature, num_predict: PROMPT_CONFIG.maxTokens },
         }),
-        signal: AbortSignal.timeout(120000),
+        signal: AbortSignal.timeout(300000),
       })
       const data = await res.json()
       const answer = (data.message?.content ?? '').toLowerCase()
@@ -765,6 +765,320 @@ async function evalTts(testCase: Record<string, unknown>): Promise<EvalResult> {
   }
 }
 
+// ─── Podcast Transcript Tests ─────────────────────────────────────────────
+
+async function evalPodcastOutline(testCase: Record<string, unknown>): Promise<EvalResult> {
+  const start = Date.now()
+  const { PROMPTS, PROMPT_CONFIG } = await import('../../src/lib/prompts')
+  const md = fs.readFileSync(path.join(CORPUS_DIR, testCase.file as string), 'utf-8')
+  const expected = testCase.expected as Record<string, unknown>
+
+  // Generate outline using the same prompt as the app
+  let outlineRaw = ''
+  try {
+    await keepWarm()
+    const res = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'qwen2.5:1.5b',
+        messages: [
+          { role: 'system', content: PROMPTS.podcastOutline },
+          { role: 'user', content: md.slice(0, PROMPT_CONFIG.podcastOutlineMaxInput) },
+        ],
+        stream: false,
+        keep_alive: '60m',
+        options: { temperature: PROMPT_CONFIG.temperature, num_predict: 500 },
+      }),
+      signal: AbortSignal.timeout(300000),
+    })
+    const data = await res.json()
+    outlineRaw = data.message?.content ?? ''
+  } catch (err) {
+    return { id: testCase.id as string, feature: 'podcast-outline', passed: false, score: 0, details: `Ollama error: ${err instanceof Error ? err.message : String(err)}`, duration: Date.now() - start }
+  }
+
+  // Parse themes
+  let themes: string[] = []
+  try {
+    const jsonMatch = outlineRaw.match(/\[[\s\S]*\]/)
+    if (jsonMatch) themes = JSON.parse(jsonMatch[0]).filter((s: unknown) => typeof s === 'string')
+  } catch { /* parse failed */ }
+
+  let score = 100
+  const issues: string[] = []
+
+  // Check theme count
+  const minIdeas = (expected.minIdeas as number) ?? 3
+  const maxIdeas = (expected.maxIdeas as number) ?? 5
+  if (themes.length < minIdeas) {
+    score -= 20
+    issues.push(`Expected ≥${minIdeas} themes, got ${themes.length}`)
+  }
+  if (themes.length > maxIdeas) {
+    score -= 10
+    issues.push(`Expected ≤${maxIdeas} themes, got ${themes.length}`)
+  }
+
+  // Check must-mention topics
+  if (expected.mustMention) {
+    const themesLower = themes.map(t => t.toLowerCase()).join(' ')
+    for (const term of expected.mustMention as string[]) {
+      if (!themesLower.includes(term.toLowerCase())) {
+        score -= 15
+        issues.push(`Missing theme topic: "${term}"`)
+      }
+    }
+  }
+
+  // Check must-NOT-mention (hallucination detection)
+  if (expected.mustNotMention) {
+    const themesLower = themes.map(t => t.toLowerCase()).join(' ')
+    for (const term of expected.mustNotMention as string[]) {
+      if (themesLower.includes(term.toLowerCase())) {
+        score -= 20
+        issues.push(`Hallucinated topic: "${term}"`)
+      }
+    }
+  }
+
+  return {
+    id: testCase.id as string,
+    feature: 'podcast-outline',
+    passed: score >= 60,
+    score: Math.max(0, score),
+    details: issues.length > 0 ? `${themes.length} themes. ${issues.join('; ')}` : `${themes.length} themes — all expected topics found`,
+    duration: Date.now() - start,
+  }
+}
+
+async function evalPodcastScript(testCase: Record<string, unknown>): Promise<EvalResult> {
+  const start = Date.now()
+  const { PROMPTS, PROMPT_CONFIG } = await import('../../src/lib/prompts')
+  const md = fs.readFileSync(path.join(CORPUS_DIR, testCase.file as string), 'utf-8')
+  const expected = testCase.expected as Record<string, unknown>
+
+  // Generate a script segment using the podcast prompt
+  let scriptRaw = ''
+  try {
+    await keepWarm()
+    const theme = (expected.testTheme as string) ?? 'Main concepts and key ideas'
+    const res = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'qwen2.5:1.5b',
+        messages: [
+          { role: 'system', content: PROMPTS.podcastScript },
+          { role: 'user', content: `Theme: ${theme}\n\nSource material:\n${md.slice(0, PROMPT_CONFIG.podcastScriptMaxInput)}` },
+        ],
+        stream: false,
+        keep_alive: '60m',
+        options: { temperature: PROMPT_CONFIG.temperature, num_predict: 800 },
+      }),
+      signal: AbortSignal.timeout(300000),
+    })
+    const data = await res.json()
+    scriptRaw = data.message?.content ?? ''
+  } catch (err) {
+    return { id: testCase.id as string, feature: 'podcast-script', passed: false, score: 0, details: `Ollama error: ${err instanceof Error ? err.message : String(err)}`, duration: Date.now() - start }
+  }
+
+  // Parse script lines using the same resilient parser as the app
+  const { parsePodcastScript } = await import('../../src/lib/podcast')
+  const lines = parsePodcastScript(scriptRaw)
+
+  let score = 100
+  const issues: string[] = []
+
+  // 1. Valid JSON structure
+  if (lines.length === 0) {
+    return { id: testCase.id as string, feature: 'podcast-script', passed: false, score: 0, details: 'Failed to parse script JSON', duration: Date.now() - start }
+  }
+
+  // 2. Minimum exchange count
+  const minExchanges = (expected.minExchanges as number) ?? 4
+  if (lines.length < minExchanges) {
+    score -= 15
+    issues.push(`Expected ≥${minExchanges} exchanges, got ${lines.length}`)
+  }
+
+  // 3. Both speakers present
+  const hasA = lines.some(l => l.speaker === 'A')
+  const hasB = lines.some(l => l.speaker === 'B')
+  if (!hasA || !hasB) {
+    score -= 25
+    issues.push('Missing speaker: ' + (!hasA ? 'A' : 'B'))
+  }
+
+  // 4. No markdown syntax leaked
+  const allText = lines.map(l => l.text).join(' ')
+  const markdownPatterns = [/\*\*[^*]+\*\*/, /\*[^*]+\*/, /`[^`]+`/, /\[.*\]\(.*\)/, /^#{1,6}\s/m]
+  for (const pattern of markdownPatterns) {
+    if (pattern.test(allText)) {
+      score -= 10
+      issues.push(`Markdown syntax leaked: ${pattern.source}`)
+    }
+  }
+
+  // 5. Conversational reactions present (Host B should react)
+  const bLines = lines.filter(l => l.speaker === 'B').map(l => l.text.toLowerCase())
+  const reactionPatterns = [/wait/, /oh/, /huh/, /interesting/, /really/, /right/, /exactly/, /so you.re saying/, /that.s like/, /remind/]
+  const reactionsFound = reactionPatterns.filter(p => bLines.some(t => p.test(t))).length
+  if (reactionsFound === 0) {
+    score -= 20
+    issues.push('No conversational reactions from Host B (expected "wait", "oh", "interesting", etc.)')
+  } else if (reactionsFound < 2) {
+    score -= 10
+    issues.push(`Only ${reactionsFound} reaction pattern(s) found (expected ≥2)`)
+  }
+
+  // 6. Speaker alternation (not just A,A,A,B,B,B)
+  let alternations = 0
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].speaker !== lines[i - 1].speaker) alternations++
+  }
+  const alternationRate = alternations / Math.max(1, lines.length - 1)
+  if (alternationRate < 0.5) {
+    score -= 15
+    issues.push(`Poor alternation: ${Math.round(alternationRate * 100)}% (expected ≥50%)`)
+  }
+
+  // 7. AI judge for naturalness (30% weight)
+  let judgeScore = 50
+  try {
+    const judgeRes = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'qwen2.5:1.5b',
+        messages: [
+          { role: 'system', content: 'You are an evaluation judge. Score this podcast transcript on a scale of 0-100 for naturalness and engagement. Does it sound like real people talking, or robots reading? Are there genuine reactions, questions, and back-and-forth? Respond with ONLY valid JSON: {"score": N, "reasoning": "..."}' },
+          { role: 'user', content: scriptRaw },
+        ],
+        stream: false,
+        keep_alive: '60m',
+        options: { temperature: 0.1, num_predict: 200 },
+      }),
+      signal: AbortSignal.timeout(60000),
+    })
+    const judgeData = await judgeRes.json()
+    const judgeContent = judgeData.message?.content ?? ''
+    const judgeJson = judgeContent.match(/\{[\s\S]*\}/)
+    if (judgeJson) {
+      const parsed = JSON.parse(judgeJson[0])
+      if (typeof parsed.score === 'number') judgeScore = parsed.score
+    }
+  } catch { /* judge failed, use default 50 */ }
+
+  // Blend: 70% rules + 30% judge
+  const rulesScore = Math.max(0, score)
+  const finalScore = Math.round(rulesScore * 0.7 + judgeScore * 0.3)
+
+  return {
+    id: testCase.id as string,
+    feature: 'podcast-script',
+    passed: finalScore >= 60,
+    score: finalScore,
+    details: `${lines.length} exchanges, ${reactionsFound} reactions, ${Math.round(alternationRate * 100)}% alternation, judge=${judgeScore}. ${issues.length > 0 ? issues.join('; ') : 'Script quality good'}`,
+    duration: Date.now() - start,
+  }
+}
+
+async function evalPodcastAccuracy(testCase: Record<string, unknown>): Promise<EvalResult> {
+  const start = Date.now()
+  const { PROMPTS, PROMPT_CONFIG } = await import('../../src/lib/prompts')
+  const md = fs.readFileSync(path.join(CORPUS_DIR, testCase.file as string), 'utf-8')
+  const expected = testCase.expected as Record<string, unknown>
+
+  // Generate outline + one script segment
+  let scriptText = ''
+  try {
+    await keepWarm()
+    // Get outline first
+    const outlineRes = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'qwen2.5:1.5b',
+        messages: [
+          { role: 'system', content: PROMPTS.podcastOutline },
+          { role: 'user', content: md.slice(0, PROMPT_CONFIG.podcastOutlineMaxInput) },
+        ],
+        stream: false,
+        keep_alive: '60m',
+        options: { temperature: PROMPT_CONFIG.temperature, num_predict: 500 },
+      }),
+      signal: AbortSignal.timeout(300000),
+    })
+    const outlineData = await outlineRes.json()
+    const outlineRaw = outlineData.message?.content ?? ''
+
+    // Parse first theme
+    let theme = 'main concepts'
+    try {
+      const jsonMatch = outlineRaw.match(/\[[\s\S]*\]/)
+      if (jsonMatch) {
+        const themes = JSON.parse(jsonMatch[0]).filter((s: unknown) => typeof s === 'string')
+        if (themes.length > 0) theme = themes[0]
+      }
+    } catch { /* use default */ }
+
+    // Generate script for that theme
+    const scriptRes = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'qwen2.5:1.5b',
+        messages: [
+          { role: 'system', content: PROMPTS.podcastScript },
+          { role: 'user', content: `Theme: ${theme}\n\nSource material:\n${md.slice(0, PROMPT_CONFIG.podcastScriptMaxInput)}` },
+        ],
+        stream: false,
+        keep_alive: '60m',
+        options: { temperature: PROMPT_CONFIG.temperature, num_predict: 800 },
+      }),
+      signal: AbortSignal.timeout(300000),
+    })
+    const scriptData = await scriptRes.json()
+    scriptText = (scriptData.message?.content ?? '').toLowerCase()
+  } catch (err) {
+    return { id: testCase.id as string, feature: 'podcast-accuracy', passed: false, score: 0, details: `Ollama error: ${err instanceof Error ? err.message : String(err)}`, duration: Date.now() - start }
+  }
+
+  let score = 100
+  const issues: string[] = []
+
+  // Check must-mention terms (grounding)
+  if (expected.mustMention) {
+    for (const term of expected.mustMention as string[]) {
+      if (!scriptText.includes(term.toLowerCase())) {
+        score -= 10
+        issues.push(`Missing grounded term: "${term}"`)
+      }
+    }
+  }
+
+  // Check must-NOT-mention (hallucination)
+  if (expected.mustNotMention) {
+    for (const term of expected.mustNotMention as string[]) {
+      if (scriptText.includes(term.toLowerCase())) {
+        score -= 20
+        issues.push(`Hallucination: "${term}" not in source doc`)
+      }
+    }
+  }
+
+  return {
+    id: testCase.id as string,
+    feature: 'podcast-accuracy',
+    passed: score >= 60,
+    score: Math.max(0, score),
+    details: issues.length > 0 ? issues.join('; ') : 'No hallucinations detected, key terms grounded',
+    duration: Date.now() - start,
+  }
+}
+
 // ─── Main Runner ───────────────────────────────────────────────────────────
 
 async function runEvals() {
@@ -809,6 +1123,15 @@ async function runEvals() {
           break
         case 'tts-narration':
           result = await evalTts(testCase)
+          break
+        case 'podcast-outline':
+          result = await evalPodcastOutline(testCase)
+          break
+        case 'podcast-script':
+          result = await evalPodcastScript(testCase)
+          break
+        case 'podcast-accuracy':
+          result = await evalPodcastAccuracy(testCase)
           break
         default:
           result = { id: testCase.id, feature: testCase.feature, passed: true, score: -1, details: 'No evaluator implemented yet', duration: 0 }

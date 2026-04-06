@@ -76,3 +76,7 @@ dist/bundle-stats.html
 test-results/
 playwright-report/
 dist-e2e/
+.playwright-mcp/
+
+# Lighthouse reports
+lighthouse-report.*

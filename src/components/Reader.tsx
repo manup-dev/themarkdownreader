@@ -3,8 +3,6 @@ import { ArrowUp } from 'lucide-react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
-import rehypeHighlight from 'rehype-highlight'
-import rehypeKatex from 'rehype-katex'
 import { useStore } from '../store/useStore'
 import ScrollMinimap from './ScrollMinimap'
 import { extractToc, wordCount, estimateDifficulty, slugify } from '../lib/markdown'
@@ -302,6 +300,36 @@ export function Reader() {
   const difficulty = useMemo((): string => estimateDifficulty(markdown), [markdown])
   const codeBlockCount = useMemo(() => Math.floor((markdown.match(/```/g) ?? []).length / 2), [markdown])
   const hasMath = useMemo(() => /\$\$|\\\(|\\\[/.test(markdown), [markdown])
+  const hasCodeBlocks = codeBlockCount > 0
+
+  // Lazy-load heavy rehype plugins (katex: 479KB, highlight: 287KB) — off critical path
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [rehypePlugins, setRehypePlugins] = useState<any[]>([])
+  useEffect(() => {
+    if (!hasCodeBlocks && !hasMath) return
+    let cancelled = false
+    const plugins: Promise<{ default: unknown }>[] = []
+    if (hasCodeBlocks) plugins.push(import('rehype-highlight'))
+    if (hasMath) plugins.push(import('rehype-katex'))
+    Promise.all(plugins).then((mods) => {
+      if (cancelled) return
+      setRehypePlugins(mods.map((m) => m.default))
+    })
+    return () => { cancelled = true }
+  }, [hasMath, hasCodeBlocks])
+
+  // Memoize rendered Markdown — avoids re-parsing on scroll/progress/state changes
+  const remarkPluginsMemo = useMemo(() => [remarkGfm, remarkMath], [])
+  const renderedMarkdown = useMemo(() => (
+    <Markdown
+      remarkPlugins={remarkPluginsMemo}
+      rehypePlugins={rehypePlugins}
+      components={markdownComponents}
+    >
+      {markdown}
+    </Markdown>
+  ), [markdown, rehypePlugins, remarkPluginsMemo])
+
   const contentType = useMemo(() => {
     const hasSteps = /^\d+\.\s/m.test(markdown) && (markdown.match(/^\d+\.\s/gm) ?? []).length >= 3
     const hasApi = /\b(API|endpoint|request|response|GET|POST|PUT|DELETE|status code)\b/i.test(markdown)
@@ -420,6 +448,73 @@ export function Reader() {
 
 
   const lastSaveRef = useRef(0)
+  const pendingStorageRef = useRef<Record<string, string>>({})
+  const storageRafRef = useRef(0)
+
+  // Batch localStorage writes — flush via requestIdleCallback to avoid blocking renders
+  const flushStorage = useCallback(() => {
+    storageRafRef.current = 0 // allow future writes to schedule again
+    const pending = pendingStorageRef.current
+    const keys = Object.keys(pending)
+    if (keys.length === 0) return
+    pendingStorageRef.current = {}
+    for (const key of keys) localStorage.setItem(key, pending[key])
+  }, [])
+
+  const queueStorageWrite = useCallback((key: string, value: string) => {
+    pendingStorageRef.current[key] = value
+    if (!storageRafRef.current) {
+      storageRafRef.current = (typeof requestIdleCallback !== 'undefined'
+        ? requestIdleCallback(flushStorage, { timeout: 2000 })
+        : (setTimeout(flushStorage, 1000) as unknown as number))
+    }
+  }, [flushStorage])
+
+  // IntersectionObserver for section heading tracking — no layout reflow
+  const observedSectionRef = useRef<string | null>(null)
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el || toc.length === 0) return
+
+    const headingEls: HTMLElement[] = []
+    for (const entry of toc) {
+      const h = document.getElementById(entry.id)
+      if (h) headingEls.push(h)
+    }
+    if (headingEls.length === 0) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Find the topmost visible heading (lowest boundingClientRect.top)
+        let bestEntry: IntersectionObserverEntry | null = null
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            if (!bestEntry || entry.boundingClientRect.top < bestEntry.boundingClientRect.top) {
+              bestEntry = entry
+            }
+          }
+        }
+        if (bestEntry) {
+          const id = bestEntry.target.id
+          if (id !== observedSectionRef.current) {
+            observedSectionRef.current = id
+            setActiveSection(id)
+            if (activeDocId && !sectionsReadCache.current.has(id)) {
+              sectionsReadCache.current.add(id)
+              queueStorageWrite(
+                `md-reader-sections-read-${activeDocId}`,
+                JSON.stringify([...sectionsReadCache.current])
+              )
+            }
+          }
+        }
+      },
+      { root: el, rootMargin: '-10% 0px -80% 0px', threshold: 0 }
+    )
+
+    for (const h of headingEls) observer.observe(h)
+    return () => observer.disconnect()
+  }, [toc, setActiveSection, activeDocId, queueStorageWrite])
 
   const handleScroll = useCallback(() => {
     const el = contentRef.current
@@ -447,37 +542,18 @@ export function Reader() {
     }
     lastScrollRef.current = { time: now, top: scrollTop }
 
-    // Save scroll position for resume (throttled)
-    if (activeDocId && Date.now() - lastSaveRef.current > 500) {
-      localStorage.setItem(`md-reader-scroll-${activeDocId}`, String(progress))
-      lastSaveRef.current = Date.now()
+    // Save scroll position for resume (throttled to 2s, batched via idle callback)
+    if (activeDocId && now - lastSaveRef.current > 2000) {
+      lastSaveRef.current = now
+      queueStorageWrite(`md-reader-scroll-${activeDocId}`, String(progress))
       // Track daily words read
       const today = new Date().toDateString()
       const todayKey = `md-reader-words-today-${today}`
       const wordsRead = Math.round(words * (progress / 100))
       const prev = parseInt(localStorage.getItem(todayKey) ?? '0')
-      if (wordsRead > prev) localStorage.setItem(todayKey, String(wordsRead))
+      if (wordsRead > prev) queueStorageWrite(todayKey, String(wordsRead))
     }
-
-    let active: string | null = null
-    for (let i = toc.length - 1; i >= 0; i--) {
-      const heading = document.getElementById(toc[i].id)
-      if (heading && heading.offsetTop <= scrollTop + 100) {
-        active = toc[i].id
-        break
-      }
-    }
-    setActiveSection(active)
-
-    // Track sections read for analytics (cached to avoid JSON parse on every scroll)
-    if (active && activeDocId) {
-      if (!sectionsReadCache.current.has(active)) {
-        sectionsReadCache.current.add(active)
-        const key = `md-reader-sections-read-${activeDocId}`
-        localStorage.setItem(key, JSON.stringify([...sectionsReadCache.current]))
-      }
-    }
-  }, [toc, setReadingProgress, setActiveSection, words, activeDocId])
+  }, [setReadingProgress, words, activeDocId, queueStorageWrite])
 
   useEffect(() => {
     const el = contentRef.current
@@ -486,17 +562,25 @@ export function Reader() {
     return () => el.removeEventListener('scroll', handleScroll)
   }, [handleScroll])
 
-  // Track time per section for analytics
+  // Flush pending storage writes on unmount
+  useEffect(() => () => flushStorage(), [flushStorage])
+
+  // Track time per section for analytics (batched via idle callback)
   const sectionTimerRef = useRef<{ section: string | null; start: number }>({ section: null, start: Date.now() })
+  const sectionTimesCache = useRef<Record<string, number>>({})
+  // Load cached section times once per doc
+  useEffect(() => {
+    if (!activeDocId) { sectionTimesCache.current = {}; return }
+    try { sectionTimesCache.current = JSON.parse(localStorage.getItem(`md-reader-section-time-${activeDocId}`) ?? '{}') } catch { sectionTimesCache.current = {} }
+  }, [activeDocId])
+
   useEffect(() => {
     const prev = sectionTimerRef.current
     if (prev.section && activeDocId) {
       const elapsed = Math.round((Date.now() - prev.start) / 1000)
       if (elapsed > 2 && elapsed < 600) { // Only track 2s-10min per section
-        const key = `md-reader-section-time-${activeDocId}`
-        const times = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, number>
-        times[prev.section] = (times[prev.section] ?? 0) + elapsed
-        localStorage.setItem(key, JSON.stringify(times))
+        sectionTimesCache.current[prev.section] = (sectionTimesCache.current[prev.section] ?? 0) + elapsed
+        queueStorageWrite(`md-reader-section-time-${activeDocId}`, JSON.stringify(sectionTimesCache.current))
       }
     }
     sectionTimerRef.current = { section: activeSection, start: Date.now() }
@@ -884,7 +968,7 @@ export function Reader() {
       {/* First-time tip */}
       {firstTimeTip && (
         <div
-          className="fixed bottom-20 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs shadow-lg animate-slide-down cursor-pointer max-w-sm text-center"
+          className="milestone-indicator fixed bottom-20 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs shadow-lg animate-slide-down cursor-pointer max-w-sm text-center"
           onClick={() => setFirstTimeTip(false)}
         >
           {(() => {
@@ -900,7 +984,7 @@ export function Reader() {
 
       {/* Scroll hint for long documents */}
       {showScrollHint && readTime >= 3 && readingProgress < 5 && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-10 animate-bounce text-gray-300 dark:text-gray-600">
+        <div className="scroll-arrow fixed bottom-24 left-1/2 -translate-x-1/2 z-10 animate-bounce text-gray-300 dark:text-gray-600">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 5v14M5 12l7 7 7-7"/>
           </svg>
@@ -909,7 +993,7 @@ export function Reader() {
 
       {/* Milestone flash */}
       {milestone && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 rounded-full bg-blue-600 text-white text-sm font-bold shadow-lg animate-bounce">
+        <div className="milestone-indicator fixed top-16 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 rounded-full bg-blue-600 text-white text-sm font-bold shadow-lg animate-bounce">
           {milestone}
         </div>
       )}
@@ -1090,13 +1174,7 @@ export function Reader() {
         className={`max-w-3xl mx-auto px-8 pb-32 ${tc.prose} prose-headings:font-semibold prose-code:before:hidden prose-code:after:hidden prose-img:rounded-lg ${dyslexicFont ? 'font-dyslexic' : ''}`}
         style={{ fontSize: `${fontSize}px`, lineHeight: dyslexicFont ? 2.0 : 1.75, letterSpacing: dyslexicFont ? '0.05em' : undefined, wordSpacing: dyslexicFont ? '0.15em' : undefined }}
       >
-        <Markdown
-          remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[rehypeHighlight, rehypeKatex]}
-          components={markdownComponents}
-        >
-          {markdown}
-        </Markdown>
+        {renderedMarkdown}
       </article>
 
       {/* Inline comment popover */}
@@ -1256,7 +1334,7 @@ export function Reader() {
       {readingProgress > 15 && (
         <button
           onClick={scrollToTop}
-          className="fixed bottom-20 right-20 p-2.5 bg-gray-800/70 dark:bg-gray-200/70 text-white dark:text-gray-900 rounded-full shadow-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-all opacity-60 hover:opacity-100 z-10"
+          className="back-to-top fixed bottom-20 right-20 p-2.5 bg-gray-800/70 dark:bg-gray-200/70 text-white dark:text-gray-900 rounded-full shadow-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-all opacity-60 hover:opacity-100 z-10"
           title="Back to top"
         >
           <ArrowUp className="h-4 w-4" />

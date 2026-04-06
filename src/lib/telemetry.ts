@@ -22,7 +22,9 @@
  *   - IP addresses (PostHog configured to discard)
  */
 
-import posthog from 'posthog-js'
+// posthog-js (221KB) lazy-loaded — only when telemetry is enabled
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let posthogModule: any = null
 
 // ─── Storage keys ──────────────────────────────────────────────────────────
 const TELEMETRY_KEY = 'md-reader-telemetry'
@@ -54,14 +56,22 @@ interface TelemetryData {
   sessionCount: number
 }
 
-// ─── PostHog init ──────────────────────────────────────────────────────────
+// ─── PostHog init (lazy) ──────────────────────────────────────────────────
 let posthogReady = false
 
-function initPostHog() {
+async function loadPostHog() {
+  if (posthogModule) return posthogModule
+  const mod = await import('posthog-js')
+  posthogModule = mod.default
+  return posthogModule
+}
+
+async function initPostHog() {
   if (posthogReady) return
   const key = import.meta.env.VITE_POSTHOG_KEY
   if (!key) return
   const host = import.meta.env.VITE_POSTHOG_HOST || 'https://us.i.posthog.com'
+  const posthog = await loadPostHog()
   posthog.init(key, {
     api_host: host,
     autocapture: false,          // we control all events
@@ -98,10 +108,12 @@ export function disableTelemetry(): void {
   // Fire one last event so we know how many users declined
   const key = import.meta.env.VITE_POSTHOG_KEY
   if (key) {
-    initPostHog()
-    posthog.capture('telemetry_declined')
-    // Reset PostHog to stop any further tracking
-    setTimeout(() => posthog.reset(), 500)
+    initPostHog().then(() => {
+      if (posthogModule) {
+        posthogModule.capture('telemetry_declined')
+        setTimeout(() => posthogModule.reset(), 500)
+      }
+    })
   }
   trackLocal('telemetry_declined')
 }
@@ -130,7 +142,7 @@ export function exportTelemetry(): TelemetryData | null {
 /** User can delete all telemetry data */
 export function clearTelemetry(): void {
   localStorage.removeItem(TELEMETRY_KEY)
-  if (posthogReady) posthog.reset()
+  if (posthogReady && posthogModule) posthogModule.reset()
 }
 
 /** List of all tracked events for transparency display */
@@ -182,9 +194,13 @@ function trackLocal(event: string): void {
 }
 
 function trackRemote(event: string, properties?: Record<string, string | number | boolean>): void {
-  if (!posthogReady) initPostHog()
-  if (!posthogReady) return
-  posthog.capture(event, properties)
+  if (!posthogReady) {
+    initPostHog().then(() => {
+      if (posthogReady && posthogModule) posthogModule.capture(event, properties)
+    })
+    return
+  }
+  if (posthogModule) posthogModule.capture(event, properties)
 }
 
 // Auto-init PostHog if telemetry was previously enabled

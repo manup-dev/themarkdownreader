@@ -196,6 +196,64 @@
         "factuallyAccurate": true,
         "referencesDocContent": true
       }
+    },
+    {
+      "id": "podcast-outline-simple",
+      "file": "01-simple.md",
+      "feature": "podcast-outline",
+      "expected": {
+        "minIdeas": 2,
+        "maxIdeas": 5,
+        "mustMention": ["HTML", "CSS"],
+        "mustNotMention": ["Raft", "consensus", "neural network"]
+      }
+    },
+    {
+      "id": "podcast-outline-complex",
+      "file": "02-complex-technical.md",
+      "feature": "podcast-outline",
+      "expected": {
+        "minIdeas": 3,
+        "maxIdeas": 5,
+        "mustMention": ["consensus", "Raft"],
+        "mustNotMention": ["HTML", "CSS", "web development"]
+      }
+    },
+    {
+      "id": "podcast-script-simple",
+      "file": "01-simple.md",
+      "feature": "podcast-script",
+      "expected": {
+        "testTheme": "Web technologies: HTML, CSS, and JavaScript work together to build websites",
+        "minExchanges": 4
+      }
+    },
+    {
+      "id": "podcast-script-complex",
+      "file": "02-complex-technical.md",
+      "feature": "podcast-script",
+      "expected": {
+        "testTheme": "Consensus algorithms: how distributed systems agree on state using Raft and Paxos",
+        "minExchanges": 4
+      }
+    },
+    {
+      "id": "podcast-accuracy-simple",
+      "file": "01-simple.md",
+      "feature": "podcast-accuracy",
+      "expected": {
+        "mustMention": ["html", "css"],
+        "mustNotMention": ["raft", "consensus", "byzantine", "neural"]
+      }
+    },
+    {
+      "id": "podcast-accuracy-complex",
+      "file": "02-complex-technical.md",
+      "feature": "podcast-accuracy",
+      "expected": {
+        "mustMention": ["raft", "consensus"],
+        "mustNotMention": ["html", "css", "javascript", "web development"]
+      }
     }
   ]
 }

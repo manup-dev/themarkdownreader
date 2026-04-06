@@ -6,16 +6,20 @@ import { getActiveBackend } from '../lib/ai'
 
 export function AiLoadingIndicator() {
   const [state, setState] = useState<ModelState>(getModelState)
+  const [backend, setBackend] = useState(getActiveBackend)
 
   useEffect(() => {
-    return onModelProgress(setState)
+    return onModelProgress((s) => {
+      setState(s)
+      // Re-read backend after each state change (redetectBackend may have updated it)
+      setBackend(getActiveBackend())
+    })
   }, [])
 
   if (state.status === 'idle' || state.status === 'ready') return null
 
   if (state.status === 'failed') {
-    // Only show "AI unavailable" if no fallback backend is active
-    const backend = getActiveBackend()
+    // Only show "AI unavailable" if no fallback backend is available
     if (backend !== 'none') return null
     return (
       <div className="flex items-center gap-1.5 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] text-red-400">

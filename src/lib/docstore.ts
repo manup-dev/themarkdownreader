@@ -66,6 +66,72 @@ export interface SearchIndexBlob {
   data: string // JSON serialized MiniSearch
 }
 
+export interface StoredPodcastScript {
+  id?: number
+  title: string
+  contentHash: string
+  segments: string // JSON stringified PodcastSegment[]
+  scriptLines: string // JSON stringified ScriptLine[]
+  createdAt: number
+}
+
+export interface CachedAudio {
+  id?: number
+  contentHash: string       // same hash as PodcastScript
+  segmentIndex: number
+  pcm: ArrayBuffer          // raw PCM Float32 data
+  sampleRate: number
+  createdAt: number
+}
+
+export interface TrainingDatapoint {
+  id?: number
+  input: string
+  output: string
+  task: string
+  model: string
+  timestamp: number
+  userFeedback?: 'positive' | 'negative'
+}
+
+export interface Theme {
+  title: string
+  description: string
+  relevanceScore: number
+  chunkIds: number[]
+}
+
+export interface Entity {
+  name: string
+  type: 'concept' | 'technology' | 'person' | 'process'
+  mentions: number
+}
+
+export type ChunkContentType = 'prose' | 'code' | 'table' | 'list' | 'diagram' | 'heading' | 'mixed'
+
+export interface AnalyzedChunk {
+  chunkId: number
+  contentType: ChunkContentType
+  weight: number
+  summary?: string
+}
+
+export interface DocumentAnalysis {
+  id?: number
+  docId: number
+  contentHash: string
+  themes: Theme[]
+  entities: Entity[]
+  chunks: AnalyzedChunk[]
+  difficulty: 'beginner' | 'intermediate' | 'advanced' | 'expert'
+  structure: 'tutorial' | 'reference' | 'narrative' | 'mixed'
+  relatedDocIds: number[]
+  crossDocThemes: string[]
+  analyzedAt: number
+  model: string
+  version: number
+}
+
 // ─── Database Schema (v2: compound indexes, highlights, search cache) ──────
 
 export interface CollectionCache {
@@ -84,6 +150,10 @@ class MdReaderDB extends Dexie {
   comments!: Table<Comment>
   searchCache!: Table<SearchIndexBlob>
   collectionCache!: Table<CollectionCache>
+  podcastScripts!: Table<StoredPodcastScript>
+  trainingData!: Table<TrainingDatapoint>
+  documentAnalyses!: Table<DocumentAnalysis>
+  audioCache!: Table<CachedAudio>
 
   constructor() {
     super('md-reader')
@@ -103,6 +173,16 @@ class MdReaderDB extends Dexie {
       comments: '++id, docId, sectionId, createdAt, resolved',
       searchCache: 'id',
       collectionCache: 'id',
+    })
+    this.version(5).stores({
+      podcastScripts: '++id, contentHash, createdAt',
+      trainingData: '++id, task, timestamp',
+    })
+    this.version(6).stores({
+      documentAnalyses: '++id, docId, contentHash, analyzedAt',
+    })
+    this.version(7).stores({
+      audioCache: '++id, contentHash, [contentHash+segmentIndex], createdAt',
     })
   }
 }
@@ -777,6 +857,49 @@ export async function importLibrary(json: string) {
     } catch { /* best effort restore */ }
     throw e
   }
+}
+
+// ─── Document Analysis ────────────────────────────────────────────────────
+
+export async function getAnalysis(docId: number, contentHash: string): Promise<DocumentAnalysis | undefined> {
+  return db.documentAnalyses.where({ docId, contentHash }).first()
+}
+
+export async function saveAnalysis(analysis: DocumentAnalysis): Promise<number> {
+  await db.documentAnalyses.where('docId').equals(analysis.docId).delete()
+  return db.documentAnalyses.add(analysis)
+}
+
+export async function getAnalysisByDocId(docId: number): Promise<DocumentAnalysis | undefined> {
+  return db.documentAnalyses.where('docId').equals(docId).first()
+}
+
+export async function clearAnalyses(): Promise<void> {
+  await db.documentAnalyses.clear()
+}
+
+// ─── Audio Cache ──────────────────────────────────────────────────────────
+
+export async function getCachedAudio(contentHash: string, segmentIndex: number): Promise<CachedAudio | undefined> {
+  return db.audioCache.where({ contentHash, segmentIndex }).first()
+}
+
+export async function cacheAudioSegment(contentHash: string, segmentIndex: number, pcm: Float32Array, sampleRate: number): Promise<void> {
+  await db.audioCache.put({
+    contentHash,
+    segmentIndex,
+    pcm: pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength),
+    sampleRate,
+    createdAt: Date.now(),
+  })
+}
+
+export async function getFullCachedAudio(contentHash: string): Promise<CachedAudio[]> {
+  return db.audioCache.where('contentHash').equals(contentHash).sortBy('segmentIndex')
+}
+
+export async function clearAudioCache(): Promise<void> {
+  await db.audioCache.clear()
 }
 
 export async function clearAllData() {

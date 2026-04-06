@@ -149,9 +149,18 @@ describe('progress bridging from gemma-engine', () => {
     expect(s.progress).toBe(1)
   })
 
-  it('maps failed to failed state with progress 0', () => {
+  it('maps failed to failed state with progress 0', async () => {
     preloadGemma()
+
+    // redetectBackend() runs async before setState — wait for the state change
+    const waitForFailed = new Promise<void>((resolve) => {
+      const unsub = onModelProgress((s) => {
+        if (s.status === 'failed') { unsub(); resolve() }
+      })
+    })
+
     emitProgress({ status: 'failed', message: 'OOM' })
+    await waitForFailed
 
     const s = getModelState()
     expect(s.status).toBe('failed')

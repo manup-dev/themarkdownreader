@@ -108,8 +108,54 @@ article *, article *::before, article *::after { transition: none; }
 @keyframes slideInFromLeft { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 .animate-slide-in-left { animation: slideInFromLeft 200ms ease-out; }
 
-/* VS Code webview — hide floating overlays (scroll arrow, back-to-top, milestones) */
-.vscode-webview .fixed { display: none !important; }
+/* VS Code webview — hide specific floating overlays (scroll arrow, back-to-top, milestones)
+   but KEEP SelectionMenu (.selection-menu), TTS player, and AI action overlays visible */
+.vscode-webview .scroll-arrow,
+.vscode-webview .back-to-top,
+.vscode-webview .milestone-indicator,
+.vscode-webview .fab-chat,
+.vscode-webview .toast-notify { display: none !important; }
+
+/* Hide heading anchor # symbol when Tailwind utility classes are missing (e.g., vscode webview build) */
+article h1 > span[aria-hidden], article h2 > span[aria-hidden],
+article h3 > span[aria-hidden], article h4 > span[aria-hidden],
+article h5 > span[aria-hidden], article h6 > span[aria-hidden] {
+  opacity: 0;
+}
+article h1:hover > span[aria-hidden], article h2:hover > span[aria-hidden],
+article h3:hover > span[aria-hidden], article h4:hover > span[aria-hidden],
+article h5:hover > span[aria-hidden], article h6:hover > span[aria-hidden] {
+  opacity: 0.4;
+}
+/* Stronger heading hierarchy in dark mode */
+.dark article h1, .dark article h2 { color: #f1f5f9 !important; font-weight: 700; }
+.dark article h3, .dark article h4 { color: #e2e8f0 !important; font-weight: 600; }
+
+/* VS Code webview — improved readability (higher contrast, better spacing) */
+.vscode-webview article { font-size: 15px !important; line-height: 1.8 !important; }
+.vscode-webview .dark article p,
+.vscode-webview .dark article li,
+.vscode-webview .dark article td,
+.vscode-webview .dark article span { color: #e5e7eb !important; }
+.vscode-webview .dark article strong { color: #f9fafb !important; }
+.vscode-webview .dark article a { color: #93c5fd !important; }
+.vscode-webview .dark article code { color: #a5f3fc !important; }
+.vscode-webview .dark article blockquote p { color: #9ca3af !important; }
+.vscode-webview article h1 { font-size: 1.75em !important; margin-top: 1.5em !important; }
+.vscode-webview article h2 { font-size: 1.4em !important; margin-top: 1.3em !important; }
+.vscode-webview article h3 { font-size: 1.15em !important; margin-top: 1.1em !important; }
+/* VS Code sidebar readability */
+.vscode-webview .dark aside { color: #d1d5db; }
+.vscode-webview .dark aside a { color: #93c5fd !important; }
+/* Code block borders for better delineation */
+article pre { border: 1px solid #e5e7eb; border-radius: 0.5rem; }
+.dark article pre { border-color: #374151; }
+.sepia article pre { border-color: #e8d5be; }
+.high-contrast article pre { border-color: #555; }
+/* High-contrast border visibility */
+.high-contrast .border-b { border-color: #555 !important; }
+.high-contrast .border-r { border-color: #555 !important; }
+.high-contrast .border-l { border-color: #555 !important; }
 
 /* Focus mode */
 .focus-mode .fixed { display: none !important; }

@@ -16,6 +16,29 @@ const HF_MODEL_ID = 'onnx-community/gemma-4-E2B-it-ONNX'
 const GH_BASE_URL =
   'https://github.com/manup-dev/themarkdownreader/releases/download/models-v1'
 const LOAD_TIMEOUT_MS = 180_000
+const IDLE_TIMEOUT_MS = 60_000 // 1 minute — free GPU memory quickly
+
+/** Check if device has enough memory for Gemma (~1.5GB needed for q4 model) */
+function hasEnoughMemory(): boolean {
+  const nav = navigator as unknown as { deviceMemory?: number }
+  // deviceMemory reports GB of RAM (rounded). Skip Gemma on ≤4GB devices.
+  if (nav.deviceMemory && nav.deviceMemory <= 4) {
+    console.log(`[gemma-engine] Skipping — only ${nav.deviceMemory}GB device memory`)
+    return false
+  }
+  return true
+}
+let idleTimer: ReturnType<typeof setTimeout> | null = null
+
+function resetIdleTimer() {
+  if (idleTimer) clearTimeout(idleTimer)
+  idleTimer = setTimeout(() => {
+    if (status === 'ready') {
+      console.log('[gemma-engine] Idle timeout — unloading model to free memory')
+      unloadGemma()
+    }
+  }, IDLE_TIMEOUT_MS)
+}
 
 // ─── Status ───────────────────────────────────────────────────────────────────
 
@@ -61,9 +84,37 @@ async function getTransformers(): Promise<any> {
 
 let loadPromise: Promise<void> | null = null
 
+/** Global GPU model mutex — prevents Gemma + Kokoro loading simultaneously */
+function acquireGpuLock(owner: string): boolean {
+  const w = window as unknown as { __gpuModelLock?: string }
+  if (w.__gpuModelLock && w.__gpuModelLock !== owner) return false
+  w.__gpuModelLock = owner
+  return true
+}
+function releaseGpuLock(owner: string): void {
+  const w = window as unknown as { __gpuModelLock?: string }
+  if (w.__gpuModelLock === owner) w.__gpuModelLock = undefined
+}
+export function isGemmaHoldingGpu(): boolean {
+  const w = window as unknown as { __gpuModelLock?: string }
+  return w.__gpuModelLock === 'gemma'
+}
+
 export async function loadGemmaModel(): Promise<void> {
   if (status === 'ready') return
   if (loadPromise) return loadPromise
+  if (!acquireGpuLock('gemma')) {
+    status = 'failed'
+    loadError = 'GPU busy (another model loading)'
+    notifyProgress({ status: 'failed', message: loadError })
+    throw new Error(loadError)
+  }
+  if (!hasEnoughMemory()) {
+    status = 'failed'
+    loadError = 'Insufficient device memory'
+    notifyProgress({ status: 'failed', message: loadError })
+    throw new Error(loadError)
+  }
 
   loadPromise = _load().finally(() => {
     // Reset the promise reference so callers can retry after failure
@@ -84,9 +135,11 @@ async function _load(): Promise<void> {
   try {
     await Promise.race([_loadInner(), timeout])
     status = 'ready'
+    resetIdleTimer()
     notifyProgress({ status: 'ready', percent: 100, message: 'Model ready' })
   } catch (err) {
     status = 'failed'
+    releaseGpuLock('gemma')
     loadError = err instanceof Error ? err.message : String(err)
     notifyProgress({ status: 'failed', message: loadError ?? undefined })
     throw err
@@ -113,20 +166,35 @@ async function _loadInner(): Promise<void> {
   }
 
   // Step 2: load model weights from the same source that succeeded for tokenizer
-  notifyProgress({ status: 'loading', percent: 30, message: 'Loading ONNX weights…' })
-  model = await AutoModelForCausalLM.from_pretrained(modelSource, {
-    dtype: 'q4',
-    device: 'webgpu',
-    progress_callback: (p: { progress?: number }) => {
-      const pct = p.progress != null ? 30 + Math.round(p.progress * 0.6) : undefined
-      notifyProgress({ status: 'loading', percent: pct, message: 'Loading ONNX weights…' })
-    },
-  })
+  // Try WebGPU first; if context creation fails, fall back to WASM
+  const progressCb = (p: { progress?: number }) => {
+    const pct = p.progress != null ? 30 + Math.round(p.progress * 0.6) : undefined
+    notifyProgress({ status: 'loading', percent: pct, message: 'Loading ONNX weights…' })
+  }
+
+  notifyProgress({ status: 'loading', percent: 30, message: 'Loading ONNX weights (WebGPU)…' })
+  try {
+    model = await AutoModelForCausalLM.from_pretrained(modelSource, {
+      dtype: 'q4',
+      device: 'webgpu',
+      progress_callback: progressCb,
+    })
+  } catch (webgpuErr) {
+    console.warn('[gemma-engine] WebGPU context failed, falling back to WASM:', webgpuErr)
+    notifyProgress({ status: 'loading', percent: 30, message: 'Loading ONNX weights (WASM)…' })
+    model = await AutoModelForCausalLM.from_pretrained(modelSource, {
+      dtype: 'q4',
+      device: 'wasm',
+      progress_callback: progressCb,
+    })
+  }
 }
 
 // ─── Unload ───────────────────────────────────────────────────────────────────
 
 export async function unloadGemma(): Promise<void> {
+  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
+  releaseGpuLock('gemma')
   if (model?.dispose) {
     try { await model.dispose() } catch { /* ignore */ }
   }
@@ -222,5 +290,6 @@ export async function gemmaChat(
   const newTokens = fullTokenIds.slice(inputLength)
   const reply: string = tokenizer.decode(newTokens, { skip_special_tokens: true })
 
+  resetIdleTimer()
   return reply.trim()
 }

@@ -154,6 +154,56 @@ server.tool(
   }
 )
 
+// Tool 6: generate_podcast
+server.tool(
+  'generate_podcast',
+  'Generate an AI podcast overview of a markdown file. Two AI hosts discuss the key ideas in a conversational format.',
+  {
+    path: z.string().describe('Absolute or relative path to the .md file'),
+  },
+  async ({ path: inputPath }) => {
+    const absPath = validateMdPath(inputPath)
+    await checkHealth()
+    openView(absPath, 'podcast')
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Opened podcast view for ${path.basename(absPath)}. The AI will generate a two-host conversation about the document.`,
+        },
+      ],
+    }
+  }
+)
+
+// Tool 7: generate_diagram
+server.tool(
+  'generate_diagram',
+  'Generate an AI diagram from a markdown file. Extracts key concepts and relationships into a visual Excalidraw diagram.',
+  {
+    path: z.string().describe('Absolute or relative path to the .md file'),
+    section: z.string().optional().describe('Optional heading to focus on'),
+    type: z.enum(['auto', 'flowchart', 'hierarchy', 'sequence', 'mindmap', 'comparison']).optional().describe('Diagram type (default: auto-detect)'),
+  },
+  async ({ path: inputPath, section, type }) => {
+    const absPath = validateMdPath(inputPath)
+    await checkHealth()
+    const extra = [
+      section ? `section=${encodeURIComponent(section)}` : '',
+      type ? `diagramType=${type}` : '',
+    ].filter(Boolean).join('&')
+    openView(absPath, 'diagram', extra || undefined)
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Opened diagram view for ${path.basename(absPath)}.${type ? ` Type: ${type}.` : ' AI will auto-detect the best diagram type.'}`,
+        },
+      ],
+    }
+  }
+)
+
 // ─── Start ──────────────────────────────────────────────────────────────────
 
 async function main() {

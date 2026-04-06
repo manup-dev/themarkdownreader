@@ -25,6 +25,8 @@ const SummaryCardsView = lazy(() => import('./components/SummaryCards').then((m)
 const TreemapView = lazy(() => import('./components/TreemapView').then((m) => ({ default: m.TreemapView })))
 const KnowledgeGraphView = lazy(() => import('./components/KnowledgeGraph').then((m) => ({ default: m.KnowledgeGraphView })))
 const CoachView = lazy(() => import('./components/Coach').then((m) => ({ default: m.CoachView })))
+const PodcastPlayer = lazy(() => import('./components/PodcastPlayer').then(m => ({ default: m.PodcastPlayer })))
+const DiagramGenerator = lazy(() => import('./components/DiagramGenerator').then(m => ({ default: m.DiagramGenerator })))
 const Workspace = lazy(() => import('./components/Workspace').then((m) => ({ default: m.Workspace })))
 const CrossDocGraph = lazy(() => import('./components/CrossDocGraph').then((m) => ({ default: m.CrossDocGraph })))
 const CorrelationView = lazy(() => import('./components/CorrelationView').then((m) => ({ default: m.CorrelationView })))
@@ -393,6 +395,14 @@ function App() {
                   {viewMode === 'treemap' && <ErrorBoundary name="Treemap"><TreemapView /></ErrorBoundary>}
                   {viewMode === 'knowledge-graph' && <ErrorBoundary name="Knowledge Graph"><KnowledgeGraphView /></ErrorBoundary>}
                   {viewMode === 'coach' && <ErrorBoundary name="Coach"><CoachView /></ErrorBoundary>}
+                  {viewMode === 'podcast' && <ErrorBoundary name="Podcast"><PodcastPlayer /></ErrorBoundary>}
+                  {viewMode === 'diagram' && (
+                    <ErrorBoundary name="Diagram">
+                      <Suspense fallback={<LazyFallback />}>
+                        <DiagramGenerator />
+                      </Suspense>
+                    </ErrorBoundary>
+                  )}
                 </>
               )}
             </Suspense>

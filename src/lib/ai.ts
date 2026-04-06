@@ -10,7 +10,8 @@ import { getModelState, waitForReady } from './inference/model-manager'
 
 // ─── Config ────────────────────────────────────────────────────────────────
 
-const OLLAMA_BASE_URL = (typeof localStorage !== 'undefined' && localStorage.getItem('md-reader-ollama-url')) || import.meta.env.VITE_OLLAMA_URL || 'http://localhost:11434'
+const OLLAMA_BASE_URL = (typeof localStorage !== 'undefined' && localStorage.getItem('md-reader-ollama-url')) || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_OLLAMA_URL) || 'http://localhost:11434'
+export function getOllamaBaseUrl(): string { return OLLAMA_BASE_URL }
 const OLLAMA_MODEL = 'qwen2.5:1.5b'
 const OLLAMA_TIMEOUT = 90000
 
@@ -44,6 +45,19 @@ let backendDetected = false
 let detectPromise: Promise<Backend> | null = null  // mutex: prevents concurrent detection
 
 export function getActiveBackend(): Backend { return activeBackend }
+
+/**
+ * Force re-detection of the best available backend, skipping Gemma 4.
+ * Called when Gemma fails after initial detection — finds the next fallback.
+ */
+export async function redetectBackend(): Promise<Backend> {
+  // Skip Gemma/WebLLM (both use WebGPU and Gemma just failed) — try server backends
+  if (await checkOllamaHealth()) { activeBackend = 'ollama'; backendDetected = true; return activeBackend }
+  if (await checkOpenRouter()) { activeBackend = 'openrouter'; backendDetected = true; return activeBackend }
+  activeBackend = 'none'
+  backendDetected = true
+  return activeBackend
+}
 
 // ─── API key management ────────────────────────────────────────────────────
 
@@ -211,6 +225,7 @@ async function chatOpenRouterStream(
   messages: ChatMessage[],
   onToken?: (token: string) => void,
   signal?: AbortSignal,
+  maxTokens?: number,
 ): Promise<string> {
   const apiKey = getApiKey()
   if (!apiKey) throw new Error('OpenRouter API key not set')
@@ -227,7 +242,7 @@ async function chatOpenRouterStream(
       model: OPENROUTER_FREE_MODEL,
       messages,
       stream: true,
-      max_tokens: PROMPT_CONFIG.maxTokens,
+      max_tokens: maxTokens ?? PROMPT_CONFIG.maxTokens,
       temperature: PROMPT_CONFIG.temperature,
     }),
     signal: signal ?? AbortSignal.timeout(OPENROUTER_TIMEOUT),
@@ -278,6 +293,7 @@ async function chatOllamaStream(
   messages: ChatMessage[],
   onToken?: (token: string) => void,
   signal?: AbortSignal,
+  maxTokens?: number,
 ): Promise<string> {
   const res = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
     method: 'POST',
@@ -287,7 +303,11 @@ async function chatOllamaStream(
       messages,
       stream: true,
       keep_alive: '30m',
-      options: { num_predict: PROMPT_CONFIG.maxTokens, temperature: PROMPT_CONFIG.temperature },
+      options: {
+        num_predict: maxTokens ?? PROMPT_CONFIG.maxTokens,
+        temperature: PROMPT_CONFIG.temperature,
+        num_ctx: 4096,
+      },
     }),
     signal: signal ?? AbortSignal.timeout(OLLAMA_TIMEOUT),
   })
@@ -324,6 +344,42 @@ async function chatOllamaStream(
 }
 
 // ─── Unified chat with streaming ───────────────────────────────────────────
+
+/**
+ * Fast chat — skips backends that are still loading.
+ * Uses whatever backend is ready NOW, without waiting for model downloads.
+ * Ideal for podcast/batch generation where you don't want to block on Gemma loading.
+ */
+export interface ChatFastOptions {
+  signal?: AbortSignal
+  onToken?: (token: string) => void
+  maxTokens?: number
+}
+
+export async function chatFast(
+  messages: ChatMessage[],
+  signalOrOpts?: AbortSignal | ChatFastOptions,
+  onToken?: (token: string) => void,
+): Promise<string> {
+  // Support both legacy (signal, onToken) and new options-object signatures
+  const opts: ChatFastOptions = signalOrOpts instanceof AbortSignal
+    ? { signal: signalOrOpts, onToken }
+    : signalOrOpts ?? {}
+  const { signal, onToken: tokenCb, maxTokens } = { onToken, ...opts }
+
+  // If Gemma is ready (already loaded), use it
+  const modelState = getModelState()
+  if (activeBackend === 'gemma4' && modelState.status === 'ready') {
+    try { return await gemmaChat(messages, tokenCb, signal) } catch { /* fall through */ }
+  }
+
+  // Otherwise skip Gemma entirely — use fastest available
+  if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, maxTokens)
+  if (await checkOpenRouter()) return chatOpenRouterStream(messages, tokenCb, signal, maxTokens)
+
+  // Last resort: wait for Gemma (no other option)
+  return chat(messages, signal, tokenCb)
+}
 
 export async function chat(
   messages: ChatMessage[],
@@ -562,6 +618,19 @@ export async function generateQuiz(
   }
 
   throw new Error('Could not generate valid quiz questions. Try a different section with more content.')
+}
+
+export async function generateDiagramDSL(
+  text: string,
+  signal?: AbortSignal
+): Promise<string> {
+  const truncated = text.slice(0, PROMPT_CONFIG.diagramDSLMaxInput)
+  const messages: ChatMessage[] = [
+    { role: 'system', content: PROMPTS.diagramDSL },
+    { role: 'user', content: truncated },
+  ]
+  // Diagrams need more tokens (800) to produce complete JSON with edges
+  return chatFast(messages, { signal, maxTokens: 800 })
 }
 
 export async function listModels(): Promise<string[]> {

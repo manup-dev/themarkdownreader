@@ -52,7 +52,7 @@ const idbStorage: StateStorage = {
 }
 
 export type Theme = 'light' | 'dark' | 'sepia' | 'high-contrast'
-export type ViewMode = 'read' | 'mindmap' | 'summary-cards' | 'treemap' | 'knowledge-graph' | 'coach' | 'workspace' | 'cross-doc-graph' | 'correlation' | 'similarity-map' | 'collection'
+export type ViewMode = 'read' | 'mindmap' | 'summary-cards' | 'treemap' | 'knowledge-graph' | 'coach' | 'podcast' | 'diagram' | 'workspace' | 'cross-doc-graph' | 'correlation' | 'similarity-map' | 'collection'
 
 export interface TocEntry {
   id: string

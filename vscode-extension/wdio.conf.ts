@@ -17,8 +17,9 @@ export const config: WebdriverIO.Config = {
       extensionPath: path.resolve(__dirname),
       workspacePath: path.resolve(__dirname, 'e2e', 'fixtures'),
       userSettings: {
-        'md-reader.theme': 'light',
-        'md-reader.fontSize': 18,
+        'md-reader.theme': 'dark',
+        'md-reader.fontSize': 16,
+        'workbench.colorTheme': 'Default Dark Modern',
       },
     },
   }],

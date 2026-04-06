@@ -5,6 +5,8 @@ import { getModelState, onModelProgress, preloadGemma } from '../lib/inference/m
 import { unloadGemma } from '../lib/inference/gemma-engine'
 import { RefreshCw } from 'lucide-react'
 import { isTelemetryEnabled, enableTelemetry, disableTelemetry, exportTelemetry, clearTelemetry, TRACKED_EVENTS } from '../lib/telemetry'
+import { getStorageBreakdown, MAX_STORAGE_MB, runEviction } from '../lib/storage-manager'
+import { clearAnalyses } from '../lib/docstore'
 
 // Use same key as ai.ts to avoid duplication
 const LS_OLLAMA_URL = 'md-reader-ollama-url'
@@ -29,6 +31,7 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
   const [testing, setTesting] = useState(false)
   const [preferred, setPreferred] = useState(() => getPreferredBackend() ?? 'auto')
   const [gemmaState, setGemmaState] = useState(() => getModelState())
+  const [storage, setStorage] = useState<Awaited<ReturnType<typeof getStorageBreakdown>> | null>(null)
 
   useEffect(() => {
     return onModelProgress(setGemmaState)
@@ -37,6 +40,10 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     checkOllamaHealth().then(setOllamaReachable)
     detectBestBackend().then((b) => setActiveBackend(b as Backend))
+  }, [])
+
+  useEffect(() => {
+    getStorageBreakdown().then(setStorage)
   }, [])
 
   const handleTestConnection = useCallback(async () => {
@@ -265,6 +272,40 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
 
       {/* Telemetry */}
       <TelemetrySection />
+
+      <hr className="border-gray-200 dark:border-gray-700" />
+
+      {/* Storage */}
+      <div className="space-y-2">
+        <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wider">Storage</h4>
+        {storage && (
+          <>
+            <div className="text-xs text-gray-300">
+              {storage.totalMB.toFixed(1)}MB / {MAX_STORAGE_MB}MB used
+            </div>
+            <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${storage.totalMB > MAX_STORAGE_MB * 0.8 ? 'bg-red-500' : 'bg-blue-500'}`}
+                style={{ width: `${Math.min(100, (storage.totalMB / MAX_STORAGE_MB) * 100)}%` }}
+              />
+            </div>
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={async () => { await runEviction(); getStorageBreakdown().then(setStorage) }}
+                className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded bg-gray-800 hover:bg-gray-700"
+              >
+                Clear old cache
+              </button>
+              <button
+                onClick={async () => { await clearAnalyses(); getStorageBreakdown().then(setStorage) }}
+                className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded bg-gray-800 hover:bg-gray-700"
+              >
+                Clear analyses
+              </button>
+            </div>
+          </>
+        )}
+      </div>
 
       <hr className="border-gray-200 dark:border-gray-700" />
 

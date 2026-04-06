@@ -97,7 +97,11 @@ export function preloadGemma(): void {
     } else if (p.status === 'ready') {
       setState({ status: 'ready', progress: 1, progressText: p.message ?? 'Model ready' })
     } else if (p.status === 'failed') {
-      setState({ status: 'failed', progress: 0, progressText: p.message ?? 'Load failed' })
+      // Re-detect backend so fallbacks (Ollama, OpenRouter) are found
+      // Dynamic import avoids circular dependency (model-manager ↔ ai)
+      import('../ai').then(ai => ai.redetectBackend()).finally(() => {
+        setState({ status: 'failed', progress: 0, progressText: p.message ?? 'Load failed' })
+      })
     }
     // 'idle' events (e.g. unload) are ignored here — resetModelManager handles those
   })
