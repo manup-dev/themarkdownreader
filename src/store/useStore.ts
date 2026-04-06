@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { devtools, persist, type StateStorage } from 'zustand/middleware'
 import { trackEvent, type TelemetryEvent } from '../lib/telemetry'
-import { resolveEnabledFeatures, enableFeature, disableFeature } from '../lib/feature-flags'
+import { resolveEnabledFeatures, enableFeature, disableFeature, isViewModeGated } from '../lib/feature-flags'
 
 // IndexedDB-backed storage for Zustand persist — handles large markdown content
 // without hitting localStorage's ~5MB limit. Connection is cached to avoid
@@ -223,6 +223,13 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
       merged.readingProgress = 0
       merged.activeSection = null
       merged.activeDocId = null
+    }
+    // If persisted viewMode is behind a disabled feature flag, reset to 'read'
+    if (merged.viewMode) {
+      const gatedFlag = isViewModeGated(merged.viewMode as ViewMode)
+      if (gatedFlag && !resolveEnabledFeatures().has(gatedFlag)) {
+        merged.viewMode = 'read'
+      }
     }
     return merged
   },
