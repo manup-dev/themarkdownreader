@@ -7,6 +7,7 @@ import { addDocument } from '../lib/docstore'
 import { getActiveBackend } from '../lib/ai'
 import { preloadGemma } from '../lib/inference/model-manager'
 import { trackEvent } from '../lib/telemetry'
+import { isViewModeGated } from '../lib/feature-flags'
 
 const singleDocModes: { value: ViewMode; icon: React.ReactNode; label: string; tooltip: string }[] = [
   { value: 'read', icon: <BookText className="h-3.5 w-3.5" />, label: 'Read', tooltip: 'Distraction-free reading' },
@@ -50,6 +51,8 @@ export function Toolbar() {
   const settingsRef = useRef<HTMLDivElement>(null)
 
   const viewShortcuts: Record<string, string> = { read: 'Ctrl+1', mindmap: 'Ctrl+2', 'summary-cards': 'Ctrl+3', treemap: 'Ctrl+4' }
+
+  const enabledFeatures = useStore((s) => s.enabledFeatures)
 
   const dyslexicFont = useStore((s) => s.dyslexicFont)
   const setDyslexicFont = useStore((s) => s.setDyslexicFont)
@@ -439,7 +442,10 @@ export function Toolbar() {
       {/* View mode tabs */}
       {showDocTabs && (
         <nav data-view-tabs aria-label="View modes" className="flex items-center gap-1 px-4 pb-2 overflow-x-auto" style={{ maskImage: 'linear-gradient(to right, black 90%, transparent)', WebkitMaskImage: 'linear-gradient(to right, black 90%, transparent)' }}>
-          {singleDocModes.map((vm) => (
+          {singleDocModes.filter((vm) => {
+            const gatedFlag = isViewModeGated(vm.value)
+            return !gatedFlag || enabledFeatures.has(gatedFlag)
+          }).map((vm) => (
             <button
               key={vm.value}
               onClick={() => { setViewMode(vm.value); localStorage.setItem(`md-reader-used-${vm.value}`, '1') }}
