@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useStore } from '../store/useStore'
 import { trackEvent } from '../lib/telemetry'
+import { isViewModeGated } from '../lib/feature-flags'
 
 const SHORTCUTS = [
   { group: 'Navigation', items: [
@@ -49,6 +50,7 @@ export function KeyboardShortcuts() {
   const activeSection = useStore((s) => s.activeSection)
   const viewMode = useStore((s) => s.viewMode)
   const setViewMode = useStore((s) => s.setViewMode)
+  const enabledFeatures = useStore((s) => s.enabledFeatures)
   const theme = useStore((s) => s.theme)
   const setTheme = useStore((s) => s.setTheme)
   const [showHelp, setShowHelp] = useState(false)
@@ -164,6 +166,8 @@ export function KeyboardShortcuts() {
         }
         case 'p': {
           if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+            const gated = isViewModeGated('podcast')
+            if (gated && !enabledFeatures.has(gated)) break
             e.preventDefault()
             setViewMode('podcast')
           }
@@ -171,6 +175,8 @@ export function KeyboardShortcuts() {
         }
         case 'v': {
           if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+            const gated = isViewModeGated('diagram')
+            if (gated && !enabledFeatures.has(gated)) break
             e.preventDefault()
             setViewMode('diagram')
           }
@@ -559,7 +565,7 @@ export function KeyboardShortcuts() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [toc, activeSection, viewMode, setViewMode, theme, setTheme])
+  }, [toc, activeSection, viewMode, setViewMode, theme, setTheme, enabledFeatures])
 
   // Delight #12: Focus mode — hide toolbar, sidebar, FABs
   useEffect(() => {
@@ -665,7 +671,11 @@ export function KeyboardShortcuts() {
                 <div key={group.group} className="mb-3">
                   <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5">{group.group}</p>
                   <div className="space-y-1">
-                    {group.items.map((s) => (
+                    {group.items.filter((s) => {
+                      if (s.key === 'p') { const g = isViewModeGated('podcast'); if (g && !enabledFeatures.has(g)) return false }
+                      if (s.key === 'v') { const g = isViewModeGated('diagram'); if (g && !enabledFeatures.has(g)) return false }
+                      return true
+                    }).map((s) => (
                       <div key={s.key} className="flex items-center justify-between">
                         <span className="text-xs text-gray-600 dark:text-gray-400">{s.desc}</span>
                         <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-mono border border-gray-200 dark:border-gray-700">
