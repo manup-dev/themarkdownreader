@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { devtools, persist, type StateStorage } from 'zustand/middleware'
 import { trackEvent, type TelemetryEvent } from '../lib/telemetry'
+import { resolveEnabledFeatures, enableFeature, disableFeature } from '../lib/feature-flags'
 
 // IndexedDB-backed storage for Zustand persist — handles large markdown content
 // without hitting localStorage's ~5MB limit. Connection is cached to avoid
@@ -94,6 +95,9 @@ export interface DocumentState {
   setSidebarWidth: (w: number) => void
   setChatWidth: (w: number) => void
   setDyslexicFont: (on: boolean) => void
+  enabledFeatures: Set<string>
+  toggleFeature: (id: string) => void
+  refreshFeatureFlags: () => void
   openDocument: (md: string, fileName: string, docId: number) => void
   reset: () => void
   backToWorkspace: () => void
@@ -124,6 +128,7 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
   chatWidth: savedChatWidth,
   dyslexicFont: localStorage.getItem('md-reader-dyslexic') === 'true',
   readScrollTop: 0,
+  enabledFeatures: resolveEnabledFeatures(),
 
   setMarkdown: (md, fileName) => {
     // Only count genuinely new document opens, not re-opens of the same content
@@ -164,6 +169,23 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
   setChatWidth: (w) => { localStorage.setItem('md-reader-chatW', String(w)); set({ chatWidth: w }) },
   setDyslexicFont: (on) => { localStorage.setItem('md-reader-dyslexic', String(on)); set({ dyslexicFont: on }) },
   setReadScrollTop: (top) => set({ readScrollTop: top }),
+  toggleFeature: (id) => {
+    const current = useStore.getState().enabledFeatures
+    if (current.has(id)) {
+      disableFeature(id)
+      const next = new Set(current)
+      next.delete(id)
+      set({ enabledFeatures: next })
+    } else {
+      enableFeature(id)
+      const next = new Set(current)
+      next.add(id)
+      set({ enabledFeatures: next })
+    }
+  },
+  refreshFeatureFlags: () => {
+    set({ enabledFeatures: resolveEnabledFeatures() })
+  },
   openDocument: (md, fileName, docId) => set({
     markdown: md,
     fileName,
