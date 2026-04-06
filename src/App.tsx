@@ -16,6 +16,7 @@ import { KeyboardShortcuts } from './components/KeyboardShortcuts'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { OnboardingOverlay } from './components/OnboardingOverlay'
 import { TelemetryBanner } from './components/TelemetryBanner'
+import { FEATURE_FLAGS, resolveEnabledFeatures, enableFeature as enableFeatureFlag, disableFeature as disableFeatureFlag, resetFeatures } from './lib/feature-flags'
 
 // Lazy load heavy/optional components
 const Chat = lazy(() => import('./components/Chat').then((m) => ({ default: m.Chat })))
@@ -310,6 +311,44 @@ function App() {
     window.addEventListener('offline', goOffline)
     window.addEventListener('online', goOnline)
     return () => { window.removeEventListener('offline', goOffline); window.removeEventListener('online', goOnline) }
+  }, [])
+
+  // Feature flags: expose console API on window.mdReader
+  useEffect(() => {
+    const refreshStore = () => useStore.getState().refreshFeatureFlags()
+
+    const api = {
+      enableFeature(id: string) {
+        const known = FEATURE_FLAGS.find(f => f.id === id)
+        if (!known) { console.warn(`Unknown feature: "${id}". Run mdReader.listFeatures() to see available flags.`); return }
+        enableFeatureFlag(id)
+        refreshStore()
+        console.log(`Enabled "${known.label}". Refresh not needed — UI updated.`)
+      },
+      disableFeature(id: string) {
+        const known = FEATURE_FLAGS.find(f => f.id === id)
+        if (!known) { console.warn(`Unknown feature: "${id}".`); return }
+        disableFeatureFlag(id)
+        refreshStore()
+        console.log(`Disabled "${known.label}".`)
+      },
+      listFeatures() {
+        const enabled = resolveEnabledFeatures()
+        console.table(FEATURE_FLAGS.map(f => ({
+          id: f.id,
+          label: f.label,
+          enabled: enabled.has(f.id),
+          description: f.description,
+        })))
+      },
+      resetFeatures() {
+        resetFeatures()
+        refreshStore()
+        console.log('All feature flag overrides cleared.')
+      },
+    }
+
+    ;(window as any).mdReader = { ...(window as any).mdReader, ...api }
   }, [])
 
   // Use getState() to avoid stale closures during rapid dragging
