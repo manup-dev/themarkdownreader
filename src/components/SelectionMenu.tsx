@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { isViewModeGated } from '../lib/feature-flags'
 import { Highlighter, Search, Bot, BookOpen, Copy, X, Loader2, Check, Quote, FileText, MessageSquare, Shapes } from 'lucide-react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -24,6 +25,7 @@ interface MenuPos {
 
 export function SelectionMenu() {
   const activeDocId = useStore((s) => s.activeDocId)
+  const enabledFeatures = useStore((s) => s.enabledFeatures)
   const [menu, setMenu] = useState<MenuPos | null>(null)
   const [aiResponse, setAiResponse] = useState<string | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
@@ -347,6 +349,7 @@ export function SelectionMenu() {
                 <span className="text-xs leading-none">▣</span>
               </button>
 
+              {(() => { const g = isViewModeGated('diagram'); return !g || enabledFeatures.has(g) })() && (
               <button
                 onClick={() => {
                   useStore.getState().setViewMode('diagram')
@@ -357,6 +360,7 @@ export function SelectionMenu() {
               >
                 <Shapes className="h-4 w-4" />
               </button>
+              )}
 
               <button
                 onClick={() => handleAskAI('Define this term or concept. Give a clear, concise definition and one example.')}
