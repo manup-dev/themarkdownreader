@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Key, Server, Zap, Check, X, Eye, EyeOff, ExternalLink, Settings, BarChart3, Brain, Trash2 } from 'lucide-react'
+import { Key, Server, Zap, Check, X, Eye, EyeOff, ExternalLink, Settings, BarChart3, Brain, Trash2, FlaskConical } from 'lucide-react'
 import { setApiKey, getApiKey, clearApiKey, detectBestBackend, getActiveBackend, checkOllamaHealth, getPreferredBackend, setPreferredBackend } from '../lib/ai'
 import { getModelState, onModelProgress, preloadGemma } from '../lib/inference/model-manager'
 import { unloadGemma } from '../lib/inference/gemma-engine'
@@ -7,6 +7,8 @@ import { RefreshCw } from 'lucide-react'
 import { isTelemetryEnabled, enableTelemetry, disableTelemetry, exportTelemetry, clearTelemetry, TRACKED_EVENTS } from '../lib/telemetry'
 import { getStorageBreakdown, MAX_STORAGE_MB, runEviction } from '../lib/storage-manager'
 import { clearAnalyses } from '../lib/docstore'
+import { FEATURE_FLAGS } from '../lib/feature-flags'
+import { useStore } from '../store/useStore'
 
 // Use same key as ai.ts to avoid duplication
 const LS_OLLAMA_URL = 'md-reader-ollama-url'
@@ -275,6 +277,11 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
 
       <hr className="border-gray-200 dark:border-gray-700" />
 
+      {/* Labs */}
+      <LabsSection />
+
+      <hr className="border-gray-200 dark:border-gray-700" />
+
       {/* Storage */}
       <div className="space-y-2">
         <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wider">Storage</h4>
@@ -414,6 +421,44 @@ function TelemetrySection() {
           </p>
         </div>
       )}
+    </div>
+  )
+}
+
+function LabsSection() {
+  const enabledFeatures = useStore((s) => s.enabledFeatures)
+  const toggleFeature = useStore((s) => s.toggleFeature)
+
+  if (enabledFeatures.size === 0) return null
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1.5">
+        <FlaskConical className="h-3.5 w-3.5 text-amber-500" />
+        <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Labs</span>
+        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 font-medium">Experimental</span>
+      </div>
+      <p className="text-[10px] text-gray-400 leading-relaxed">
+        These features are still in development and may not work perfectly.
+      </p>
+      {FEATURE_FLAGS.map((flag) => (
+        <div key={flag.id} className="flex items-center justify-between py-1">
+          <div>
+            <span className="text-xs text-gray-600 dark:text-gray-300">{flag.label}</span>
+            <span className="block text-[10px] text-gray-400">{flag.description}</span>
+          </div>
+          <button
+            onClick={() => toggleFeature(flag.id)}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+              enabledFeatures.has(flag.id) ? 'bg-amber-500' : 'bg-gray-300 dark:bg-gray-600'
+            }`}
+          >
+            <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+              enabledFeatures.has(flag.id) ? 'translate-x-[18px]' : 'translate-x-[3px]'
+            }`} />
+          </button>
+        </div>
+      ))}
     </div>
   )
 }
