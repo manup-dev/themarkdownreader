@@ -23,7 +23,9 @@ export function PodcastPlayer() {
   const [showTranscript, setShowTranscript] = useState(false)
   const [analysis, setAnalysis] = useState<DocumentAnalysis | null>(null)
   const [canGoDeeper, setCanGoDeeper] = useState(false)
-  const [voiceEngine, setVoiceEngine] = useState<VoiceEngine>('browser')
+  const [voiceEngine, setVoiceEngine] = useState<VoiceEngine>(() =>
+    getKokoroStatus() === 'ready' ? 'kokoro' : 'browser'
+  )
   const [kokoroLoading, setKokoroLoading] = useState(false)
 
   const synthRef = useRef(window.speechSynthesis)
@@ -61,14 +63,6 @@ export function PodcastPlayer() {
     loadVoices()
     synth.addEventListener('voiceschanged', loadVoices)
     return () => synth.removeEventListener('voiceschanged', loadVoices)
-  }, [])
-
-  // Check if Kokoro is already loaded (from a previous session)
-  // Don't auto-load on mount — load lazily on first play to avoid memory contention with Gemma
-  useEffect(() => {
-    if (getKokoroStatus() === 'ready') {
-      setVoiceEngine('kokoro')
-    }
   }, [])
 
   // Cleanup on unmount
@@ -354,7 +348,7 @@ export function PodcastPlayer() {
         console.error('Podcast generation failed:', err)
       }
     }
-  }, [markdown, fileName, activeDocId])
+  }, [markdown, fileName, activeDocId, script])
 
   const handlePlay = useCallback(() => {
     if (!script) {

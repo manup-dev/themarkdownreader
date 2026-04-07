@@ -20,7 +20,7 @@ export function TtsPlayer({ autoPlay, onAutoPlayConsumed }: { autoPlay?: boolean
     voice: null,
   })
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([])
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(() => !!(autoPlay && markdown))
 
   useEffect(() => {
     tts.loadMarkdown(markdown)
@@ -53,7 +53,6 @@ export function TtsPlayer({ autoPlay, onAutoPlayConsumed }: { autoPlay?: boolean
   // Auto-play when triggered externally (e.g., VS Code readAloud command)
   useEffect(() => {
     if (autoPlay && markdown) {
-      setExpanded(true)
       const timer = setTimeout(() => {
         tts.play(0)
         onAutoPlayConsumed?.()
