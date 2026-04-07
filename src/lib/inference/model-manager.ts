@@ -1,8 +1,8 @@
 /**
- * Model lifecycle manager for Gemma 4 E2B.
+ * Model lifecycle manager for browser AI (Qwen3-0.6B via Transformers.js).
  *
- * Handles background preload scheduling, status tracking, and progress
- * reporting. Bridges gemma-engine's GemmaStatus into the ModelState format
+ * Handles load scheduling, status tracking, and progress reporting.
+ * Bridges gemma-engine's GemmaStatus into the ModelState format
  * that UI components and ai.ts can subscribe to.
  */
 
@@ -40,7 +40,7 @@ function setState(next: ModelState): void {
   }
 
   if (next.status === 'failed') {
-    const err = new Error('Gemma model failed to load')
+    const err = new Error('Browser model failed to load')
     for (const reject of readyRejectors) reject(err)
     readyResolvers = []
     readyRejectors = []
@@ -69,7 +69,7 @@ export function onModelProgress(cb: (state: ModelState) => void): () => void {
  */
 export function waitForReady(): Promise<void> {
   if (state.status === 'ready') return Promise.resolve()
-  if (state.status === 'failed') return Promise.reject(new Error('Gemma model failed to load'))
+  if (state.status === 'failed') return Promise.reject(new Error('Browser model failed to load'))
 
   return new Promise<void>((resolve, reject) => {
     readyResolvers.push(resolve)
@@ -78,7 +78,7 @@ export function waitForReady(): Promise<void> {
 }
 
 /**
- * Schedules a background preload of the Gemma model after first paint.
+ * Schedules a background load of the browser AI model.
  * Safe to call multiple times — idempotent (unless previous attempt failed).
  */
 export function preloadGemma(): void {

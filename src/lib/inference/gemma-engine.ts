@@ -1,10 +1,13 @@
 /**
- * Gemma 4 E2B inference engine via Transformers.js v4 (WebGPU/WASM).
+ * Browser inference engine via Transformers.js v4 (WebGPU/WASM).
  *
- * Primary source:  HuggingFace CDN  (onnx-community/gemma-4-E2B-it-ONNX)
- * Fallback source: GitHub Releases  (manup-dev/themarkdownreader)
+ * Model: Qwen3-0.6B (q4f16 quantization, ~500MB download)
+ * Source: HuggingFace CDN (onnx-community/Qwen3-0.6B-ONNX)
  *
  * Exposes a simple async chat function matching the ChatMessage interface from ../ai.
+ *
+ * NOTE: File still named gemma-engine.ts for backwards compat — the public API
+ * names (loadGemmaModel, gemmaChat, etc.) are used across 20+ files.
  */
 
 import type { ChatMessage } from '../ai'
@@ -12,21 +15,26 @@ import { PROMPT_CONFIG } from '../prompts'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const HF_MODEL_ID = 'onnx-community/gemma-4-E2B-it-ONNX'
-const GH_BASE_URL =
-  'https://github.com/manup-dev/themarkdownreader/releases/download/models-v1'
+const HF_MODEL_ID = 'onnx-community/Qwen3-0.6B-ONNX'
+const MODEL_DTYPE = 'q4f16'
+const MODEL_DOWNLOAD_SIZE_MB = 500 // approximate, for user confirmation
 const LOAD_TIMEOUT_MS = 180_000
 const IDLE_TIMEOUT_MS = 60_000 // 1 minute — free GPU memory quickly
 
-/** Check if device has enough memory for Gemma (~1.5GB needed for q4 model) */
+/** Check if device has enough memory for model (~500MB needed for q4f16) */
 function hasEnoughMemory(): boolean {
   const nav = navigator as unknown as { deviceMemory?: number }
-  // deviceMemory reports GB of RAM (rounded). Skip Gemma on ≤4GB devices.
-  if (nav.deviceMemory && nav.deviceMemory <= 4) {
-    console.log(`[gemma-engine] Skipping — only ${nav.deviceMemory}GB device memory`)
+  // deviceMemory reports GB of RAM (rounded). Skip on ≤2GB devices.
+  if (nav.deviceMemory && nav.deviceMemory <= 2) {
+    console.log(`[browser-ai] Skipping — only ${nav.deviceMemory}GB device memory`)
     return false
   }
   return true
+}
+
+/** Estimated download size in MB (for UI confirmation dialogs) */
+export function getModelDownloadSizeMB(): number {
+  return MODEL_DOWNLOAD_SIZE_MB
 }
 let idleTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -34,7 +42,7 @@ function resetIdleTimer() {
   if (idleTimer) clearTimeout(idleTimer)
   idleTimer = setTimeout(() => {
     if (status === 'ready') {
-      console.log('[gemma-engine] Idle timeout — unloading model to free memory')
+      console.log('[browser-ai] Idle timeout — unloading model to free memory')
       unloadGemma()
     }
   }, IDLE_TIMEOUT_MS)
@@ -100,9 +108,37 @@ export function isGemmaHoldingGpu(): boolean {
   return w.__gpuModelLock === 'gemma'
 }
 
-export async function loadGemmaModel(): Promise<void> {
+/** Check if model weights are already cached in the browser */
+async function isModelCached(): Promise<boolean> {
+  try {
+    // Transformers.js uses the Cache API under the hood
+    const cacheNames = await caches.keys()
+    const tfCache = cacheNames.find(n => n.includes('transformers'))
+    if (!tfCache) return false
+    const cache = await caches.open(tfCache)
+    const keys = await cache.keys()
+    return keys.some(k => k.url.includes('Qwen3') || k.url.includes('qwen3'))
+  } catch { return false }
+}
+
+export async function loadGemmaModel(skipConfirmation = false): Promise<void> {
   if (status === 'ready') return
   if (loadPromise) return loadPromise
+
+  // Show download confirmation if model isn't cached yet
+  if (!skipConfirmation) {
+    const cached = await isModelCached()
+    if (!cached) {
+      const ok = window.confirm(
+        `This will download a ${MODEL_DOWNLOAD_SIZE_MB}MB AI model to run locally in your browser. ` +
+        `Once cached, it won't need to download again.\n\nContinue?`
+      )
+      if (!ok) {
+        throw new Error('User cancelled model download')
+      }
+    }
+  }
+
   if (!acquireGpuLock('gemma')) {
     status = 'failed'
     loadError = 'GPU busy (another model loading)'
@@ -153,37 +189,29 @@ async function _loadInner(): Promise<void> {
   env.allowLocalModels = false
   env.useBrowserCache = true
 
-  let modelSource: string = HF_MODEL_ID
-
-  // Step 1: load tokenizer — try HF first, fall back to GitHub Releases
+  // Step 1: load tokenizer
   notifyProgress({ status: 'loading', percent: 10, message: 'Loading tokenizer…' })
-  try {
-    tokenizer = await AutoTokenizer.from_pretrained(HF_MODEL_ID)
-  } catch (hfErr) {
-    console.warn('[gemma-engine] HF tokenizer load failed, trying GitHub fallback:', hfErr)
-    modelSource = GH_BASE_URL
-    tokenizer = await AutoTokenizer.from_pretrained(GH_BASE_URL)
-  }
+  tokenizer = await AutoTokenizer.from_pretrained(HF_MODEL_ID)
 
-  // Step 2: load model weights from the same source that succeeded for tokenizer
+  // Step 2: load model weights (q4f16 quantization)
   // Try WebGPU first; if context creation fails, fall back to WASM
   const progressCb = (p: { progress?: number }) => {
     const pct = p.progress != null ? 30 + Math.round(p.progress * 0.6) : undefined
-    notifyProgress({ status: 'loading', percent: pct, message: 'Loading ONNX weights…' })
+    notifyProgress({ status: 'loading', percent: pct, message: 'Downloading model weights…' })
   }
 
   notifyProgress({ status: 'loading', percent: 30, message: 'Loading ONNX weights (WebGPU)…' })
   try {
-    model = await AutoModelForCausalLM.from_pretrained(modelSource, {
-      dtype: 'q4',
+    model = await AutoModelForCausalLM.from_pretrained(HF_MODEL_ID, {
+      dtype: MODEL_DTYPE,
       device: 'webgpu',
       progress_callback: progressCb,
     })
   } catch (webgpuErr) {
-    console.warn('[gemma-engine] WebGPU context failed, falling back to WASM:', webgpuErr)
+    console.warn('[browser-ai] WebGPU context failed, falling back to WASM:', webgpuErr)
     notifyProgress({ status: 'loading', percent: 30, message: 'Loading ONNX weights (WASM)…' })
-    model = await AutoModelForCausalLM.from_pretrained(modelSource, {
-      dtype: 'q4',
+    model = await AutoModelForCausalLM.from_pretrained(HF_MODEL_ID, {
+      dtype: MODEL_DTYPE,
       device: 'wasm',
       progress_callback: progressCb,
     })
@@ -226,7 +254,7 @@ export async function gemmaChat(
   }
 
   if (!tokenizer || !model) {
-    throw new Error('Gemma model not loaded')
+    throw new Error('Browser model not loaded')
   }
 
   // Format messages into a single prompt string using the chat template
@@ -280,7 +308,7 @@ export async function gemmaChat(
   }
 
   // Decode the full output, stripping special tokens
-  // Gemma returns full sequence (prompt + completion); slice off the prompt
+  // Model returns full sequence (prompt + completion); slice off the prompt
   const outputTensor = output[0] ?? output
   // data may be BigInt64Array (WebGPU path) or Int32Array (WASM path)
   const rawData = outputTensor.data as ArrayLike<bigint | number>

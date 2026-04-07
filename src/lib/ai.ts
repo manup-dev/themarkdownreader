@@ -12,7 +12,7 @@ import { getModelState, waitForReady } from './inference/model-manager'
 
 const OLLAMA_BASE_URL = (typeof localStorage !== 'undefined' && localStorage.getItem('md-reader-ollama-url')) || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_OLLAMA_URL) || 'http://localhost:11434'
 export function getOllamaBaseUrl(): string { return OLLAMA_BASE_URL }
-const OLLAMA_MODEL = 'qwen2.5:1.5b'
+const OLLAMA_MODEL = 'qwen3:0.6b'
 const OLLAMA_TIMEOUT = 90000
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1/chat/completions'
@@ -643,4 +643,4 @@ export async function listModels(): Promise<string[]> {
 }
 
 export { getModelState, onModelProgress, preloadGemma } from './inference/model-manager'
-export { getGemmaStatus, unloadGemma } from './inference/gemma-engine'
+export { getGemmaStatus, unloadGemma, getModelDownloadSizeMB } from './inference/gemma-engine'

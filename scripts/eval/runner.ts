@@ -22,6 +22,8 @@ const __dirname = path.dirname(__filename)
 
 // const BASE_URL = process.env.EVAL_URL || 'http://localhost:5183' // reserved for future browser-based evals
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11435'
+const INFERENCE_MODEL = process.env.EVAL_MODEL || 'qwen2.5:1.5b'
+const JUDGE_MODEL = 'qwen2.5:1.5b' // always use 1.5b as judge
 const RESULTS_DIR = path.join(__dirname, 'results')
 const CORPUS_DIR = path.join(__dirname, 'test-corpus')
 const GROUND_TRUTH = JSON.parse(fs.readFileSync(path.join(__dirname, 'ground-truth.json'), 'utf-8'))
@@ -192,7 +194,7 @@ async function keepWarm() {
     await fetch(`${OLLAMA_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'qwen2.5:1.5b', messages: [{ role: 'user', content: 'ok' }], stream: false, keep_alive: '60m' }),
+      body: JSON.stringify({ model: INFERENCE_MODEL, messages: [{ role: 'user', content: 'ok' }], stream: false, keep_alive: '60m' }),
       signal: AbortSignal.timeout(300000),
     })
   } catch { /* ignore */ }
@@ -205,7 +207,7 @@ async function aiJudge(prompt: string): Promise<{ score: number; reasoning: stri
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'qwen2.5:1.5b',
+        model: JUDGE_MODEL,
         messages: [
           { role: 'system', content: 'You are an evaluation judge. Score the quality on a scale of 0-100. Respond with ONLY valid JSON: {"score": N, "reasoning": "..."}' },
           { role: 'user', content: prompt },
@@ -241,7 +243,7 @@ async function evalSummarization(testCase: Record<string, unknown>): Promise<Eva
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'qwen2.5:1.5b',
+        model: INFERENCE_MODEL,
         messages: [
           { role: 'system', content: PROMPTS.summarize },
           { role: 'user', content: md.slice(0, PROMPT_CONFIG.summarizeMaxInput) },
@@ -326,7 +328,7 @@ async function evalQA(testCase: Record<string, unknown>): Promise<EvalResult> {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'qwen2.5:1.5b',
+          model: INFERENCE_MODEL,
           messages: [
             { role: 'system', content: PROMPTS.askDocument },
             { role: 'user', content: `Context:\n${context}\n\nQuestion: ${q.question}` },
@@ -388,7 +390,7 @@ async function evalKnowledgeGraph(testCase: Record<string, unknown>): Promise<Ev
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'qwen2.5:1.5b',
+        model: INFERENCE_MODEL,
         messages: [
           { role: 'system', content: PROMPTS.extractConcepts },
           { role: 'user', content: md.slice(0, PROMPT_CONFIG.conceptsMaxInput) },
@@ -511,7 +513,7 @@ async function evalCoach(testCase: Record<string, unknown>): Promise<EvalResult>
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'qwen2.5:1.5b',
+        model: INFERENCE_MODEL,
         messages: [
           { role: 'system', content: PROMPTS.coach },
           { role: 'user', content: md.slice(0, PROMPT_CONFIG.coachMaxInput) },
@@ -608,7 +610,7 @@ async function evalCrossDocQA(testCase: Record<string, unknown>): Promise<EvalRe
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'qwen2.5:1.5b',
+          model: INFERENCE_MODEL,
           messages: [
             { role: 'system', content: PROMPTS.askDocument },
             { role: 'user', content: `Context:\n${context}\n\nQuestion: ${q.question}` },
@@ -781,7 +783,7 @@ async function evalPodcastOutline(testCase: Record<string, unknown>): Promise<Ev
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'qwen2.5:1.5b',
+        model: INFERENCE_MODEL,
         messages: [
           { role: 'system', content: PROMPTS.podcastOutline },
           { role: 'user', content: md.slice(0, PROMPT_CONFIG.podcastOutlineMaxInput) },
@@ -867,7 +869,7 @@ async function evalPodcastScript(testCase: Record<string, unknown>): Promise<Eva
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'qwen2.5:1.5b',
+        model: INFERENCE_MODEL,
         messages: [
           { role: 'system', content: PROMPTS.podcastScript },
           { role: 'user', content: `Theme: ${theme}\n\nSource material:\n${md.slice(0, PROMPT_CONFIG.podcastScriptMaxInput)}` },
@@ -951,7 +953,7 @@ async function evalPodcastScript(testCase: Record<string, unknown>): Promise<Eva
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'qwen2.5:1.5b',
+        model: JUDGE_MODEL,
         messages: [
           { role: 'system', content: 'You are an evaluation judge. Score this podcast transcript on a scale of 0-100 for naturalness and engagement. Does it sound like real people talking, or robots reading? Are there genuine reactions, questions, and back-and-forth? Respond with ONLY valid JSON: {"score": N, "reasoning": "..."}' },
           { role: 'user', content: scriptRaw },
@@ -1000,7 +1002,7 @@ async function evalPodcastAccuracy(testCase: Record<string, unknown>): Promise<E
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'qwen2.5:1.5b',
+        model: INFERENCE_MODEL,
         messages: [
           { role: 'system', content: PROMPTS.podcastOutline },
           { role: 'user', content: md.slice(0, PROMPT_CONFIG.podcastOutlineMaxInput) },
@@ -1029,7 +1031,7 @@ async function evalPodcastAccuracy(testCase: Record<string, unknown>): Promise<E
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'qwen2.5:1.5b',
+        model: INFERENCE_MODEL,
         messages: [
           { role: 'system', content: PROMPTS.podcastScript },
           { role: 'user', content: `Theme: ${theme}\n\nSource material:\n${md.slice(0, PROMPT_CONFIG.podcastScriptMaxInput)}` },
@@ -1083,6 +1085,8 @@ async function evalPodcastAccuracy(testCase: Record<string, unknown>): Promise<E
 
 async function runEvals() {
   console.log('🔍 md-reader Evaluation System')
+  console.log(`  Inference model: ${INFERENCE_MODEL}`)
+  console.log(`  Judge model:     ${JUDGE_MODEL}`)
   console.log('━'.repeat(60))
 
   const startAll = Date.now()
@@ -1193,9 +1197,10 @@ async function runEvals() {
   }
 
   // Save results
-  const reportPath = path.join(RESULTS_DIR, `eval-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)
+  const modelSlug = INFERENCE_MODEL.replace(/[/:]/g, '-')
+  const reportPath = path.join(RESULTS_DIR, `eval-${modelSlug}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)
   fs.mkdirSync(RESULTS_DIR, { recursive: true })
-  fs.writeFileSync(reportPath, JSON.stringify({ timestamp: new Date().toISOString(), results, summary: { total: results.length, passed, failed, skipped, avgScore } }, null, 2))
+  fs.writeFileSync(reportPath, JSON.stringify({ timestamp: new Date().toISOString(), model: INFERENCE_MODEL, results, summary: { total: results.length, passed, failed, skipped, avgScore } }, null, 2))
   console.log(`\n  📁 Full report saved to: ${reportPath}`)
   console.log('━'.repeat(60))
 }

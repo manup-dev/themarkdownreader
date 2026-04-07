@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Key, Server, Zap, Check, X, Eye, EyeOff, ExternalLink, Settings, BarChart3, Brain, Trash2, FlaskConical } from 'lucide-react'
 import { setApiKey, getApiKey, clearApiKey, detectBestBackend, getActiveBackend, checkOllamaHealth, getPreferredBackend, setPreferredBackend } from '../lib/ai'
 import { getModelState, onModelProgress, preloadGemma } from '../lib/inference/model-manager'
-import { unloadGemma } from '../lib/inference/gemma-engine'
+import { unloadGemma, getModelDownloadSizeMB } from '../lib/inference/gemma-engine'
 import { RefreshCw } from 'lucide-react'
 import { isTelemetryEnabled, enableTelemetry, disableTelemetry, exportTelemetry, clearTelemetry, TRACKED_EVENTS } from '../lib/telemetry'
 import { getStorageBreakdown, MAX_STORAGE_MB, runEviction } from '../lib/storage-manager'
@@ -16,7 +16,7 @@ const LS_OLLAMA_URL = 'md-reader-ollama-url'
 type Backend = 'gemma4' | 'openrouter' | 'ollama' | 'webllm' | 'none'
 
 const backendMeta: Record<Backend, { label: string; color: string }> = {
-  gemma4: { label: 'Gemma 4', color: 'bg-blue-600' },
+  gemma4: { label: 'Qwen3 0.6B', color: 'bg-blue-600' },
   openrouter: { label: 'OpenRouter', color: 'bg-purple-500' },
   ollama: { label: 'Ollama', color: 'bg-green-500' },
   webllm: { label: 'WebLLM', color: 'bg-blue-500' },
@@ -111,9 +111,9 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
           }}
           className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-xs text-gray-800 dark:text-gray-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
         >
-          <option value="auto">Auto (Gemma 4 → WebLLM → Ollama → Cloud)</option>
-          <option value="gemma4">Gemma 4 E2B (in-browser)</option>
-          <option value="webllm">WebLLM Qwen2.5 (in-browser, lighter)</option>
+          <option value="auto">Auto (Browser AI → Ollama → Cloud)</option>
+          <option value="gemma4">Qwen3 0.6B (in-browser, ~{getModelDownloadSizeMB()}MB)</option>
+          <option value="webllm">WebLLM Qwen2.5 (in-browser, legacy)</option>
           <option value="ollama">Ollama (local server)</option>
           <option value="openrouter">OpenRouter (cloud API)</option>
         </select>
@@ -123,12 +123,12 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-gray-400">
-            Gemma 4: {gemmaState.status === 'ready' ? 'Cached & ready' : gemmaState.status === 'downloading' ? `Downloading (${Math.round(gemmaState.progress * 100)}%)` : gemmaState.status === 'failed' ? 'Failed to load' : 'Not loaded'}
+            Browser AI: {gemmaState.status === 'ready' ? 'Cached & ready' : gemmaState.status === 'downloading' ? `Downloading (${Math.round(gemmaState.progress * 100)}%)` : gemmaState.status === 'failed' ? 'Failed to load' : 'Not loaded'}
           </span>
           {gemmaState.status === 'ready' && (
             <button
               onClick={() => {
-                if (window.confirm('Clear cached Gemma 4 model? It will re-download next time.')) {
+                if (window.confirm('Clear cached browser AI model? It will re-download next time (~' + getModelDownloadSizeMB() + 'MB).')) {
                   unloadGemma()
                   setGemmaState({ status: 'idle', progress: 0, progressText: '' })
                 }

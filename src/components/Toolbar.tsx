@@ -5,7 +5,6 @@ import { AiLoadingIndicator } from './AiLoadingIndicator'
 import { useStore, type Theme, type ViewMode } from '../store/useStore'
 import { addDocument } from '../lib/docstore'
 import { getActiveBackend } from '../lib/ai'
-import { preloadGemma } from '../lib/inference/model-manager'
 import { trackEvent } from '../lib/telemetry'
 import { isViewModeGated } from '../lib/feature-flags'
 
@@ -68,11 +67,6 @@ export function Toolbar() {
 
   const isWorkspaceView = viewMode === 'workspace' || viewMode === 'cross-doc-graph' || viewMode === 'correlation' || viewMode === 'similarity-map' || viewMode === 'collection'
   const showDocTabs = markdown && !isWorkspaceView
-
-  // Start Gemma 4 background preload after first render
-  useEffect(() => {
-    preloadGemma()
-  }, [])
 
   // Close dropdowns on click outside
   useEffect(() => {

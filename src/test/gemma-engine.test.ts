@@ -44,6 +44,8 @@ import {
 beforeEach(async () => {
   await unloadGemma()
   vi.clearAllMocks()
+  // Auto-confirm download dialogs in tests
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
   // Re-wire mocks after clearAllMocks
   mockAutoTokenizer.from_pretrained.mockResolvedValue(mockTokenizer)
   mockAutoModel.from_pretrained.mockResolvedValue({ generate: mockGenerate })
@@ -108,7 +110,7 @@ describe('loadGemmaModel', () => {
   it('calls AutoTokenizer.from_pretrained with HF model id', async () => {
     await loadGemmaModel()
     expect(mockAutoTokenizer.from_pretrained).toHaveBeenCalledWith(
-      'onnx-community/gemma-4-E2B-it-ONNX',
+      'onnx-community/Qwen3-0.6B-ONNX',
     )
   })
 
@@ -123,16 +125,6 @@ describe('loadGemmaModel', () => {
     expect(mockAutoTokenizer.from_pretrained).toHaveBeenCalledTimes(1)
   })
 
-  it('falls back to GitHub Releases URL when HF tokenizer fails', async () => {
-    mockAutoTokenizer.from_pretrained
-      .mockRejectedValueOnce(new Error('Network error'))
-      .mockResolvedValueOnce(mockTokenizer)
-
-    await loadGemmaModel()
-    expect(mockAutoTokenizer.from_pretrained).toHaveBeenCalledTimes(2)
-    const secondCall = mockAutoTokenizer.from_pretrained.mock.calls[1][0] as string
-    expect(secondCall).toContain('github.com')
-  })
 })
 
 describe('onGemmaProgress', () => {
