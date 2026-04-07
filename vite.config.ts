@@ -1,24 +1,14 @@
-import { defineConfig, type PluginOption } from 'vite'
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import fs from 'fs'
 import path from 'path'
 
-// Load visualizer only when ANALYZE is set — avoids crash when not installed (e.g. Docker)
-async function getAnalyzerPlugin(): Promise<PluginOption[]> {
-  if (!process.env.ANALYZE) return []
-  try {
-    const { visualizer } = await import('rollup-plugin-visualizer')
-    return [visualizer({ open: true, gzipSize: true, filename: 'dist/bundle-stats.html' })]
-  } catch { return [] }
-}
-
-export default defineConfig(async () => ({
+export default defineConfig({
   base: process.env.GITHUB_ACTIONS ? '/themarkdownreader/' : '/',
   plugins: [
     react(),
     tailwindcss(),
-    ...(await getAnalyzerPlugin()),
     {
       name: 'md-reader-file-api',
       configureServer(server) {
@@ -83,4 +73,4 @@ export default defineConfig(async () => ({
       },
     },
   },
-}))
+})

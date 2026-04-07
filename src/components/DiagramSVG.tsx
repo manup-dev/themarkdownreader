@@ -8,7 +8,6 @@ import type { DiagramDSL, DiagramNode, DiagramEdge } from '../lib/excalidraw-con
 
 const NODE_H = 44
 const PAD_X = 20
-const PAD_Y = 12
 const GAP_X = 140
 const GAP_Y = 100
 const ARROW_GAP = 8
@@ -285,7 +284,6 @@ export function DiagramSVG({ dsl }: DiagramSVGProps) {
           const pos = positions.get(node.id)
           if (!pos) return null
           const color = COLORS[i % COLORS.length]
-          const textColor = isDark ? '#f8f9fa' : '#212529'
           return (
             <g key={node.id}>
               {nodeShape(node.style, pos, color, isDark)}

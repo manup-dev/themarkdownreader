@@ -204,9 +204,10 @@ async function _loadMainThread(device: string, dtype: string): Promise<void> {
 
     try {
       fallbackEngine = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
-        dtype,
-        device,
-        progress_callback: (p: { progress?: number }) => {
+        dtype: dtype as 'q8',
+        device: device as 'webgpu',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        progress_callback: (p: any) => {
           if (p.progress != null) {
             progressCb?.(15 + Math.round(p.progress * 0.8), `Downloading voice model (${device})...`)
           }
@@ -219,7 +220,8 @@ async function _loadMainThread(device: string, dtype: string): Promise<void> {
         fallbackEngine = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
           dtype: 'q8',
           device: 'wasm',
-          progress_callback: (p: { progress?: number }) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          progress_callback: (p: any) => {
             if (p.progress != null) {
               progressCb?.(15 + Math.round(p.progress * 0.8), 'Downloading voice model (WASM)...')
             }

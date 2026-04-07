@@ -75,7 +75,6 @@ function layoutPositions(
     })
   } else if (type === 'mindmap') {
     // Radial layout: center node + spokes
-    const centerW = nodeWidth(nodes[0]?.label ?? '')
     const cx = 400, cy = 400
     const count = nodes.length - 1
     const radius = Math.max(250, count * 40)

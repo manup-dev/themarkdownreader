@@ -522,7 +522,6 @@ export async function generateDeepPodcast(
 
     if (uniqueThemes.length === 0) continue
 
-    const theme = uniqueThemes[0]
     const sourceText = relatedDoc.markdown.slice(0, PROMPT_CONFIG.podcastDeepMaxInput)
     const previousThemesSummary = analysis.themes.map(t => t.title).join(', ')
 

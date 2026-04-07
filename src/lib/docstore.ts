@@ -888,7 +888,7 @@ export async function cacheAudioSegment(contentHash: string, segmentIndex: numbe
   await db.audioCache.put({
     contentHash,
     segmentIndex,
-    pcm: pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength),
+    pcm: (pcm.buffer as ArrayBuffer).slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength),
     sampleRate,
     createdAt: Date.now(),
   })

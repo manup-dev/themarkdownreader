@@ -27,7 +27,8 @@ self.onmessage = async (e: MessageEvent) => {
         tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
           dtype,
           device,
-          progress_callback: (p: { progress?: number }) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          progress_callback: (p: any) => {
             if (p.progress != null) {
               self.postMessage({ type: 'progress', id, pct: p.progress, text: `Loading voice model (${device})...` })
             }
