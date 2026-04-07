@@ -348,6 +348,7 @@ function App() {
       },
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(window as any).mdReader = { ...(window as any).mdReader, ...api }
   }, [])
 

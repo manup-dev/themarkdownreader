@@ -7,9 +7,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ─── Mock @huggingface/transformers ──────────────────────────────────────────
 
-const mockDecode = vi.fn((ids: number[], _opts?: unknown) => ids.map(() => 'word').join(' '))
-const mockApplyChatTemplate = vi.fn((_msgs: unknown, _opts?: unknown) => 'formatted prompt')
-const mockTokenizer = vi.fn((_text: string, _opts?: unknown) => ({
+const mockDecode = vi.fn((ids: number[]) => ids.map(() => 'word').join(' '))
+const mockApplyChatTemplate = vi.fn(() => 'formatted prompt')
+const mockTokenizer = vi.fn(() => ({
   input_ids: { dims: [1, 5], data: new Int32Array([1, 2, 3, 4, 5]) },
 }))
 Object.assign(mockTokenizer, { apply_chat_template: mockApplyChatTemplate, decode: mockDecode })
