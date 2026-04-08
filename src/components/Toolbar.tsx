@@ -69,21 +69,24 @@ export function Toolbar() {
   const showDocTabs = markdown && !isWorkspaceView
 
   // Close dropdowns on click outside
+  // Use 'click' (not 'mousedown') so native <select> dropdowns and
+  // window.confirm dialogs don't trigger premature close
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (showAppearance && appearanceRef.current && !appearanceRef.current.contains(e.target as Node)) {
+      const target = e.target as Node
+      if (showAppearance && appearanceRef.current && !appearanceRef.current.contains(target)) {
         setShowAppearance(false)
       }
-      if (showMode && modeRef.current && !modeRef.current.contains(e.target as Node)) {
+      if (showMode && modeRef.current && !modeRef.current.contains(target)) {
         setShowMode(false)
       }
-      if (showSettings && settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+      if (showSettings && settingsRef.current && !settingsRef.current.contains(target)) {
         setShowSettings(false)
         setAiBackend(getActiveBackend())
       }
     }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
   }, [showAppearance, showMode, showSettings])
 
   const handleRename = useCallback(() => {
@@ -397,7 +400,7 @@ export function Toolbar() {
 
           {/* AI Settings dropdown panel */}
           {showSettings && (
-            <div className="absolute right-0 top-full mt-1 w-80 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-xl z-50">
+            <div className="absolute right-0 top-full mt-1 w-80 max-h-[calc(100vh-4rem)] overflow-y-auto bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-xl z-50">
               <AiSettings onClose={() => { setShowSettings(false); setAiBackend(getActiveBackend()) }} />
             </div>
           )}
