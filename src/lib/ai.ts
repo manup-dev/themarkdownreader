@@ -367,17 +367,23 @@ export async function chatFast(
     : signalOrOpts ?? {}
   const { signal, onToken: tokenCb, maxTokens } = { onToken, ...opts }
 
-  // If Gemma is ready (already loaded), use it
-  const modelState = getModelState()
-  if (activeBackend === 'gemma4' && modelState.status === 'ready') {
-    try { return await gemmaChat(messages, tokenCb, signal) } catch { /* fall through */ }
+  // If browser model is the selected backend, use it (load on-demand if needed)
+  if (activeBackend === 'gemma4') {
+    const modelState = getModelState()
+    if (modelState.status === 'ready') {
+      try { return await gemmaChat(messages, tokenCb, signal) } catch { /* fall through */ }
+    } else {
+      // Browser model selected but not loaded — try cloud backends first for speed,
+      // but if none available, load the browser model (triggers download dialog)
+      if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, maxTokens)
+      if (await checkOpenRouter()) return chatOpenRouterStream(messages, tokenCb, signal, maxTokens)
+      return chat(messages, signal, tokenCb)
+    }
   }
 
-  // Otherwise skip Gemma entirely — use fastest available
+  // Non-browser backends
   if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, maxTokens)
   if (await checkOpenRouter()) return chatOpenRouterStream(messages, tokenCb, signal, maxTokens)
-
-  // Last resort: wait for Gemma (no other option)
   return chat(messages, signal, tokenCb)
 }
 
