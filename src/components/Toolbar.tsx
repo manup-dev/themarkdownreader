@@ -233,7 +233,7 @@ export function Toolbar() {
               <ChevronDown className={`h-3 w-3 transition-transform ${showAppearance ? 'rotate-180' : ''}`} />
             </button>
             {showAppearance && (
-              <div className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-xl p-3 z-50">
+              <div onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-xl p-3 z-50">
                 {/* Themes */}
                 <div className="text-[10px] uppercase tracking-wider text-gray-400 mb-1.5 font-medium">Theme</div>
                 <div className="flex items-center gap-1 mb-3">
@@ -306,7 +306,7 @@ export function Toolbar() {
               <ChevronDown className={`h-3 w-3 transition-transform ${showMode ? 'rotate-180' : ''}`} />
             </button>
             {showMode && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-xl p-1.5 z-50">
+              <div onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-xl p-1.5 z-50">
                 {viewMode === 'read' && markdown && (
                   <>
                     <button
@@ -400,7 +400,7 @@ export function Toolbar() {
 
           {/* AI Settings dropdown panel */}
           {showSettings && (
-            <div className="absolute right-0 top-full mt-1 w-80 max-h-[calc(100vh-4rem)] overflow-y-auto bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-xl z-50">
+            <div onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} className="absolute right-0 top-full mt-1 w-80 max-h-[calc(100vh-4rem)] overflow-y-auto bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-xl z-50">
               <AiSettings onClose={() => { setShowSettings(false); setAiBackend(getActiveBackend()) }} />
             </div>
           )}
