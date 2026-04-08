@@ -429,8 +429,6 @@ function LabsSection() {
   const enabledFeatures = useStore((s) => s.enabledFeatures)
   const toggleFeature = useStore((s) => s.toggleFeature)
 
-  if (enabledFeatures.size === 0) return null
-
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1.5">
