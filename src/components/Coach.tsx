@@ -73,7 +73,7 @@ export function CoachView() {
       setCompletedSections((prev) => new Set([...prev, sectionIndex]))
       trackEvent('ai_coach')
     } catch {
-      setCoaching('Could not generate coaching. Make sure Ollama is running.')
+      setCoaching('Could not generate coaching. Check your AI backend settings.')
     }
     setLoadingCoach(false)
   }, [currentChunk, fileName, loadingCoach, sectionIndex])
@@ -163,8 +163,8 @@ export function CoachView() {
           <GraduationCap className="h-12 w-12 text-gray-300 dark:text-gray-600 mx-auto" />
           <h3 className="text-lg font-semibold text-gray-600 dark:text-gray-300">Visual Coach</h3>
           <p className="text-gray-400 text-sm max-w-md">
-            The coach needs Ollama to explain sections, create analogies, and quiz you.
-            Make sure Ollama is running on localhost:11434.
+            The coach needs an AI backend to explain sections, create analogies, and quiz you.
+            Configure Ollama, an OpenRouter API key, or use a browser with WebGPU support.
           </p>
         </div>
       </div>

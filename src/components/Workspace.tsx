@@ -210,7 +210,7 @@ export function Workspace() {
       setSearchAnswer(answer)
       setSearchResults(sources)
     } catch {
-      setSearchAnswer('Search failed. Make sure Ollama is running.')
+      setSearchAnswer('Search failed. Check your AI backend settings.')
     }
     setSearching(false)
   }, [searchQuery])
