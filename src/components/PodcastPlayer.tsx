@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Play, Pause, Square, SkipForward, SkipBack, Mic, Loader2, ChevronDown, Sparkles, Volume2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { generatePodcast, generateDeepPodcast, buildPodcastSegments, type PodcastScript, type PodcastSegment } from '../lib/podcast'
+import { generatePodcast, generateDeepPodcast, buildPodcastSegments, type PodcastScript, type PodcastSegment, type PodcastDuration } from '../lib/podcast'
 import { getAnalysisByDocId, getCachedAudio, cacheAudioSegment } from '../lib/docstore'
 import type { DocumentAnalysis } from '../lib/docstore'
 import { isKokoroReady, loadKokoro, synthesize, playPcm, getKokoroStatus, closeAudioContext } from '../lib/kokoro-tts'
@@ -30,6 +30,7 @@ export function PodcastPlayer() {
     getKokoroStatus() === 'ready' ? 'kokoro' : 'browser'
   )
   const [kokoroLoading, setKokoroLoading] = useState(false)
+  const [duration, setDuration] = useState<PodcastDuration>('quick')
 
   const synthRef = useRef(window.speechSynthesis)
   const abortRef = useRef<AbortController | null>(null)
@@ -313,6 +314,7 @@ export function PodcastPlayer() {
         abortRef.current.signal,
         {
           docId: activeDocId ?? undefined,
+          duration,
           // Progressive playback: show Play button once we have enough content
           onLinesReady: (lines) => {
             const partialSegments = buildPodcastSegments(lines, fileName ?? 'document')
@@ -351,7 +353,7 @@ export function PodcastPlayer() {
         console.error('Podcast generation failed:', err)
       }
     }
-  }, [markdown, fileName, activeDocId, script, setScript])
+  }, [markdown, fileName, activeDocId, script, setScript, duration])
 
   const handlePlay = useCallback(() => {
     if (!script) {
@@ -410,6 +412,25 @@ export function PodcastPlayer() {
             Two AI hosts will discuss the key ideas in <span className="text-gray-300">{fileName ?? 'your document'}</span> — like listening to a conversation about what you're reading.
           </p>
         </div>
+        {/* Duration selector */}
+        <div className="flex items-center gap-1 p-1 bg-gray-800 rounded-full">
+          <button
+            onClick={() => setDuration('quick')}
+            className={`px-4 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              duration === 'quick' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            Quick (~2 min)
+          </button>
+          <button
+            onClick={() => setDuration('detailed')}
+            className={`px-4 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              duration === 'detailed' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            Detailed (~10 min)
+          </button>
+        </div>
         <button
           onClick={handleGenerate}
           className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-full hover:bg-purple-700 transition-colors text-sm font-medium"
@@ -418,8 +439,8 @@ export function PodcastPlayer() {
           Generate Podcast
         </button>
         <div className="flex items-center gap-4 text-xs text-gray-500">
-          <span>~30s to generate</span>
-          <span>~2 min listen</span>
+          <span>{duration === 'detailed' ? '~2-3 min' : '~30s'} to generate</span>
+          <span>{duration === 'detailed' ? '~10-15 min' : '~2 min'} listen</span>
           <span>Powered by AI</span>
         </div>
       </div>

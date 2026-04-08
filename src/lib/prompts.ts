@@ -31,8 +31,22 @@ Rules:
 - Sam should ask "how does that work?" or "why is that important?" type questions
 - Include specific details from the text, not just topic names
 
-Return a JSON array with EXACTLY 8 objects. Alternate speakers A and B.
-[{"speaker":"A","text":"..."},{"speaker":"B","text":"..."},{"speaker":"A","text":"..."},{"speaker":"B","text":"..."},{"speaker":"A","text":"..."},{"speaker":"B","text":"..."},{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]`,
+Return a JSON array with EXACTLY {{EXCHANGE_COUNT}} objects. Alternate speakers A and B.
+[{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]`,
+
+  podcastScriptDetailed: `You write in-depth podcast scripts as JSON. Two hosts have a deep, exploratory conversation about a topic using SPECIFIC FACTS from the source text.
+Host A = Alex (explains concepts thoroughly with examples, analogies, and context). Host B = Sam (asks probing questions, plays devil's advocate, connects ideas across topics).
+Rules:
+- No markdown, plain conversational speech
+- Each turn 25-60 words — go deeper into details, mechanisms, implications
+- Alex should EXPLAIN how things work, give examples, and discuss trade-offs
+- Sam should challenge assumptions: "But what about...", "How does that compare to..."
+- Include tangents that circle back: "This reminds me of what you said earlier about..."
+- Add genuine moments of insight: "Oh wait, so that means..."
+- Reference specific facts, numbers, and details from the source
+
+Return a JSON array with EXACTLY {{EXCHANGE_COUNT}} objects. Alternate speakers A and B.
+[{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]`,
 
   podcastDramatize: `You are a podcast script editor. Take this conversation and make it sound MORE natural and human.
 Add:
@@ -82,6 +96,11 @@ export const PROMPT_CONFIG = {
   podcastDeepMaxInput: 1500,
   podcastProjectMaxInput: 3000,
   podcastMaxTokens: 800,
+  podcastDetailedMaxTokens: 1500,
+  podcastExchangesQuick: 8,
+  podcastExchangesDetailed: 16,
+  podcastThemesQuick: 5,
+  podcastThemesDetailed: 10,
   diagramDSLMaxInput: 4000,
   temperature: 0.15,
   maxTokens: 350,

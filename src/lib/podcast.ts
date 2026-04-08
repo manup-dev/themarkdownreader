@@ -269,6 +269,7 @@ async function generateThemeScript(
   markdown: string,
   signal?: AbortSignal,
   onLine?: (line: ScriptLine) => void,
+  duration: PodcastDuration = 'quick',
 ): Promise<ScriptLine[]> {
   let relevantText = ''
 
@@ -309,8 +310,13 @@ async function generateThemeScript(
       .slice(0, PROMPT_CONFIG.podcastScriptMaxInput)
   }
 
+  const exchangeCount = duration === 'detailed' ? PROMPT_CONFIG.podcastExchangesDetailed : PROMPT_CONFIG.podcastExchangesQuick
+  const maxTokens = duration === 'detailed' ? PROMPT_CONFIG.podcastDetailedMaxTokens : PROMPT_CONFIG.podcastMaxTokens
+  const promptTemplate = duration === 'detailed' ? PROMPTS.podcastScriptDetailed : PROMPTS.podcastScript
+  const prompt = promptTemplate.replace('{{EXCHANGE_COUNT}}', String(exchangeCount))
+
   const scriptMessages: ChatMessage[] = [
-    { role: 'system', content: PROMPTS.podcastScript },
+    { role: 'system', content: prompt },
     { role: 'user', content: `Theme: ${theme}\n\nSource material:\n${relevantText}` },
   ]
 
@@ -319,7 +325,7 @@ async function generateThemeScript(
     const parser = new IncrementalScriptParser(onLine)
     const scriptRaw = await chatFast(scriptMessages, {
       signal,
-      maxTokens: PROMPT_CONFIG.podcastMaxTokens,
+      maxTokens,
       onToken: (token) => parser.push(token),
     })
     // Flush any remaining lines not caught by incremental parsing
@@ -331,16 +337,19 @@ async function generateThemeScript(
     return all.length > 0 ? all : remaining
   }
 
-  const scriptRaw = await chatFast(scriptMessages, { signal, maxTokens: PROMPT_CONFIG.podcastMaxTokens })
+  const scriptRaw = await chatFast(scriptMessages, { signal, maxTokens })
   return parsePodcastScript(scriptRaw)
 }
 
 // ─── Main Generation (streaming architecture) ────────────────────────────────
 
+export type PodcastDuration = 'quick' | 'detailed'
+
 export interface GenerateOptions {
   docId?: number
   scope?: 'single' | 'deep' | 'project'
   persona?: PodcastScript['persona']
+  duration?: PodcastDuration
   /** Called after each theme completes — enables progressive playback */
   onLinesReady?: (lines: ScriptLine[]) => void
   /** Called per individual ScriptLine as LLM streams it — enables real-time TTS pre-synthesis */
@@ -359,13 +368,14 @@ export async function generatePodcast(
 
   const scope = options?.scope ?? 'single'
   const persona = options?.persona ?? 'overview'
+  const duration = options?.duration ?? 'quick'
   const contentHash = await hashContent(markdown)
 
   // Check cache
   const allCached = await db.podcastScripts.where('contentHash').equals(contentHash).toArray()
   const cached = allCached.find((c) => {
-    const s = c as unknown as PodcastScript
-    return s.scope === scope && s.persona === persona
+    const s = c as unknown as PodcastScript & { duration?: string }
+    return s.scope === scope && s.persona === persona && (s.duration ?? 'quick') === duration
   })
   if (cached) return cached as unknown as PodcastScript
 
@@ -389,7 +399,7 @@ export async function generatePodcast(
     .filter(c => /^#{2,3}\s/.test(c.text))
     .map(c => c.text.replace(/^#{1,6}\s+/, '').trim())
     .filter(h => h.length > 3)
-    .slice(0, 5)
+    .slice(0, duration === 'detailed' ? PROMPT_CONFIG.podcastThemesDetailed : PROMPT_CONFIG.podcastThemesQuick)
 
   if (headings.length >= 2) {
     themes = headings
@@ -438,7 +448,7 @@ export async function generatePodcast(
     const batchPromises = []
     for (let i = batch; i < batchEnd; i++) {
       batchPromises.push(
-        generateThemeScript(themes[i], analysis, i, markdown, signal, options?.onLineStreamed)
+        generateThemeScript(themes[i], analysis, i, markdown, signal, options?.onLineStreamed, duration)
           .then(lines => { themeResults[i] = lines })
       )
     }
