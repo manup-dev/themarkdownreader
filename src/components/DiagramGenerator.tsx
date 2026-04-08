@@ -83,8 +83,10 @@ export function DiagramGenerator() {
     const a = document.createElement('a')
     a.href = url
     a.download = `${(fileName ?? 'diagram').replace(/\.md$/, '')}.excalidraw`
+    document.body.appendChild(a)
     a.click()
-    URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
   }, [dsl, fileName])
 
   const excalidrawElements = dsl && viewMode === 'excalidraw' ? dslToExcalidraw(dsl) : null
