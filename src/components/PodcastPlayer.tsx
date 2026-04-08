@@ -13,11 +13,14 @@ export function PodcastPlayer() {
   const markdown = useStore(s => s.markdown)
   const fileName = useStore(s => s.fileName)
   const activeDocId = useStore(s => s.activeDocId)
+  const cachedScript = useStore(s => s.podcastScript)
+  const setCachedScript = useStore(s => s.setPodcastScript)
 
   const [state, setState] = useState<PlaybackState>('idle')
   const [progress, setProgress] = useState('')
   const [progressPct, setProgressPct] = useState(0)
-  const [script, setScript] = useState<PodcastScript | null>(null)
+  const script = cachedScript
+  const setScript = setCachedScript
   const [currentSegIdx, setCurrentSegIdx] = useState(0)
   const [speed, setSpeed] = useState(1.0)
   const [showTranscript, setShowTranscript] = useState(false)
@@ -348,7 +351,7 @@ export function PodcastPlayer() {
         console.error('Podcast generation failed:', err)
       }
     }
-  }, [markdown, fileName, activeDocId, script])
+  }, [markdown, fileName, activeDocId, script, setScript])
 
   const handlePlay = useCallback(() => {
     if (!script) {

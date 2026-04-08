@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { devtools, persist, type StateStorage } from 'zustand/middleware'
 import { trackEvent, type TelemetryEvent } from '../lib/telemetry'
 import { resolveEnabledFeatures, enableFeature, disableFeature, isViewModeGated } from '../lib/feature-flags'
+import type { PodcastScript } from '../lib/podcast'
+import type { DiagramDSL } from '../lib/excalidraw-converter'
 
 // IndexedDB-backed storage for Zustand persist — handles large markdown content
 // without hitting localStorage's ~5MB limit. Connection is cached to avoid
@@ -95,6 +97,11 @@ export interface DocumentState {
   setSidebarWidth: (w: number) => void
   setChatWidth: (w: number) => void
   setDyslexicFont: (on: boolean) => void
+  // Cached generated content (survives tab switches)
+  podcastScript: PodcastScript | null
+  setPodcastScript: (script: PodcastScript | null) => void
+  diagramDsl: DiagramDSL | null
+  setDiagramDsl: (dsl: DiagramDSL | null) => void
   enabledFeatures: Set<string>
   toggleFeature: (id: string) => void
   refreshFeatureFlags: () => void
@@ -128,6 +135,10 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
   chatWidth: savedChatWidth,
   dyslexicFont: localStorage.getItem('md-reader-dyslexic') === 'true',
   readScrollTop: 0,
+  podcastScript: null,
+  setPodcastScript: (script) => set({ podcastScript: script }),
+  diagramDsl: null,
+  setDiagramDsl: (dsl) => set({ diagramDsl: dsl }),
   enabledFeatures: resolveEnabledFeatures(),
 
   setMarkdown: (md, fileName) => {
@@ -194,7 +205,7 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
     activeSection: null,
     viewMode: 'read',
   }),
-  reset: () => set({ markdown: '', fileName: null, toc: [], readingProgress: 0, activeSection: null, viewMode: 'read', ttsPlaying: false, ttsSectionIndex: 0, activeDocId: null, workspaceMode: false, readScrollTop: 0 }),
+  reset: () => set({ markdown: '', fileName: null, toc: [], readingProgress: 0, activeSection: null, viewMode: 'read', ttsPlaying: false, ttsSectionIndex: 0, activeDocId: null, workspaceMode: false, readScrollTop: 0, podcastScript: null, diagramDsl: null }),
   backToWorkspace: () => set({ markdown: '', fileName: null, toc: [], viewMode: 'workspace', activeDocId: null }),
   backToCollection: () => set({ markdown: '', fileName: null, toc: [], viewMode: 'collection', activeDocId: null }),
 }), {

@@ -20,10 +20,13 @@ const DIAGRAM_TYPES: { value: DiagramType; label: string }[] = [
 export function DiagramGenerator() {
   const markdown = useStore(s => s.markdown)
   const fileName = useStore(s => s.fileName)
+  const cachedDsl = useStore(s => s.diagramDsl)
+  const setCachedDsl = useStore(s => s.setDiagramDsl)
 
   const [diagramType, setDiagramType] = useState<DiagramType>('auto')
   const [generating, setGenerating] = useState(false)
-  const [dsl, setDsl] = useState<DiagramDSL | null>(null)
+  const dsl = cachedDsl
+  const setDsl = setCachedDsl
   const [error, setError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'svg' | 'excalidraw'>('svg')
 

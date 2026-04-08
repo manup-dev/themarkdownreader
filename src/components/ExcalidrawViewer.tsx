@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import { extractTextFromExcalidraw } from '../lib/excalidraw-text'
 import { calculateFitZoom, type ExcalidrawEl } from '../lib/excalidraw-converter'
+import '@excalidraw/excalidraw/index.css'
 
 interface ExcalidrawViewerProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
