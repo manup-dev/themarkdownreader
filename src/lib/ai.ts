@@ -226,6 +226,7 @@ async function chatOpenRouterStream(
   onToken?: (token: string) => void,
   signal?: AbortSignal,
   maxTokens?: number,
+  temperature?: number,
 ): Promise<string> {
   const apiKey = getApiKey()
   if (!apiKey) throw new Error('OpenRouter API key not set')
@@ -243,7 +244,7 @@ async function chatOpenRouterStream(
       messages,
       stream: true,
       max_tokens: maxTokens ?? PROMPT_CONFIG.maxTokens,
-      temperature: PROMPT_CONFIG.temperature,
+      temperature: temperature ?? PROMPT_CONFIG.temperature,
     }),
     signal: signal ?? AbortSignal.timeout(OPENROUTER_TIMEOUT),
   })
@@ -294,6 +295,7 @@ async function chatOllamaStream(
   onToken?: (token: string) => void,
   signal?: AbortSignal,
   maxTokens?: number,
+  temperature?: number,
 ): Promise<string> {
   const res = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
     method: 'POST',
@@ -305,7 +307,7 @@ async function chatOllamaStream(
       keep_alive: '30m',
       options: {
         num_predict: maxTokens ?? PROMPT_CONFIG.maxTokens,
-        temperature: PROMPT_CONFIG.temperature,
+        temperature: temperature ?? PROMPT_CONFIG.temperature,
         num_ctx: 4096,
       },
     }),
@@ -354,6 +356,7 @@ export interface ChatFastOptions {
   signal?: AbortSignal
   onToken?: (token: string) => void
   maxTokens?: number
+  temperature?: number
 }
 
 export async function chatFast(
@@ -365,25 +368,26 @@ export async function chatFast(
   const opts: ChatFastOptions = signalOrOpts instanceof AbortSignal
     ? { signal: signalOrOpts, onToken }
     : signalOrOpts ?? {}
-  const { signal, onToken: tokenCb, maxTokens } = { onToken, ...opts }
+  const { signal, onToken: tokenCb, maxTokens, temperature } = { onToken, ...opts }
 
-  // If browser model is the selected backend, use it (load on-demand if needed)
+  // If browser model is the selected backend, use it only if already loaded.
+  // chatFast never triggers a model download — that would block for minutes
+  // and cause massive slowdown (especially on low-RAM devices like M2 MacBooks).
   if (activeBackend === 'gemma4') {
     const modelState = getModelState()
     if (modelState.status === 'ready') {
       try { return await gemmaChat(messages, tokenCb, signal) } catch { /* fall through */ }
     } else {
-      // Browser model selected but not loaded — try cloud backends first for speed,
-      // but if none available, load the browser model (triggers download dialog)
-      if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, maxTokens)
-      if (await checkOpenRouter()) return chatOpenRouterStream(messages, tokenCb, signal, maxTokens)
-      return chat(messages, signal, tokenCb)
+      // Model not loaded — prefer server backends instead of triggering download
+      if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, maxTokens, temperature)
+      if (await checkOpenRouter()) return chatOpenRouterStream(messages, tokenCb, signal, maxTokens, temperature)
+      throw new Error('No AI backend available. Open AI Settings to download the browser model or configure Ollama/OpenRouter.')
     }
   }
 
   // Non-browser backends
-  if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, maxTokens)
-  if (await checkOpenRouter()) return chatOpenRouterStream(messages, tokenCb, signal, maxTokens)
+  if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, maxTokens, temperature)
+  if (await checkOpenRouter()) return chatOpenRouterStream(messages, tokenCb, signal, maxTokens, temperature)
   return chat(messages, signal, tokenCb)
 }
 

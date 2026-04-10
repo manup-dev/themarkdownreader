@@ -346,12 +346,20 @@ export function PodcastPlayer() {
       }
       setState('idle')
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        setState('idle')
+      setState('idle')
+      if (err instanceof DOMException && err.name === 'AbortError') return
+      console.error('Podcast generation failed:', err)
+      // Show actionable toast for common errors
+      const msg = err instanceof Error ? err.message : String(err)
+      const toast = document.createElement('div')
+      toast.className = 'toast-notify'
+      if (msg.includes('No AI backend')) {
+        toast.textContent = 'No AI backend configured — open AI Settings to set up OpenRouter (free) or download the browser model'
       } else {
-        setState('idle')
-        console.error('Podcast generation failed:', err)
+        toast.textContent = `Podcast generation failed: ${msg.slice(0, 100)}`
       }
+      document.body.appendChild(toast)
+      setTimeout(() => toast.remove(), 6000)
     }
   }, [markdown, fileName, activeDocId, script, setScript, duration])
 
@@ -439,8 +447,8 @@ export function PodcastPlayer() {
           Generate Podcast
         </button>
         <div className="flex items-center gap-4 text-xs text-gray-500">
-          <span>{duration === 'detailed' ? '~2-3 min' : '~30s'} to generate</span>
-          <span>{duration === 'detailed' ? '~10-15 min' : '~2 min'} listen</span>
+          <span>{duration === 'detailed' ? '~1-2 min' : '~30s'} to generate</span>
+          <span>{duration === 'detailed' ? '~8-12 min' : '~2 min'} listen</span>
           <span>Powered by AI</span>
         </div>
       </div>

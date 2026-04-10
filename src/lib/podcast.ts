@@ -1,9 +1,10 @@
-import { chatFast, checkOllamaHealth, getActiveBackend, getOllamaBaseUrl, type ChatMessage } from './ai'
+import { chatFast, checkOllamaHealth, getOllamaBaseUrl, type ChatMessage } from './ai'
 import { chunkMarkdown } from './markdown'
 import { PROMPTS, PROMPT_CONFIG } from './prompts'
 import { db, searchAcrossDocuments, type DocumentAnalysis, type AnalyzedChunk } from './docstore'
 import { analyzeDocument } from './analysis'
 import { ensureStorageBudget } from './storage-manager'
+import { getPodcastPreset, type PodcastPreset } from './device-profile'
 
 // ─── Ollama Pre-warm ────────────────────────────────────────────────────────
 
@@ -260,7 +261,38 @@ class IncrementalScriptParser {
   }
 }
 
+// ─── Script Quality Validation ──────────────────────────────────────────────
+
+function validateScript(lines: ScriptLine[], expectedCount: number): { valid: boolean; issues: string[] } {
+  const issues: string[] = []
+
+  if (lines.length < expectedCount / 2)
+    issues.push(`Too few exchanges: ${lines.length}/${expectedCount}`)
+
+  const speakerA = lines.filter(l => l.speaker === 'A').length
+  const speakerB = lines.filter(l => l.speaker === 'B').length
+  if (speakerA === 0 || speakerB === 0)
+    issues.push('Missing speaker')
+
+  const longTurns = lines.filter(l => l.text.split(/\s+/).length > 80)
+  if (longTurns.length > 0)
+    issues.push(`${longTurns.length} turns over 80 words`)
+
+  // Check for repetition: count unique sentence starters
+  const starters = new Set(lines.map(l => l.text.split(/\s+/).slice(0, 3).join(' ').toLowerCase()))
+  if (lines.length >= 6 && starters.size < lines.length / 3)
+    issues.push('High repetition in sentence starters')
+
+  return { valid: issues.length === 0, issues }
+}
+
 // ─── Theme Script Generation (single theme) ─────────────────────────────────
+
+interface ThemeContext {
+  themes: string[]
+  currentIdx: number
+  previousExchanges?: ScriptLine[]
+}
 
 async function generateThemeScript(
   theme: string,
@@ -270,7 +302,11 @@ async function generateThemeScript(
   signal?: AbortSignal,
   onLine?: (line: ScriptLine) => void,
   duration: PodcastDuration = 'quick',
+  themeContext?: ThemeContext,
+  preset?: PodcastPreset,
+  _retryCount = 0,
 ): Promise<ScriptLine[]> {
+  const p = preset ?? getPodcastPreset()
   let relevantText = ''
 
   if (analysis) {
@@ -310,35 +346,174 @@ async function generateThemeScript(
       .slice(0, PROMPT_CONFIG.podcastScriptMaxInput)
   }
 
-  const exchangeCount = duration === 'detailed' ? PROMPT_CONFIG.podcastExchangesDetailed : PROMPT_CONFIG.podcastExchangesQuick
-  const maxTokens = duration === 'detailed' ? PROMPT_CONFIG.podcastDetailedMaxTokens : PROMPT_CONFIG.podcastMaxTokens
+  const exchangeCount = duration === 'detailed' ? p.exchangesPerThemeDetailed : p.exchangesPerThemeQuick
+  const maxTokens = duration === 'detailed' ? p.maxTokensDetailed : p.maxTokensQuick
   const promptTemplate = duration === 'detailed' ? PROMPTS.podcastScriptDetailed : PROMPTS.podcastScript
-  const prompt = promptTemplate.replace('{{EXCHANGE_COUNT}}', String(exchangeCount))
+  let prompt = promptTemplate.replace('{{EXCHANGE_COUNT}}', String(exchangeCount))
+
+  // On retry, add guidance to avoid repetition
+  if (_retryCount > 0) {
+    prompt += '\nIMPORTANT: Be concise and varied. Use different sentence structures for each turn.'
+  }
+
+  // Build user message with optional context injection
+  let userContent = ''
+  if (themeContext && themeContext.themes.length > 1) {
+    const prev = themeContext.themes.slice(0, themeContext.currentIdx)
+    const next = themeContext.themes.slice(themeContext.currentIdx + 1)
+    userContent += `This is topic ${themeContext.currentIdx + 1} of ${themeContext.themes.length}.`
+    if (prev.length) userContent += `\nPrevious topics covered: ${prev.join(', ')}.`
+    if (next.length) userContent += `\nUpcoming: ${next[0]}.`
+    userContent += '\nConnect to previous topics if relevant.\n\n'
+  }
+
+  // Sliding window: include last 2 exchanges from previous theme for continuity
+  if (themeContext?.previousExchanges && themeContext.previousExchanges.length > 0) {
+    const prevLines = themeContext.previousExchanges
+      .map(l => `${l.speaker === 'A' ? 'Alex' : 'Sam'}: "${l.text}"`)
+      .join('\n')
+    userContent += `Continue naturally from this conversation:\n${prevLines}\n\nNow transition to: `
+  }
+
+  userContent += `Theme: ${theme}\n\nSource material:\n${relevantText}`
 
   const scriptMessages: ChatMessage[] = [
     { role: 'system', content: prompt },
-    { role: 'user', content: `Theme: ${theme}\n\nSource material:\n${relevantText}` },
+    { role: 'user', content: userContent },
   ]
 
+  const temperature = p.scriptTemperature
+
   // If streaming callback provided, use incremental parsing for real-time TTS
+  let lines: ScriptLine[]
   if (onLine) {
     const parser = new IncrementalScriptParser(onLine)
     const scriptRaw = await chatFast(scriptMessages, {
       signal,
       maxTokens,
+      temperature,
       onToken: (token) => parser.push(token),
     })
     // Flush any remaining lines not caught by incremental parsing
     const remaining = parser.flush()
     const all = parsePodcastScript(scriptRaw)
-    if (remaining.length > 0 && all.length > remaining.length) {
-      return all
-    }
-    return all.length > 0 ? all : remaining
+    lines = (remaining.length > 0 && all.length > remaining.length) ? all : (all.length > 0 ? all : remaining)
+  } else {
+    const scriptRaw = await chatFast(scriptMessages, { signal, maxTokens, temperature })
+    lines = parsePodcastScript(scriptRaw)
   }
 
-  const scriptRaw = await chatFast(scriptMessages, { signal, maxTokens })
-  return parsePodcastScript(scriptRaw)
+  // Validate and retry once if quality is poor
+  const { valid } = validateScript(lines, exchangeCount)
+  if (!valid && _retryCount < 1) {
+    return generateThemeScript(theme, analysis, themeIdx, markdown, signal, onLine, duration, themeContext, preset, _retryCount + 1)
+  }
+
+  return lines
+}
+
+// ─── Post-Processing: Deduplication ─────────────────────────────────────────
+
+function deduplicateScript(lines: ScriptLine[]): ScriptLine[] {
+  if (lines.length < 6) return lines
+
+  const fillerPatterns = [
+    /^that's (a )?(really )?(great|good|interesting|excellent|fascinating) (point|question|observation)/i,
+    /^(it's|that's) (really )?(interesting|fascinating) (how|that|to)/i,
+    /^(absolutely|exactly|definitely|certainly)[.!]?\s*$/i,
+  ]
+
+  // Count occurrences of each filler start
+  const fillerCounts = new Map<string, number>()
+  for (const line of lines) {
+    for (const pattern of fillerPatterns) {
+      if (pattern.test(line.text.trim())) {
+        const key = line.text.trim().toLowerCase().slice(0, 30)
+        fillerCounts.set(key, (fillerCounts.get(key) ?? 0) + 1)
+      }
+    }
+  }
+
+  // Track how many of each filler we've kept
+  const fillerKept = new Map<string, number>()
+  return lines.filter(line => {
+    for (const pattern of fillerPatterns) {
+      if (pattern.test(line.text.trim())) {
+        const key = line.text.trim().toLowerCase().slice(0, 30)
+        const total = fillerCounts.get(key) ?? 0
+        if (total >= 3) {
+          const kept = fillerKept.get(key) ?? 0
+          if (kept >= 2) return false  // drop 3rd+ occurrence
+          fillerKept.set(key, kept + 1)
+        }
+      }
+    }
+    return true
+  })
+}
+
+// ─── Post-Processing: Transition Injection ──────────────────────────────────
+
+function extractNoun(theme: string): string {
+  // Extract the main noun/phrase from a theme title
+  return theme.replace(/^(the|a|an)\s+/i, '').replace(/\s*\(.*\)\s*$/, '').trim()
+}
+
+const transitionTemplates = [
+  (prev: string, next: string) =>
+    ({ speaker: 'B' as const, text: `Speaking of ${extractNoun(prev)}, that actually ties into ${extractNoun(next)}.` }),
+  (prev: string, next: string) =>
+    ({ speaker: 'B' as const, text: `So that covers ${extractNoun(prev)}. But I'm curious how ${extractNoun(next)} fits in.` }),
+  (prev: string, next: string) =>
+    ({ speaker: 'A' as const, text: `And building on what we just said about ${extractNoun(prev)}, let's look at ${extractNoun(next)}.` }),
+]
+
+function injectTransitions(themeResults: ScriptLine[][], themes: string[]): ScriptLine[] {
+  const allLines: ScriptLine[] = []
+  for (let i = 0; i < themeResults.length; i++) {
+    allLines.push(...themeResults[i])
+    if (i < themeResults.length - 1) {
+      const template = transitionTemplates[i % transitionTemplates.length]
+      allLines.push(template(themes[i], themes[i + 1]))
+    }
+  }
+  return allLines
+}
+
+// ─── Post-Processing: Dramatize ─────────────────────────────────────────────
+
+async function dramatizeScript(
+  lines: ScriptLine[],
+  signal?: AbortSignal,
+): Promise<ScriptLine[]> {
+  const chunkSize = 12
+  const dramatized: ScriptLine[] = []
+
+  for (let i = 0; i < lines.length; i += chunkSize) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    const chunk = lines.slice(i, i + chunkSize)
+    const chunkJson = JSON.stringify(chunk)
+
+    const messages: ChatMessage[] = [
+      { role: 'system', content: PROMPTS.podcastDramatize },
+      { role: 'user', content: chunkJson },
+    ]
+
+    try {
+      const result = await chatFast(messages, {
+        signal,
+        maxTokens: 1000,
+        temperature: PROMPT_CONFIG.podcastDramatizeTemperature,
+      })
+      const parsed = parsePodcastScript(result)
+      dramatized.push(...(parsed.length > 0 ? parsed : chunk))
+    } catch {
+      // On failure, keep original chunk
+      dramatized.push(...chunk)
+    }
+  }
+
+  return dramatized
 }
 
 // ─── Main Generation (streaming architecture) ────────────────────────────────
@@ -379,6 +554,10 @@ export async function generatePodcast(
   })
   if (cached) return cached as unknown as PodcastScript
 
+  // ── Resolve device-adaptive preset once for the entire pipeline
+  const preset = getPodcastPreset()
+  const maxThemes = duration === 'detailed' ? preset.themesDetailed : preset.themesQuick
+
   // ── Phase 1: Extract themes + pre-warm Ollama in parallel
   onProgress?.('Extracting themes...', 10)
 
@@ -399,7 +578,7 @@ export async function generatePodcast(
     .filter(c => /^#{2,3}\s/.test(c.text))
     .map(c => c.text.replace(/^#{1,6}\s+/, '').trim())
     .filter(h => h.length > 3)
-    .slice(0, duration === 'detailed' ? PROMPT_CONFIG.podcastThemesDetailed : PROMPT_CONFIG.podcastThemesQuick)
+    .slice(0, maxThemes)
 
   if (headings.length >= 2) {
     themes = headings
@@ -411,7 +590,7 @@ export async function generatePodcast(
       { role: 'user', content: docSummary },
     ]
     const outlineRaw = await chatFast(outlineMessages, signal)
-    themes = parsePodcastOutline(outlineRaw)
+    themes = parsePodcastOutline(outlineRaw).slice(0, maxThemes)
 
     // Fallback: use any headings we can find
     if (themes.length === 0) {
@@ -422,50 +601,97 @@ export async function generatePodcast(
   // Ensure Ollama warm-up completed before script generation
   await warmup
 
-  // ── Phase 2: Generate scripts per theme (parallel batches — notify after each batch)
+  // ── Phase 2: Generate scripts per theme (adaptive to device tier)
   onProgress?.('Writing script...', 25)
 
-  const allLines: ScriptLine[] = []
   // Results array preserves theme order even with parallel execution
   const themeResults: ScriptLine[][] = new Array(themes.length)
-
-  // Parallel batching: only when using server-side backends (Ollama/OpenRouter).
-  // In-browser inference can't parallelize — concurrent calls compete for GPU/CPU.
-  const backend = getActiveBackend()
-  const canParallelize = backend === 'ollama' || backend === 'openrouter'
-  const BATCH_SIZE = canParallelize ? 2 : 1
 
   // Yield to the UI thread — prevents browser hang during heavy compute
   const yieldToUI = () => new Promise<void>(r => setTimeout(r, 0))
 
-  for (let batch = 0; batch < themes.length; batch += BATCH_SIZE) {
-    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  const useSequential = duration === 'detailed' && preset.enableSlidingWindow
 
-    // Yield before each batch so React can paint progress updates
-    await yieldToUI()
+  if (useSequential) {
+    // Sequential with sliding window for cross-theme coherence
+    let previousExchanges: ScriptLine[] = []
+    for (let i = 0; i < themes.length; i++) {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+      await yieldToUI()
 
-    const batchEnd = Math.min(batch + BATCH_SIZE, themes.length)
-    const batchPromises = []
-    for (let i = batch; i < batchEnd; i++) {
-      batchPromises.push(
-        generateThemeScript(themes[i], analysis, i, markdown, signal, options?.onLineStreamed, duration)
-          .then(lines => { themeResults[i] = lines })
+      const context: ThemeContext = {
+        themes,
+        currentIdx: i,
+        previousExchanges: previousExchanges.length > 0 ? previousExchanges : undefined,
+      }
+
+      const lines = await generateThemeScript(
+        themes[i], analysis, i, markdown, signal,
+        options?.onLineStreamed, duration, context, preset,
       )
-    }
-    await Promise.all(batchPromises)
+      themeResults[i] = lines
+      previousExchanges = lines.slice(-2)
 
-    // Rebuild allLines in order from completed results, notify player
-    allLines.length = 0
-    for (let i = 0; i <= batchEnd - 1; i++) {
-      if (themeResults[i]) allLines.push(...themeResults[i])
-    }
-    options?.onLinesReady?.(allLines.slice())
+      // Notify with progress
+      const currentLines: ScriptLine[] = []
+      for (let j = 0; j <= i; j++) {
+        if (themeResults[j]) currentLines.push(...themeResults[j])
+      }
+      options?.onLinesReady?.(currentLines)
 
-    const pct = 25 + (batchEnd / themes.length) * 65
-    onProgress?.('Writing script...', Math.round(pct))
+      const pct = 25 + ((i + 1) / themes.length) * 50
+      onProgress?.('Writing script...', Math.round(pct))
+    }
+  } else {
+    // Parallel batches — batch size from device preset
+    const BATCH_SIZE = preset.parallelBatchSize
+
+    for (let batch = 0; batch < themes.length; batch += BATCH_SIZE) {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+      await yieldToUI()
+
+      const batchEnd = Math.min(batch + BATCH_SIZE, themes.length)
+      const batchPromises = []
+      for (let i = batch; i < batchEnd; i++) {
+        const context: ThemeContext = { themes, currentIdx: i }
+        batchPromises.push(
+          generateThemeScript(themes[i], analysis, i, markdown, signal, options?.onLineStreamed, duration, context, preset)
+            .then(lines => { themeResults[i] = lines })
+        )
+      }
+      await Promise.all(batchPromises)
+
+      const currentLines: ScriptLine[] = []
+      for (let i = 0; i <= batchEnd - 1; i++) {
+        if (themeResults[i]) currentLines.push(...themeResults[i])
+      }
+      options?.onLinesReady?.(currentLines)
+
+      const pct = 25 + (batchEnd / themes.length) * 65
+      onProgress?.('Writing script...', Math.round(pct))
+    }
   }
 
-  // ── Phase 3: Finalize + background analysis
+  // ── Phase 3: Post-processing (features gated by device preset)
+  onProgress?.('Polishing script...', 78)
+
+  // Inject transitions between themes
+  let allLines = preset.enableTransitions
+    ? injectTransitions(themeResults, themes)
+    : themeResults.flat()
+
+  // Remove repetitive filler phrases
+  if (preset.enableDeduplication) {
+    allLines = deduplicateScript(allLines)
+  }
+
+  // Dramatize pass (adds naturalness: filler words, reactions)
+  if (preset.enableDramatize && duration === 'detailed') {
+    onProgress?.('Adding natural speech...', 85)
+    allLines = await dramatizeScript(allLines, signal)
+  }
+
+  // ── Phase 4: Finalize + background analysis
   onProgress?.('Finalizing...', 92)
 
   // Start analysis NOW (after script gen done) — no GPU contention

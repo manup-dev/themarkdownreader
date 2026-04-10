@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Key, Server, Zap, Check, X, Eye, EyeOff, ExternalLink, Settings, BarChart3, Brain, Trash2, FlaskConical } from 'lucide-react'
 import { setApiKey, getApiKey, clearApiKey, detectBestBackend, getActiveBackend, checkOllamaHealth, getPreferredBackend, setPreferredBackend } from '../lib/ai'
+import { resetDeviceProfile } from '../lib/device-profile'
 import { getModelState, onModelProgress, preloadGemma } from '../lib/inference/model-manager'
 import { unloadGemma, getModelDownloadSizeMB } from '../lib/inference/gemma-engine'
 import { RefreshCw } from 'lucide-react'
@@ -73,6 +74,7 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
     }
     localStorage.setItem(LS_OLLAMA_URL, ollamaUrl.trim() || 'http://localhost:11434')
     setPreferredBackend(preferred === 'auto' ? null : preferred)
+    resetDeviceProfile()  // re-detect tier when backend changes
     onClose()
   }, [apiKey, ollamaUrl, preferred, onClose])
 

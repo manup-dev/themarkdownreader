@@ -84,7 +84,10 @@ export function Chat() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
       if (!msg.includes('abort')) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${msg}`, timestamp: Date.now() }])
+        const display = msg.includes('No AI backend')
+          ? 'No AI backend configured. Open **AI Settings** (gear icon) to set up a free OpenRouter API key or download the browser model.'
+          : `Error: ${msg}`
+        setMessages((prev) => [...prev, { role: 'assistant', content: display, timestamp: Date.now() }])
       }
       setStreamingText('')
     } finally {
@@ -116,7 +119,10 @@ export function Chat() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
       if (!msg.includes('abort')) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${msg}`, timestamp: Date.now() }])
+        const display = msg.includes('No AI backend')
+          ? 'No AI backend configured. Open **AI Settings** (gear icon) to set up a free OpenRouter API key or download the browser model.'
+          : `Error: ${msg}`
+        setMessages((prev) => [...prev, { role: 'assistant', content: display, timestamp: Date.now() }])
       }
       setStreamingText('')
     } finally {
