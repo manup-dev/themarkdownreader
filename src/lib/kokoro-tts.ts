@@ -19,9 +19,22 @@ export type KokoroStatus = 'idle' | 'loading' | 'ready' | 'failed'
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
+const IDLE_TIMEOUT_MS = 300_000 // 5 minutes — longer than Gemma since TTS spans playback
+
 let status: KokoroStatus = 'idle'
 let loadPromise: Promise<void> | null = null
 let activeDevice: 'webgpu' | 'wasm' = 'wasm'
+let idleTimer: ReturnType<typeof setTimeout> | null = null
+
+function resetIdleTimer(): void {
+  if (idleTimer) clearTimeout(idleTimer)
+  idleTimer = setTimeout(() => {
+    if (status === 'ready') {
+      console.log('[kokoro-tts] Idle timeout — unloading to free GPU memory')
+      unloadKokoro().catch(() => { /* non-fatal */ })
+    }
+  }, IDLE_TIMEOUT_MS)
+}
 
 // Worker-based engine
 let worker: Worker | null = null
@@ -58,6 +71,31 @@ async function hasWebGPU(): Promise<boolean> {
     ])
     return adapter !== null
   } catch { return false }
+}
+
+/**
+ * Attach a GPU device lost handler. On device loss (driver crash, OOM, tab
+ * backgrounded too long), unload Kokoro so the next synthesis call can cleanly
+ * re-initialize rather than hang or crash the tab.
+ */
+async function attachGpuLostHandler(): Promise<void> {
+  try {
+    const nav = navigator as unknown as { gpu?: { requestAdapter: () => Promise<{ requestDevice?: () => Promise<{ lost?: Promise<{ reason: string; message: string }> }> } | null> } }
+    if (!nav.gpu) return
+    const adapter = await nav.gpu.requestAdapter()
+    if (!adapter?.requestDevice) return
+    const device = await adapter.requestDevice()
+    if (!device?.lost) return
+    device.lost.then((info) => {
+      console.warn('[kokoro-tts] GPU device lost:', info.reason, info.message)
+      if (status === 'ready' || status === 'loading') {
+        console.warn('[kokoro-tts] Unloading Kokoro due to GPU device lost')
+        unloadKokoro().catch(() => { /* non-fatal */ })
+      }
+    }).catch(() => { /* ignore */ })
+  } catch (e) {
+    console.warn('[kokoro-tts] Failed to attach GPU lost handler:', e)
+  }
 }
 
 // ─── Audio Processing Chain ──────────────────────────────────────────────────
@@ -112,10 +150,15 @@ export async function loadKokoro(onProgress?: ProgressCallback): Promise<void> {
   if (status === 'ready') return
   if (loadPromise) return loadPromise
 
-  // Don't load while another GPU model (Gemma) is loading — causes browser hang
+  // Wait for GPU lock to release (up to 20s) rather than failing immediately.
+  // Other model (Gemma) will release the lock when it finishes loading.
   const w = window as unknown as { __gpuModelLock?: string }
+  const deadline = Date.now() + 20_000
+  while (w.__gpuModelLock && w.__gpuModelLock !== 'kokoro' && Date.now() < deadline) {
+    await new Promise<void>(r => setTimeout(r, 200))
+  }
   if (w.__gpuModelLock && w.__gpuModelLock !== 'kokoro') {
-    console.log(`[kokoro-tts] Deferred — GPU busy with ${w.__gpuModelLock}`)
+    console.log(`[kokoro-tts] Timed out waiting for GPU lock (${w.__gpuModelLock})`)
     throw new Error('GPU busy — try again after current model finishes')
   }
   w.__gpuModelLock = 'kokoro'
@@ -174,6 +217,8 @@ async function _loadViaWorker(device: string, dtype: string): Promise<void> {
           clearTimeout(timeout)
           workerReady = true
           status = 'ready'
+          resetIdleTimer()
+          if (device === 'webgpu') attachGpuLostHandler().catch(() => {})
           progressCb?.(100, `Voice model ready (${device}, worker)`)
           console.log(`[kokoro-tts] Loaded on ${device} via Web Worker`)
           resolve()
@@ -233,6 +278,8 @@ async function _loadMainThread(device: string, dtype: string): Promise<void> {
     }
 
     status = 'ready'
+    resetIdleTimer()
+    if (activeDevice === 'webgpu') attachGpuLostHandler().catch(() => {})
     progressCb?.(100, `Voice model ready (${activeDevice}, main thread)`)
     console.log(`[kokoro-tts] Loaded on ${activeDevice} (main thread fallback)`)
   } catch (err) {
@@ -244,14 +291,25 @@ async function _loadMainThread(device: string, dtype: string): Promise<void> {
 }
 
 export async function unloadKokoro(): Promise<void> {
+  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
   if (worker) {
     worker.terminate()
     worker = null
     workerReady = false
   }
+  // Try to explicitly dispose the fallback engine (frees WebGPU buffers)
+  if (fallbackEngine) {
+    try {
+      const eng = fallbackEngine as { dispose?: () => Promise<void> | void }
+      if (typeof eng.dispose === 'function') await eng.dispose()
+    } catch { /* ignore */ }
+  }
   fallbackEngine = null
   loadPromise = null
   status = 'idle'
+  // Release GPU mutex so Gemma can load again
+  const w = window as unknown as { __gpuModelLock?: string }
+  if (w.__gpuModelLock === 'kokoro') w.__gpuModelLock = undefined
   closeAudioContext()
 }
 
@@ -266,6 +324,7 @@ export async function synthesize(
   speaker: 'A' | 'B'
 ): Promise<{ audio: Float32Array; sampleRate: number }> {
   const voice = VOICES[speaker]
+  resetIdleTimer()
 
   if (workerReady && worker) {
     return synthesizeViaWorker(text, voice)

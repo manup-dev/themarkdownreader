@@ -108,6 +108,34 @@ export function isGemmaHoldingGpu(): boolean {
   return w.__gpuModelLock === 'gemma'
 }
 
+/**
+ * Attach a GPU device lost handler. Called after model load attempts WebGPU.
+ * On device lost (driver crash, tab backgrounded too long, OOM), unload immediately
+ * so the next call can cleanly re-initialize.
+ */
+async function attachGpuLostHandler(): Promise<void> {
+  try {
+    const nav = navigator as unknown as { gpu?: { requestAdapter: () => Promise<unknown | null> } }
+    if (!nav.gpu) return
+    const adapter = await nav.gpu.requestAdapter() as { requestDevice?: () => Promise<unknown> } | null
+    if (!adapter || typeof adapter.requestDevice !== 'function') return
+    // We can't grab the same device that ONNX is using, but we can observe
+    // adapter-level events. For ONNX's own device, the transformers.js lifecycle
+    // handles it — we just monitor at module scope.
+    const device = await adapter.requestDevice() as { lost?: Promise<{ reason: string; message: string }> } | null
+    if (!device?.lost) return
+    device.lost.then((info) => {
+      console.warn('[browser-ai] GPU device lost:', info.reason, info.message)
+      if (status === 'ready' || status === 'loading') {
+        console.warn('[browser-ai] Unloading Gemma due to GPU device lost')
+        unloadGemma().catch(() => { /* non-fatal */ })
+      }
+    }).catch(() => { /* ignore */ })
+  } catch (e) {
+    console.warn('[browser-ai] Failed to attach GPU lost handler:', e)
+  }
+}
+
 /** Check if model weights are already cached in the browser */
 async function isModelCached(): Promise<boolean> {
   try {
@@ -207,6 +235,8 @@ async function _loadInner(): Promise<void> {
       device: 'webgpu',
       progress_callback: progressCb,
     })
+    // Monitor GPU device for lost events (driver crash, OOM, tab backgrounded)
+    attachGpuLostHandler().catch(() => { /* non-fatal */ })
   } catch (webgpuErr) {
     console.warn('[browser-ai] WebGPU context failed, falling back to WASM:', webgpuErr)
     notifyProgress({ status: 'loading', percent: 30, message: 'Loading ONNX weights (WASM)…' })

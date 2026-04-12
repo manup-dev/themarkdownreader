@@ -153,9 +153,40 @@ export async function detectBestBackend(): Promise<Backend> {
 
 // ─── WebLLM engine (lazy loaded) ───────────────────────────────────────────
 
+const WEBLLM_IDLE_TIMEOUT_MS = 120_000 // 2 minutes — free VRAM aggressively
+
 let webllmEngine: WebLLMEngine | null = null
 let webllmLoading = false
 let webllmReady = false
+let webllmIdleTimer: ReturnType<typeof setTimeout> | null = null
+
+function resetWebLLMIdleTimer(): void {
+  if (webllmIdleTimer) clearTimeout(webllmIdleTimer)
+  webllmIdleTimer = setTimeout(() => {
+    if (webllmReady) {
+      console.log('[webllm] Idle timeout — unloading to free VRAM')
+      unloadWebLLM().catch(() => { /* non-fatal */ })
+    }
+  }, WEBLLM_IDLE_TIMEOUT_MS)
+}
+
+/** Explicitly unload WebLLM to free GPU VRAM. */
+export async function unloadWebLLM(): Promise<void> {
+  if (webllmIdleTimer) { clearTimeout(webllmIdleTimer); webllmIdleTimer = null }
+  if (!webllmEngine) return
+  try {
+    // WebLLM exposes unload() / dispose() methods on newer versions
+    const engine = webllmEngine as unknown as { unload?: () => Promise<void>; dispose?: () => void }
+    if (typeof engine.unload === 'function') await engine.unload()
+    else if (typeof engine.dispose === 'function') engine.dispose()
+  } catch (e) {
+    console.warn('[webllm] Unload error:', e)
+  }
+  webllmEngine = null
+  webllmReady = false
+  webllmLoading = false
+  webllmLoadPromise = null
+}
 
 export let webllmProgress = 0
 export let webllmProgressText = ''
@@ -192,6 +223,7 @@ async function getWebLLMEngine(): Promise<WebLLMEngine> {
     webllmEngine = engine as unknown as WebLLMEngine
     webllmReady = true
     webllmLoading = false
+    resetWebLLMIdleTimer()
     return webllmEngine
   } catch (e) {
     webllmLoading = false
@@ -209,6 +241,7 @@ async function chatWebLLM(
   onToken?: (token: string) => void,
 ): Promise<string> {
   const engine = await getWebLLMEngine()
+  resetWebLLMIdleTimer()
   const reply = await engine.chat.completions.create({
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
     temperature: PROMPT_CONFIG.temperature,
@@ -216,6 +249,7 @@ async function chatWebLLM(
   })
   const content = reply.choices[0]?.message?.content ?? ''
   onToken?.(content)
+  resetWebLLMIdleTimer()
   return content
 }
 
@@ -296,20 +330,25 @@ async function chatOllamaStream(
   signal?: AbortSignal,
   maxTokens?: number,
   temperature?: number,
+  repeatPenalty?: number,
+  modelOverride?: string,
 ): Promise<string> {
+  const options: Record<string, number> = {
+    num_predict: maxTokens ?? PROMPT_CONFIG.maxTokens,
+    temperature: temperature ?? PROMPT_CONFIG.temperature,
+    num_ctx: 4096,
+  }
+  if (repeatPenalty !== undefined) options.repeat_penalty = repeatPenalty
+
   const res = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: OLLAMA_MODEL,
+      model: modelOverride ?? OLLAMA_MODEL,
       messages,
       stream: true,
       keep_alive: '30m',
-      options: {
-        num_predict: maxTokens ?? PROMPT_CONFIG.maxTokens,
-        temperature: temperature ?? PROMPT_CONFIG.temperature,
-        num_ctx: 4096,
-      },
+      options,
     }),
     signal: signal ?? AbortSignal.timeout(OLLAMA_TIMEOUT),
   })
@@ -322,6 +361,7 @@ async function chatOllamaStream(
   const decoder = new TextDecoder()
   let full = ''
   let buffer = ''
+  let tokensSinceYield = 0
 
   while (true) {
     const { done, value } = await reader.read()
@@ -338,11 +378,18 @@ async function chatOllamaStream(
         if (token) {
           full += token
           onToken?.(token)
+          tokensSinceYield++
         }
       } catch { /* skip malformed */ }
     }
+    // Yield to UI every ~30 tokens to prevent main-thread blocking
+    if (onToken && tokensSinceYield >= 30) {
+      tokensSinceYield = 0
+      await new Promise<void>(r => setTimeout(r, 0))
+    }
   }
-  return full
+  // Strip Qwen3-style thinking tags from output
+  return full.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
 }
 
 // ─── Unified chat with streaming ───────────────────────────────────────────
@@ -357,6 +404,8 @@ export interface ChatFastOptions {
   onToken?: (token: string) => void
   maxTokens?: number
   temperature?: number
+  repeatPenalty?: number
+  model?: string
 }
 
 export async function chatFast(
@@ -368,7 +417,7 @@ export async function chatFast(
   const opts: ChatFastOptions = signalOrOpts instanceof AbortSignal
     ? { signal: signalOrOpts, onToken }
     : signalOrOpts ?? {}
-  const { signal, onToken: tokenCb, maxTokens, temperature } = { onToken, ...opts }
+  const { signal, onToken: tokenCb, maxTokens, temperature, repeatPenalty, model } = { onToken, ...opts }
 
   // If browser model is the selected backend, use it only if already loaded.
   // chatFast never triggers a model download — that would block for minutes
@@ -379,14 +428,14 @@ export async function chatFast(
       try { return await gemmaChat(messages, tokenCb, signal) } catch { /* fall through */ }
     } else {
       // Model not loaded — prefer server backends instead of triggering download
-      if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, maxTokens, temperature)
+      if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, maxTokens, temperature, repeatPenalty, model)
       if (await checkOpenRouter()) return chatOpenRouterStream(messages, tokenCb, signal, maxTokens, temperature)
       throw new Error('No AI backend available. Open AI Settings to download the browser model or configure Ollama/OpenRouter.')
     }
   }
 
   // Non-browser backends
-  if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, maxTokens, temperature)
+  if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, maxTokens, temperature, repeatPenalty, model)
   if (await checkOpenRouter()) return chatOpenRouterStream(messages, tokenCb, signal, maxTokens, temperature)
   return chat(messages, signal, tokenCb)
 }
