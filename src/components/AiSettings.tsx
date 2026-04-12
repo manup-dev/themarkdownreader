@@ -141,6 +141,18 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
               Clear cache
             </button>
           )}
+          {gemmaState.status === 'idle' && (
+            <button
+              onClick={() => {
+                preloadGemma()
+                setGemmaState({ status: 'downloading', progress: 0, progressText: 'Starting download…' })
+              }}
+              className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-500"
+            >
+              <Brain className="h-3 w-3" />
+              Download (~{getModelDownloadSizeMB()}MB)
+            </button>
+          )}
           {gemmaState.status === 'failed' && (
             <button
               onClick={() => {
