@@ -23,10 +23,16 @@ const __dirname = path.dirname(__filename)
 // const BASE_URL = process.env.EVAL_URL || 'http://localhost:5183' // reserved for future browser-based evals
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11435'
 const INFERENCE_MODEL = process.env.EVAL_MODEL || 'qwen2.5:1.5b'
+const PODCAST_MODEL = process.env.EVAL_PODCAST_MODEL || 'gemma3:4b' // podcast uses larger model
 const JUDGE_MODEL = 'qwen2.5:1.5b' // always use 1.5b as judge
 const RESULTS_DIR = path.join(__dirname, 'results')
 const CORPUS_DIR = path.join(__dirname, 'test-corpus')
 const GROUND_TRUTH = JSON.parse(fs.readFileSync(path.join(__dirname, 'ground-truth.json'), 'utf-8'))
+
+/** Strip Qwen3-style thinking tags from model output before parsing */
+function stripThinking(raw: string): string {
+  return raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+}
 
 interface EvalResult {
   id: string
@@ -219,7 +225,7 @@ async function aiJudge(prompt: string): Promise<{ score: number; reasoning: stri
       signal: AbortSignal.timeout(300000),
     })
     const data = await res.json()
-    const content = data.message?.content ?? ''
+    const content = stripThinking(data.message?.content ?? '')
     const match = content.match(/\{[\s\S]*\}/)
     if (match) return JSON.parse(match[0])
     return { score: 50, reasoning: 'Could not parse judge response' }
@@ -255,7 +261,7 @@ async function evalSummarization(testCase: Record<string, unknown>): Promise<Eva
       signal: AbortSignal.timeout(300000),
     })
     const data = await res.json()
-    summary = data.message?.content ?? ''
+    summary = stripThinking(data.message?.content ?? '')
   } catch (err) {
     return { id: testCase.id as string, feature: 'ai-summarization', passed: false, score: 0, details: `Ollama error: ${err instanceof Error ? err.message : String(err)}`, duration: Date.now() - start }
   }
@@ -314,15 +320,19 @@ async function evalQA(testCase: Record<string, unknown>): Promise<EvalResult> {
 
   const { PROMPTS, PROMPT_CONFIG } = await import('../../src/lib/prompts')
   const { chunkMarkdown } = await import('../../src/lib/markdown')
+  const { searchChunks } = await import('../../src/lib/embeddings')
 
   const chunks = chunkMarkdown(md)
-  const context = chunks.map((c, i) => `[${i + 1}] ${c.sectionPath}\n${c.text}`).join('\n\n').slice(0, PROMPT_CONFIG.qaMaxChunkLen * chunks.length)
 
   let totalScore = 0
   const issues: string[] = []
 
   for (const q of questions) {
     try {
+      // Use real app flow: BM25 retrieval per-question instead of dumping all chunks
+      const relevant = searchChunks(q.question, chunks, 5)
+      const context = relevant.map((c, i) => `[${i + 1}] ${c.sectionPath}\n${c.text}`).join('\n\n')
+
       await keepWarm()
       const res = await fetch(`${OLLAMA_URL}/api/chat`, {
         method: 'POST',
@@ -340,7 +350,7 @@ async function evalQA(testCase: Record<string, unknown>): Promise<EvalResult> {
         signal: AbortSignal.timeout(300000),
       })
       const data = await res.json()
-      const answer = (data.message?.content ?? '').toLowerCase()
+      const answer = (stripThinking(data.message?.content ?? '')).toLowerCase()
 
       let qScore = 100
       for (const term of q.answerMustContain) {
@@ -402,7 +412,7 @@ async function evalKnowledgeGraph(testCase: Record<string, unknown>): Promise<Ev
       signal: AbortSignal.timeout(300000),
     })
     const data = await res.json()
-    graphJson = data.message?.content ?? ''
+    graphJson = stripThinking(data.message?.content ?? '')
   } catch (err) {
     return { id: testCase.id as string, feature: 'knowledge-graph', passed: false, score: 0, details: `Ollama error: ${err instanceof Error ? err.message : String(err)}`, duration: Date.now() - start }
   }
@@ -525,7 +535,7 @@ async function evalCoach(testCase: Record<string, unknown>): Promise<EvalResult>
       signal: AbortSignal.timeout(300000),
     })
     const data = await res.json()
-    explanation = data.message?.content ?? ''
+    explanation = stripThinking(data.message?.content ?? '')
   } catch (err) {
     return { id: testCase.id as string, feature: 'coach-explanation', passed: false, score: 0, details: `Ollama error: ${err instanceof Error ? err.message : String(err)}`, duration: Date.now() - start }
   }
@@ -622,7 +632,7 @@ async function evalCrossDocQA(testCase: Record<string, unknown>): Promise<EvalRe
         signal: AbortSignal.timeout(300000),
       })
       const data = await res.json()
-      const answer = (data.message?.content ?? '').toLowerCase()
+      const answer = (stripThinking(data.message?.content ?? '')).toLowerCase()
 
       let qScore = 100
       for (const term of q.answerMustContain) {
@@ -783,7 +793,7 @@ async function evalPodcastOutline(testCase: Record<string, unknown>): Promise<Ev
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: INFERENCE_MODEL,
+        model: PODCAST_MODEL,
         messages: [
           { role: 'system', content: PROMPTS.podcastOutline },
           { role: 'user', content: md.slice(0, PROMPT_CONFIG.podcastOutlineMaxInput) },
@@ -795,7 +805,7 @@ async function evalPodcastOutline(testCase: Record<string, unknown>): Promise<Ev
       signal: AbortSignal.timeout(300000),
     })
     const data = await res.json()
-    outlineRaw = data.message?.content ?? ''
+    outlineRaw = stripThinking(data.message?.content ?? '')
   } catch (err) {
     return { id: testCase.id as string, feature: 'podcast-outline', passed: false, score: 0, details: `Ollama error: ${err instanceof Error ? err.message : String(err)}`, duration: Date.now() - start }
   }
@@ -865,23 +875,24 @@ async function evalPodcastScript(testCase: Record<string, unknown>): Promise<Eva
   try {
     await keepWarm()
     const theme = (expected.testTheme as string) ?? 'Main concepts and key ideas'
+    const scriptPrompt = PROMPTS.podcastScript.replace('{{EXCHANGE_COUNT}}', String(PROMPT_CONFIG.podcastExchangesQuick))
     const res = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: INFERENCE_MODEL,
+        model: PODCAST_MODEL,
         messages: [
-          { role: 'system', content: PROMPTS.podcastScript },
+          { role: 'system', content: scriptPrompt },
           { role: 'user', content: `Theme: ${theme}\n\nSource material:\n${md.slice(0, PROMPT_CONFIG.podcastScriptMaxInput)}` },
         ],
         stream: false,
         keep_alive: '60m',
-        options: { temperature: PROMPT_CONFIG.temperature, num_predict: 800 },
+        options: { temperature: PROMPT_CONFIG.podcastScriptTemperature, num_predict: 2000, repeat_penalty: 1.15 },
       }),
       signal: AbortSignal.timeout(300000),
     })
     const data = await res.json()
-    scriptRaw = data.message?.content ?? ''
+    scriptRaw = stripThinking(data.message?.content ?? '')
   } catch (err) {
     return { id: testCase.id as string, feature: 'podcast-script', passed: false, score: 0, details: `Ollama error: ${err instanceof Error ? err.message : String(err)}`, duration: Date.now() - start }
   }
@@ -895,7 +906,9 @@ async function evalPodcastScript(testCase: Record<string, unknown>): Promise<Eva
 
   // 1. Valid JSON structure
   if (lines.length === 0) {
-    return { id: testCase.id as string, feature: 'podcast-script', passed: false, score: 0, details: 'Failed to parse script JSON', duration: Date.now() - start }
+    const debugPath = `/tmp/failed-script-${testCase.id}-${Date.now()}.txt`
+    try { fs.writeFileSync(debugPath, scriptRaw) } catch { /* ignore */ }
+    return { id: testCase.id as string, feature: 'podcast-script', passed: false, score: 0, details: `Failed to parse (len=${scriptRaw.length}). Dumped to ${debugPath}`, duration: Date.now() - start }
   }
 
   // 2. Minimum exchange count
@@ -925,7 +938,7 @@ async function evalPodcastScript(testCase: Record<string, unknown>): Promise<Eva
 
   // 5. Conversational reactions present (Host B should react)
   const bLines = lines.filter(l => l.speaker === 'B').map(l => l.text.toLowerCase())
-  const reactionPatterns = [/wait/, /oh/, /huh/, /interesting/, /really/, /right/, /exactly/, /so you.re saying/, /that.s like/, /remind/]
+  const reactionPatterns = [/wait/, /oh/, /huh/, /interesting/, /really/, /right/, /exactly/, /so you.re saying/, /that.s like/, /remind/, /it.s like/, /like a /, /but (what|doesn.t|wouldn.t|how)/, /so.* means/, /hold on/, /that.s (a )?(great|chilling|crucial)/]
   const reactionsFound = reactionPatterns.filter(p => bLines.some(t => p.test(t))).length
   if (reactionsFound === 0) {
     score -= 20
@@ -965,7 +978,7 @@ async function evalPodcastScript(testCase: Record<string, unknown>): Promise<Eva
       signal: AbortSignal.timeout(60000),
     })
     const judgeData = await judgeRes.json()
-    const judgeContent = judgeData.message?.content ?? ''
+    const judgeContent = stripThinking(judgeData.message?.content ?? '')
     const judgeJson = judgeContent.match(/\{[\s\S]*\}/)
     if (judgeJson) {
       const parsed = JSON.parse(judgeJson[0])
@@ -1002,7 +1015,7 @@ async function evalPodcastAccuracy(testCase: Record<string, unknown>): Promise<E
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: INFERENCE_MODEL,
+        model: PODCAST_MODEL,
         messages: [
           { role: 'system', content: PROMPTS.podcastOutline },
           { role: 'user', content: md.slice(0, PROMPT_CONFIG.podcastOutlineMaxInput) },
@@ -1014,7 +1027,7 @@ async function evalPodcastAccuracy(testCase: Record<string, unknown>): Promise<E
       signal: AbortSignal.timeout(300000),
     })
     const outlineData = await outlineRes.json()
-    const outlineRaw = outlineData.message?.content ?? ''
+    const outlineRaw = stripThinking(outlineData.message?.content ?? '')
 
     // Parse first theme
     let theme = 'main concepts'
@@ -1027,23 +1040,24 @@ async function evalPodcastAccuracy(testCase: Record<string, unknown>): Promise<E
     } catch { /* use default */ }
 
     // Generate script for that theme
+    const accuracyPrompt = PROMPTS.podcastScript.replace('{{EXCHANGE_COUNT}}', String(PROMPT_CONFIG.podcastExchangesQuick))
     const scriptRes = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: INFERENCE_MODEL,
+        model: PODCAST_MODEL,
         messages: [
-          { role: 'system', content: PROMPTS.podcastScript },
+          { role: 'system', content: accuracyPrompt },
           { role: 'user', content: `Theme: ${theme}\n\nSource material:\n${md.slice(0, PROMPT_CONFIG.podcastScriptMaxInput)}` },
         ],
         stream: false,
         keep_alive: '60m',
-        options: { temperature: PROMPT_CONFIG.temperature, num_predict: 800 },
+        options: { temperature: PROMPT_CONFIG.podcastScriptTemperature, num_predict: 800, repeat_penalty: 1.15 },
       }),
       signal: AbortSignal.timeout(300000),
     })
     const scriptData = await scriptRes.json()
-    scriptText = (scriptData.message?.content ?? '').toLowerCase()
+    scriptText = stripThinking(scriptData.message?.content ?? '').toLowerCase()
   } catch (err) {
     return { id: testCase.id as string, feature: 'podcast-accuracy', passed: false, score: 0, details: `Ollama error: ${err instanceof Error ? err.message : String(err)}`, duration: Date.now() - start }
   }
