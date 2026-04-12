@@ -54,9 +54,9 @@ const PRESETS: Record<DeviceTier, PodcastPreset> = {
   high: {
     // Desktop with Ollama + GPU — full pipeline, max quality
     themesQuick: 2,
-    themesDetailed: 5,
+    themesDetailed: 6,
     exchangesPerThemeQuick: 8,
-    exchangesPerThemeDetailed: 10,
+    exchangesPerThemeDetailed: 8,
     maxTokensQuick: 800,
     maxTokensDetailed: 800,
     enableDramatize: true,
@@ -71,9 +71,9 @@ const PRESETS: Record<DeviceTier, PodcastPreset> = {
   medium: {
     // Good laptop or cloud backend — most features, moderate scale
     themesQuick: 2,
-    themesDetailed: 4,
+    themesDetailed: 5,
     exchangesPerThemeQuick: 6,
-    exchangesPerThemeDetailed: 10,
+    exchangesPerThemeDetailed: 8,
     maxTokensQuick: 800,
     maxTokensDetailed: 800,
     enableDramatize: true,

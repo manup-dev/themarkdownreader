@@ -1,4 +1,7 @@
 import { chatFast, checkOllamaHealth, getOllamaBaseUrl, type ChatMessage } from './ai'
+
+/** Podcast uses a larger model for better dialogue quality (more exchanges, less repetition). */
+const PODCAST_MODEL = 'gemma3:4b'
 import { chunkMarkdown } from './markdown'
 import { PROMPTS, PROMPT_CONFIG } from './prompts'
 import { db, searchAcrossDocuments, type DocumentAnalysis, type AnalyzedChunk } from './docstore'
@@ -16,7 +19,7 @@ async function prewarmOllama(): Promise<void> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'qwen2.5:1.5b',
+        model: PODCAST_MODEL,
         messages: [{ role: 'user', content: 'hi' }],
         stream: false,
         keep_alive: '30m',
@@ -55,20 +58,46 @@ export interface PodcastScript {
 // ─── JSON Parsing (resilient to small model quirks) ──────────────────────────
 
 function extractJson(raw: string): string {
-  const fenced = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
+  // Strip Qwen3-style thinking tags before parsing
+  const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+  const fenced = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
   if (fenced) return fenced[1].trim()
-  const bracketStart = raw.indexOf('[')
-  const bracketEnd = raw.lastIndexOf(']')
+  const bracketStart = cleaned.indexOf('[')
+  const bracketEnd = cleaned.lastIndexOf(']')
   if (bracketStart !== -1 && bracketEnd > bracketStart) {
-    return raw.slice(bracketStart, bracketEnd + 1)
+    return cleaned.slice(bracketStart, bracketEnd + 1)
   }
-  return raw.trim()
+  // Truncation repair: if we have `[` but no `]`, try to close the array
+  // by finding the last complete object and appending `]`
+  if (bracketStart !== -1 && bracketEnd <= bracketStart) {
+    const partial = cleaned.slice(bracketStart)
+    const lastObjEnd = partial.lastIndexOf('}')
+    if (lastObjEnd > 0) {
+      // Trim trailing comma if present, then close array
+      const trimmed = partial.slice(0, lastObjEnd + 1).replace(/,\s*$/, '')
+      return trimmed + ']'
+    }
+  }
+  return cleaned
 }
 
-function repairJson(raw: string): string {
-  let s = raw
-  s = s.replace(/(?<=[{[,:])\s*'([^']*?)'\s*(?=[,}\]:])/g, '"$1"')
+/** Safe repairs: normalize smart quotes that LLMs use as JSON delimiters. */
+function repairJsonSmartQuotes(raw: string): string {
+  // Left/right double smart quotes → straight double quotes
+  // Gemma3 and others sometimes close JSON strings with U+201D
+  let s = raw.replace(/[\u201C\u201D]/g, '"')
+  // Remove trailing commas in arrays/objects
   s = s.replace(/,\s*([}\]])/g, '$1')
+  return s
+}
+
+/** Aggressive repairs: convert Python-style JSON (single-quoted). May damage text content with apostrophes. */
+function repairJsonAggressive(raw: string): string {
+  let s = repairJsonSmartQuotes(raw)
+  // Smart apostrophes → straight
+  s = s.replace(/[\u2018\u2019]/g, "'")
+  // Single-quoted strings → double-quoted (Python-style fallback)
+  s = s.replace(/(?<=[{[,:])\s*'([^']*?)'\s*(?=[,}\]:])/g, '"$1"')
   s = s.replace(/{\s*(\w+)\s*:/g, '{"$1":')
   s = s.replace(/,\s*(\w+)\s*:/g, ',"$1":')
   return s
@@ -76,7 +105,7 @@ function repairJson(raw: string): string {
 
 export function parsePodcastOutline(raw: string): string[] {
   const json = extractJson(raw)
-  for (const attempt of [json, repairJson(json)]) {
+  for (const attempt of [json, repairJsonSmartQuotes(json), repairJsonAggressive(json)]) {
     try {
       const parsed = JSON.parse(attempt)
       if (!Array.isArray(parsed)) continue
@@ -91,16 +120,26 @@ export function parsePodcastOutline(raw: string): string[] {
   return []
 }
 
+/** Strip markdown artifacts that LLMs sometimes inject into dialogue text */
+function cleanDialogueText(text: string): string {
+  return text
+    .replace(/\*+([^*]+)\*+/g, '$1')   // *emphasis* or **bold**
+    .replace(/`([^`]+)`/g, '$1')        // `code`
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // [link](url)
+    .replace(/#{1,6}\s+/g, '')          // ### headings
+    .trim()
+}
+
 export function parsePodcastScript(raw: string): ScriptLine[] {
   const json = extractJson(raw)
-  for (const attempt of [json, repairJson(json)]) {
+  for (const attempt of [json, repairJsonSmartQuotes(json), repairJsonAggressive(json)]) {
     try {
       const parsed = JSON.parse(attempt)
       if (!Array.isArray(parsed)) continue
       const lines = parsed.filter(
         (item): item is ScriptLine =>
           item && (item.speaker === 'A' || item.speaker === 'B') && typeof item.text === 'string'
-      )
+      ).map(item => ({ ...item, text: cleanDialogueText(item.text) }))
       if (lines.length > 0) return lines
     } catch { /* try next */ }
   }
@@ -170,21 +209,16 @@ function buildChunkSourceText(chunk: AnalyzedChunk, rawText: string): string {
 export function buildPodcastSegments(script: ScriptLine[], title: string): PodcastSegment[] {
   const segments: PodcastSegment[] = []
 
-  segments.push({
-    speaker: 'A',
-    text: `Let's dive into ${title}.`,
-    rate: 1.0,
-    pitch: 1.0,
-    pauseBefore: 0,
-  })
-
-  let prevSpeaker: 'A' | 'B' | null = 'A'
+  let prevSpeaker: 'A' | 'B' | null = null
   for (const line of script) {
     const isSwitching = prevSpeaker !== null && prevSpeaker !== line.speaker
     const isShortReaction = line.text.split(/\s+/).length <= 5
     const rateJitter = (Math.random() - 0.5) * 0.1
     const pitchJitter = (Math.random() - 0.5) * 0.1
-    const pause = isShortReaction ? 50 + Math.random() * 50 : isSwitching ? 80 + Math.random() * 120 : 60 + Math.random() * 80
+    const pause = prevSpeaker === null ? 0
+      : isShortReaction ? 50 + Math.random() * 50
+      : isSwitching ? 80 + Math.random() * 120
+      : 60 + Math.random() * 80
 
     segments.push({
       speaker: line.speaker,
@@ -196,13 +230,11 @@ export function buildPodcastSegments(script: ScriptLine[], title: string): Podca
     prevSpeaker = line.speaker
   }
 
-  segments.push({
-    speaker: 'A',
-    text: `That wraps up our look at ${title}.`,
-    rate: 1.0,
-    pitch: 1.0,
-    pauseBefore: 300,
-  })
+  // Fallback: if script is empty, add a minimal intro/outro
+  if (segments.length === 0) {
+    segments.push({ speaker: 'A', text: `Let's talk about ${title}.`, rate: 1.0, pitch: 1.0, pauseBefore: 0 })
+    segments.push({ speaker: 'A', text: `That's ${title}.`, rate: 1.0, pitch: 1.0, pauseBefore: 300 })
+  }
 
   return segments
 }
@@ -223,11 +255,16 @@ async function hashContent(text: string): Promise<string> {
  * Parses ScriptLine objects from a growing token buffer.
  * Fires onLine() for each complete {"speaker":"A","text":"..."} as it arrives,
  * enabling TTS synthesis to start before the full response is complete.
+ *
+ * Optimized: only runs regex when a closing `}` is detected (cheap char check),
+ * and scans only from the last parse offset — avoids O(buffer²) rescanning.
  */
 class IncrementalScriptParser {
   private buffer = ''
   private emittedCount = 0
+  private parseOffset = 0
   private onLine: (line: ScriptLine) => void
+  private pendingParse = false
 
   constructor(onLine: (line: ScriptLine) => void) {
     this.onLine = onLine
@@ -235,28 +272,39 @@ class IncrementalScriptParser {
 
   push(token: string): void {
     this.buffer += token
-    // Try to extract complete JSON objects from the growing buffer
-    this._tryParse()
+    // Cheap check: only schedule parse if token contains object-closing char
+    if (token.includes('}') && !this.pendingParse) {
+      this.pendingParse = true
+      // Batch with microtask to coalesce rapid token arrivals
+      queueMicrotask(() => {
+        this.pendingParse = false
+        this._tryParse()
+      })
+    }
   }
 
   /** Return any remaining lines not yet emitted */
   flush(): ScriptLine[] {
+    this._tryParse() // Final sync parse
     const all = parsePodcastScript(this.buffer)
     return all.slice(this.emittedCount)
   }
 
   private _tryParse(): void {
-    // Match complete {"speaker":"A/B","text":"..."} objects
+    // Scan only the new portion of the buffer since last parse
+    const searchRegion = this.buffer.slice(this.parseOffset)
     const objRegex = /\{\s*"speaker"\s*:\s*"([AB])"\s*,\s*"text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"\s*\}/g
     let match: RegExpExecArray | null
-    let count = 0
-    while ((match = objRegex.exec(this.buffer)) !== null) {
-      count++
-      if (count > this.emittedCount) {
-        this.emittedCount = count
-        const text = match[2].replace(/\\"/g, '"').replace(/\\n/g, ' ').replace(/\\\\/g, '\\')
-        this.onLine({ speaker: match[1] as 'A' | 'B', text })
-      }
+    while ((match = objRegex.exec(searchRegion)) !== null) {
+      this.emittedCount++
+      // Advance parse offset past this match so we never rescan it
+      this.parseOffset += match.index + match[0].length
+      const text = cleanDialogueText(
+        match[2].replace(/\\"/g, '"').replace(/\\n/g, ' ').replace(/\\\\/g, '\\')
+      )
+      this.onLine({ speaker: match[1] as 'A' | 'B', text })
+      // Reset regex for the remaining slice
+      break // Re-enter loop with updated offset on next push
     }
   }
 }
@@ -292,6 +340,8 @@ interface ThemeContext {
   themes: string[]
   currentIdx: number
   previousExchanges?: ScriptLine[]
+  /** Extractive summary of previous theme (first + last Alex line) for richer context */
+  previousSummary?: string
 }
 
 async function generateThemeScript(
@@ -305,6 +355,7 @@ async function generateThemeScript(
   themeContext?: ThemeContext,
   preset?: PodcastPreset,
   _retryCount = 0,
+  exchangeOverride?: number,
 ): Promise<ScriptLine[]> {
   const p = preset ?? getPodcastPreset()
   let relevantText = ''
@@ -346,7 +397,7 @@ async function generateThemeScript(
       .slice(0, PROMPT_CONFIG.podcastScriptMaxInput)
   }
 
-  const exchangeCount = duration === 'detailed' ? p.exchangesPerThemeDetailed : p.exchangesPerThemeQuick
+  const exchangeCount = exchangeOverride ?? (duration === 'detailed' ? p.exchangesPerThemeDetailed : p.exchangesPerThemeQuick)
   const maxTokens = duration === 'detailed' ? p.maxTokensDetailed : p.maxTokensQuick
   const promptTemplate = duration === 'detailed' ? PROMPTS.podcastScriptDetailed : PROMPTS.podcastScript
   let prompt = promptTemplate.replace('{{EXCHANGE_COUNT}}', String(exchangeCount))
@@ -367,8 +418,11 @@ async function generateThemeScript(
     userContent += '\nConnect to previous topics if relevant.\n\n'
   }
 
-  // Sliding window: include last 2 exchanges from previous theme for continuity
+  // Sliding window: include summary + last 2 exchanges from previous theme for continuity
   if (themeContext?.previousExchanges && themeContext.previousExchanges.length > 0) {
+    if (themeContext.previousSummary) {
+      userContent += `Previous topic summary: ${themeContext.previousSummary}\n`
+    }
     const prevLines = themeContext.previousExchanges
       .map(l => `${l.speaker === 'A' ? 'Alex' : 'Sam'}: "${l.text}"`)
       .join('\n')
@@ -383,6 +437,7 @@ async function generateThemeScript(
   ]
 
   const temperature = p.scriptTemperature
+  const repeatPenalty = 1.15
 
   // If streaming callback provided, use incremental parsing for real-time TTS
   let lines: ScriptLine[]
@@ -392,6 +447,8 @@ async function generateThemeScript(
       signal,
       maxTokens,
       temperature,
+      repeatPenalty,
+      model: PODCAST_MODEL,
       onToken: (token) => parser.push(token),
     })
     // Flush any remaining lines not caught by incremental parsing
@@ -399,7 +456,7 @@ async function generateThemeScript(
     const all = parsePodcastScript(scriptRaw)
     lines = (remaining.length > 0 && all.length > remaining.length) ? all : (all.length > 0 ? all : remaining)
   } else {
-    const scriptRaw = await chatFast(scriptMessages, { signal, maxTokens, temperature })
+    const scriptRaw = await chatFast(scriptMessages, { signal, maxTokens, temperature, repeatPenalty, model: PODCAST_MODEL })
     lines = parsePodcastScript(scriptRaw)
   }
 
@@ -466,6 +523,16 @@ const transitionTemplates = [
     ({ speaker: 'B' as const, text: `So that covers ${extractNoun(prev)}. But I'm curious how ${extractNoun(next)} fits in.` }),
   (prev: string, next: string) =>
     ({ speaker: 'A' as const, text: `And building on what we just said about ${extractNoun(prev)}, let's look at ${extractNoun(next)}.` }),
+  (prev: string, next: string) =>
+    ({ speaker: 'B' as const, text: `Okay so we've got a good handle on ${extractNoun(prev)}. What about ${extractNoun(next)} though?` }),
+  (prev: string, next: string) =>
+    ({ speaker: 'A' as const, text: `That's a nice segue actually, because ${extractNoun(next)} builds directly on ${extractNoun(prev)}.` }),
+  (prev: string, next: string) =>
+    ({ speaker: 'B' as const, text: `Wait, before we move on from ${extractNoun(prev)}, doesn't that connect to ${extractNoun(next)}?` }),
+  (_prev: string, next: string) =>
+    ({ speaker: 'A' as const, text: `Right, and that brings us to something related. Let's talk about ${extractNoun(next)}.` }),
+  (prev: string, next: string) =>
+    ({ speaker: 'B' as const, text: `I keep thinking about how ${extractNoun(prev)} relates to ${extractNoun(next)}. Can we dig into that?` }),
 ]
 
 function injectTransitions(themeResults: ScriptLine[][], themes: string[]): ScriptLine[] {
@@ -504,6 +571,7 @@ async function dramatizeScript(
         signal,
         maxTokens: 1000,
         temperature: PROMPT_CONFIG.podcastDramatizeTemperature,
+        model: PODCAST_MODEL,
       })
       const parsed = parsePodcastScript(result)
       dramatized.push(...(parsed.length > 0 ? parsed : chunk))
@@ -514,6 +582,65 @@ async function dramatizeScript(
   }
 
   return dramatized
+}
+
+// ─── Exchange Budget Distribution ───────────────────────────────────────────
+
+/**
+ * Distribute exchange budgets proportionally to source material richness.
+ * Rich themes get more depth, thin themes don't pad with filler.
+ */
+function distributeExchanges(
+  sourceLengths: number[],
+  basePerTheme: number,
+  minPerTheme = 4,
+  maxPerTheme = 12,
+): number[] {
+  if (sourceLengths.length <= 1) return sourceLengths.map(() => basePerTheme)
+
+  const totalLength = sourceLengths.reduce((a, b) => a + b, 0)
+  if (totalLength === 0) return sourceLengths.map(() => basePerTheme)
+
+  const totalBudget = basePerTheme * sourceLengths.length
+  return sourceLengths.map(len => {
+    const raw = Math.round(totalBudget * (len / totalLength))
+    // Round to nearest even number for clean A/B alternation
+    const even = Math.round(raw / 2) * 2
+    return Math.max(minPerTheme, Math.min(maxPerTheme, even))
+  })
+}
+
+// ─── Hook & Synthesis Generation ────────────────────────────────────────────
+
+async function generateHookOrSynthesis(
+  type: 'hook' | 'synthesis',
+  title: string,
+  themes: string[],
+  sourcePreview: string,
+  signal?: AbortSignal,
+): Promise<ScriptLine[]> {
+  const prompt = type === 'hook' ? PROMPTS.podcastHook : PROMPTS.podcastSynthesis
+  const userContent = type === 'hook'
+    ? `Topic: ${title}\n\nKey themes: ${themes.join(', ')}\n\nSource excerpt:\n${sourcePreview}`
+    : `Topic: ${title}\n\nThemes discussed: ${themes.join(', ')}`
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: prompt },
+    { role: 'user', content: userContent },
+  ]
+
+  try {
+    const raw = await chatFast(messages, {
+      signal,
+      maxTokens: 300,
+      temperature: 0.5,
+      model: PODCAST_MODEL,
+    })
+    const lines = parsePodcastScript(raw)
+    return lines.length > 0 ? lines.slice(0, 2) : []
+  } catch {
+    return [] // Non-fatal — falls back to template intro/outro
+  }
 }
 
 // ─── Main Generation (streaming architecture) ────────────────────────────────
@@ -570,8 +697,12 @@ export async function generatePodcast(
   // Pre-warm Ollama in background (ensures model loaded in VRAM before script calls)
   const warmup = prewarmOllama()
 
-  // NOTE: analysis deferred to AFTER script generation (see Phase 3).
-  // Running it here concurrently would double GPU/CPU load and cause browser hang.
+  // Start document analysis in parallel — it's CPU-only (TF-IDF, chunk annotation, no LLM)
+  // so it won't contend with Ollama GPU. Completing before script gen enables
+  // analysis-powered source retrieval instead of keyword fallback.
+  const analysisPromise = options?.docId !== undefined
+    ? analyzeDocument(options.docId, markdown, contentHash).catch(() => undefined)
+    : Promise.resolve(undefined)
 
   // Fast path: if markdown has 2+ H2/H3 headings, use them directly — skip LLM outline call
   const headings = chunks
@@ -589,7 +720,7 @@ export async function generatePodcast(
       { role: 'system', content: PROMPTS.podcastOutline },
       { role: 'user', content: docSummary },
     ]
-    const outlineRaw = await chatFast(outlineMessages, signal)
+    const outlineRaw = await chatFast(outlineMessages, { signal, model: PODCAST_MODEL })
     themes = parsePodcastOutline(outlineRaw).slice(0, maxThemes)
 
     // Fallback: use any headings we can find
@@ -598,8 +729,24 @@ export async function generatePodcast(
     }
   }
 
-  // Ensure Ollama warm-up completed before script generation
-  await warmup
+  // Ensure Ollama warm-up and analysis completed before script generation
+  const [, analysisResult] = await Promise.all([warmup, analysisPromise])
+  if (analysisResult) {
+    analysis = analysisResult
+    analysisId = analysisResult.id
+  }
+
+  // ── Phase 1b: Distribute exchange budgets by source richness
+  const baseExchanges = duration === 'detailed' ? preset.exchangesPerThemeDetailed : preset.exchangesPerThemeQuick
+  const themeSourceLengths = themes.map(theme => {
+    const themeWords = theme.toLowerCase().split(/\s+/)
+    return chunks
+      .map(c => ({ text: c.text, score: themeWords.filter(w => c.text.toLowerCase().includes(w)).length }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .reduce((sum, r) => sum + r.text.length, 0)
+  })
+  const exchangeBudgets = distributeExchanges(themeSourceLengths, baseExchanges)
 
   // ── Phase 2: Generate scripts per theme (adaptive to device tier)
   onProgress?.('Writing script...', 25)
@@ -615,6 +762,7 @@ export async function generatePodcast(
   if (useSequential) {
     // Sequential with sliding window for cross-theme coherence
     let previousExchanges: ScriptLine[] = []
+    let previousSummary: string | undefined
     for (let i = 0; i < themes.length; i++) {
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
       await yieldToUI()
@@ -623,14 +771,23 @@ export async function generatePodcast(
         themes,
         currentIdx: i,
         previousExchanges: previousExchanges.length > 0 ? previousExchanges : undefined,
+        previousSummary,
       }
 
       const lines = await generateThemeScript(
         themes[i], analysis, i, markdown, signal,
         options?.onLineStreamed, duration, context, preset,
+        0, exchangeBudgets[i],
       )
       themeResults[i] = lines
       previousExchanges = lines.slice(-2)
+      // Extract summary: first and last Alex lines from this theme
+      const alexLines = lines.filter(l => l.speaker === 'A')
+      if (alexLines.length >= 2) {
+        previousSummary = `${alexLines[0].text} ... ${alexLines[alexLines.length - 1].text}`
+      } else if (alexLines.length === 1) {
+        previousSummary = alexLines[0].text
+      }
 
       // Notify with progress
       const currentLines: ScriptLine[] = []
@@ -655,7 +812,7 @@ export async function generatePodcast(
       for (let i = batch; i < batchEnd; i++) {
         const context: ThemeContext = { themes, currentIdx: i }
         batchPromises.push(
-          generateThemeScript(themes[i], analysis, i, markdown, signal, options?.onLineStreamed, duration, context, preset)
+          generateThemeScript(themes[i], analysis, i, markdown, signal, options?.onLineStreamed, duration, context, preset, 0, exchangeBudgets[i])
             .then(lines => { themeResults[i] = lines })
         )
       }
@@ -685,22 +842,28 @@ export async function generatePodcast(
     allLines = deduplicateScript(allLines)
   }
 
-  // Dramatize pass (adds naturalness: filler words, reactions)
-  if (preset.enableDramatize && duration === 'detailed') {
+  // Dramatize pass — adds naturalness (self-corrections, analogies, varied rhythm).
+  // Run for detailed mode always, and for quick mode when script is short enough to be cheap.
+  const shouldDramatize = preset.enableDramatize && (duration === 'detailed' || allLines.length <= 20)
+  if (shouldDramatize) {
     onProgress?.('Adding natural speech...', 85)
     allLines = await dramatizeScript(allLines, signal)
   }
 
-  // ── Phase 4: Finalize + background analysis
-  onProgress?.('Finalizing...', 92)
+  // ── Phase 3b: Generate hook + synthesis (replace template intro/outro)
+  onProgress?.('Adding hook and synthesis...', 90)
 
-  // Start analysis NOW (after script gen done) — no GPU contention
-  if (options?.docId !== undefined) {
-    analyzeDocument(options.docId, markdown, contentHash).then(a => {
-      analysis = a
-      analysisId = a.id
-    }).catch(() => { /* non-fatal */ })
-  }
+  const sourcePreview = chunks.map(c => c.text).join('\n').slice(0, 500)
+  const [hookLines, synthLines] = await Promise.all([
+    generateHookOrSynthesis('hook', title, themes, sourcePreview, signal),
+    generateHookOrSynthesis('synthesis', title, themes, sourcePreview, signal),
+  ])
+
+  if (hookLines.length > 0) allLines.unshift(...hookLines)
+  if (synthLines.length > 0) allLines.push(...synthLines)
+
+  // ── Phase 4: Finalize
+  onProgress?.('Finalizing...', 95)
 
   const segments = buildPodcastSegments(allLines, title)
   const podcast: PodcastScript = {
@@ -766,7 +929,7 @@ export async function generateDeepPodcast(
       { role: 'user', content: `Previously discussed: ${previousThemesSummary}\n\nNew material from "${relatedDoc.fileName}":\n${sourceText}` },
     ]
 
-    const deepRaw = await chatFast(deepMessages, { signal, maxTokens: PROMPT_CONFIG.podcastMaxTokens })
+    const deepRaw = await chatFast(deepMessages, { signal, maxTokens: PROMPT_CONFIG.podcastMaxTokens, model: PODCAST_MODEL })
     const newLines = parsePodcastScript(deepRaw)
     allNewLines.push(...newLines)
 

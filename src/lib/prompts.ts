@@ -22,40 +22,50 @@ Do not include any text before or after the JSON array.
 ["First key idea from the text", "Second key idea from the text", "Third key idea from the text"]
 
 Only mention ideas that appear in the text.`,
-  podcastScript: `You write podcast scripts as JSON. Two hosts discuss a topic using SPECIFIC FACTS from the source text.
-Host A = Alex (explains concepts in detail, gives examples). Host B = Sam (reacts, asks follow-up questions, connects ideas).
+  podcastScript: `You write podcast scripts as JSON. Two hosts have an intellectually engaging conversation using SPECIFIC FACTS from the source text.
+Host A = Alex (explains concepts clearly with examples and context).
+Host B = Sam (contributes analogies, challenges assumptions, makes connections to everyday experience).
 Rules:
-- No markdown, plain conversational speech
-- Each turn 15-40 words — include actual details, facts, numbers from the source
-- Alex should EXPLAIN what things do and why they matter, not just name them
-- Sam should ask "how does that work?" or "why is that important?" type questions
-- Include specific details from the text, not just topic names
+- No markdown, no backticks, no asterisks — plain conversational speech only
+- Vary turn lengths: most 15-40 words, but some short reactions (3-8 words) and occasional longer insights (40-55 words)
+- Alex explains HOW things work and WHY they matter, not just names them
+- Sam must ADD something each turn — an analogy, a challenge, a connection, or a "so what" question. Never just acknowledge.
+- BAD Sam: "Oh interesting. How does that work?" (empty reaction + generic question)
+- GOOD Sam: "Wait so its like a phone call instead of sending letters back and forth?" (contributes an analogy)
+- GOOD Sam: "But doesnt that create a single point of failure?" (challenges an assumption)
+- Include specific facts, numbers, and details from the source text
 
 Return a JSON array with EXACTLY {{EXCHANGE_COUNT}} objects. Alternate speakers A and B.
 [{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]`,
 
-  podcastScriptDetailed: `You write in-depth podcast scripts as JSON. Two hosts have a deep, exploratory conversation about a topic using SPECIFIC FACTS from the source text.
-Host A = Alex (explains concepts thoroughly with examples, analogies, and context). Host B = Sam (asks probing questions, plays devil's advocate, connects ideas across topics).
+  podcastScriptDetailed: `You write in-depth podcast scripts as JSON. Two hosts have a deep, intellectually rich conversation using SPECIFIC FACTS from the source text.
+Host A = Alex (explains mechanisms, gives concrete examples, discusses trade-offs and implications).
+Host B = Sam (plays devils advocate, contributes analogies from everyday life, spots contradictions, builds on Alexs points with his own insights).
 Rules:
-- No markdown, plain conversational speech
-- Each turn 25-60 words — go deeper into details, mechanisms, implications
-- Alex should EXPLAIN how things work, give examples, and discuss trade-offs
-- Sam should challenge assumptions: "But what about...", "How does that compare to..."
-- Include tangents that circle back: "This reminds me of what you said earlier about..."
-- Add genuine moments of insight: "Oh wait, so that means..."
+- No markdown, no backticks, no asterisks — plain conversational speech only
+- Vary turn lengths dramatically: short reactions (3-8 words like "Exactly." or "Hold on."), normal turns (20-45 words), and occasional deep dives (50-70 words when sharing an insight)
+- Alex explains HOW and WHY, gives real examples, discusses what could go wrong
+- Sam must ADD intellectual value every turn — not just react:
+  * Contribute an analogy: "So its basically like air traffic control for data"
+  * Challenge: "But wait, doesnt that break down when you have thousands of nodes?"
+  * Connect: "That actually reminds me of what you said about leader election — same tradeoff"
+  * Spot implications: "Oh hold on, so that means you can never have all three at once?"
+- Create tension: raise questions early that get answered later
 - Reference specific facts, numbers, and details from the source
 
 Return a JSON array with EXACTLY {{EXCHANGE_COUNT}} objects. Alternate speakers A and B.
 [{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]`,
 
-  podcastDramatize: `You are a podcast script editor. Take this conversation and make it sound MORE natural and human.
-Add:
-- Filler words ("um", "like", "you know", "I mean") where they'd naturally occur
-- Interruptions where Sam gets excited ("Wait wait—")
-- Short reaction turns ("Oh wow." or "Huh." or "Right, right.")
-- Moments where a host trails off and the other picks up
-- Enthusiastic agreement ("Yes! Exactly!")
-Do NOT change the factual content. Do NOT add markdown syntax.
+  podcastDramatize: `You are a podcast script editor. Make this conversation sound like two smart people genuinely thinking together.
+Add where natural:
+- Moments where Sam builds on Alex with an analogy or real-world comparison
+- Interruptions where Sam spots an implication ("Hold on — so that means...")
+- Self-corrections: "well actually let me rephrase that" or "no wait thats not quite right"
+- Trailing off that the other picks up: "So if you combine those two..." "Right, you get a system that..."
+- Occasional short reactions that show genuine processing: "Huh." or "Okay okay okay."
+- Filler words sparingly: "like", "you know", "I mean" — but not on every turn
+Do NOT change the factual content. Do NOT add markdown syntax. Do NOT add backticks.
+Vary turn lengths — some turns should be 3-5 words, others 40-60 words.
 Return the improved JSON array in the same format: [{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]`,
   podcastDeep: `You are continuing a lively podcast. Alex and Sam already discussed the main document.
 Now they're exploring a related document — Sam is curious how it connects.
@@ -72,6 +82,23 @@ They should debate, connect dots, and have genuine "aha" moments.
 NO markdown syntax. Write as spoken language.
 Return ONLY a JSON array: [{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]
 6-8 exchanges. Under 35 words per turn. Only use facts from the text.`,
+
+  podcastHook: `Write an opening hook for a podcast episode about this topic. The hook should make the listener curious — use a surprising fact, a provocative question, or a bold claim from the source text.
+Return ONLY a JSON array with exactly 2 objects — Alex opens with the hook, Sam reacts with genuine curiosity:
+[{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]
+Rules:
+- No markdown. Plain speech only.
+- Alex: 15-30 words. Start with something surprising or counterintuitive from the text. NOT "Today we are going to discuss..." or "Lets dive into..."
+- Sam: 10-20 words. React with genuine curiosity, not generic enthusiasm.`,
+
+  podcastSynthesis: `Write a closing synthesis for a podcast episode. The hosts just finished discussing the topics listed below. Wrap up with a genuine insight or takeaway — NOT a summary of what was discussed.
+Return ONLY a JSON array with exactly 2 objects — Sam reflects on a key insight, Alex adds the bigger picture:
+[{"speaker":"B","text":"..."},{"speaker":"A","text":"..."}]
+Rules:
+- No markdown. Plain speech only.
+- Sam: 15-30 words. Share a genuine takeaway — "The thing that really sticks with me is..." or "I think the surprising part is..."
+- Alex: 15-30 words. Add the big picture implication — why this matters beyond the document.
+- NOT "That wraps up our look at..." or "Thanks for listening."`,
 
   diagramDSL: `Create a diagram of this text's key concepts. Return ONLY valid JSON.
 Format: {"title":"Title","type":"flowchart","nodes":[{"id":"a","label":"Label"}],"edges":[{"from":"a","to":"b","label":"rel"}]}
@@ -98,9 +125,9 @@ export const PROMPT_CONFIG = {
   podcastMaxTokens: 800,
   podcastDetailedMaxTokens: 800,
   podcastExchangesQuick: 6,
-  podcastExchangesDetailed: 10,
+  podcastExchangesDetailed: 8,
   podcastThemesQuick: 2,
-  podcastThemesDetailed: 4,
+  podcastThemesDetailed: 6,
   podcastScriptTemperature: 0.45,
   podcastDramatizeTemperature: 0.65,
   diagramDSLMaxInput: 4000,
