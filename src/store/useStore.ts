@@ -5,6 +5,12 @@ import { resolveEnabledFeatures, enableFeature, disableFeature, isViewModeGated 
 import type { PodcastScript } from '../lib/podcast'
 import type { DiagramDSL } from '../lib/excalidraw-converter'
 
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: number
+}
+
 // IndexedDB-backed storage for Zustand persist — handles large markdown content
 // without hitting localStorage's ~5MB limit. Connection is cached to avoid
 // opening a new IDB connection on every read/write.
@@ -102,6 +108,13 @@ export interface DocumentState {
   setPodcastScript: (script: PodcastScript | null) => void
   diagramDsl: DiagramDSL | null
   setDiagramDsl: (dsl: DiagramDSL | null) => void
+  // Chat history — persists across view switches, Chat panel close/reopen,
+  // AI Settings modal open, and backend re-detection. Cleared only when
+  // the user switches to a different document (setMarkdown/openDocument/reset).
+  chatMessages: ChatMessage[]
+  setChatMessages: (messages: ChatMessage[]) => void
+  appendChatMessage: (message: ChatMessage) => void
+  clearChatMessages: () => void
   enabledFeatures: Set<string>
   toggleFeature: (id: string) => void
   refreshFeatureFlags: () => void
@@ -139,17 +152,31 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
   setPodcastScript: (script) => set({ podcastScript: script }),
   diagramDsl: null,
   setDiagramDsl: (dsl) => set({ diagramDsl: dsl }),
+  chatMessages: [],
+  setChatMessages: (messages) => set({ chatMessages: messages }),
+  appendChatMessage: (message) => set((s) => ({ chatMessages: [...s.chatMessages, message] })),
+  clearChatMessages: () => set({ chatMessages: [] }),
   enabledFeatures: resolveEnabledFeatures(),
 
   setMarkdown: (md, fileName) => {
     // Only count genuinely new document opens, not re-opens of the same content
     const prev = useStore.getState().markdown
-    if (md && md.length > 0 && prev !== md) {
+    const isNewDoc = md && md.length > 0 && prev !== md
+    if (isNewDoc) {
       const count = parseInt(localStorage.getItem('md-reader-docs-read') ?? '0')
       localStorage.setItem('md-reader-docs-read', String(count + 1))
       trackEvent('doc_opened')
     }
-    set({ markdown: md, fileName: fileName ?? null, readingProgress: 0, activeSection: null, viewMode: 'read' })
+    set({
+      markdown: md,
+      fileName: fileName ?? null,
+      readingProgress: 0,
+      activeSection: null,
+      viewMode: 'read',
+      // Only clear chat history when the document actually changed — not on
+      // every re-open of the same content (e.g., after AI settings save).
+      ...(isNewDoc ? { chatMessages: [] } : {}),
+    })
   },
   setFileName: (name) => set({ fileName: name }),
   setToc: (toc) => set({ toc }),
@@ -204,8 +231,9 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
     readingProgress: 0,
     activeSection: null,
     viewMode: 'read',
+    chatMessages: [], // fresh conversation for a freshly opened document
   }),
-  reset: () => set({ markdown: '', fileName: null, toc: [], readingProgress: 0, activeSection: null, viewMode: 'read', ttsPlaying: false, ttsSectionIndex: 0, activeDocId: null, workspaceMode: false, readScrollTop: 0, podcastScript: null, diagramDsl: null }),
+  reset: () => set({ markdown: '', fileName: null, toc: [], readingProgress: 0, activeSection: null, viewMode: 'read', ttsPlaying: false, ttsSectionIndex: 0, activeDocId: null, workspaceMode: false, readScrollTop: 0, podcastScript: null, diagramDsl: null, chatMessages: [] }),
   backToWorkspace: () => set({ markdown: '', fileName: null, toc: [], viewMode: 'workspace', activeDocId: null }),
   backToCollection: () => set({ markdown: '', fileName: null, toc: [], viewMode: 'collection', activeDocId: null }),
 }), {
@@ -253,6 +281,7 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
     viewMode: state.viewMode,
     workspaceMode: state.workspaceMode,
     activeDocId: state.activeDocId,
+    chatMessages: state.chatMessages, // persist conversation across reloads within the same doc
   }) as unknown as DocumentState, // Safe: persist only serializes these fields; missing fields use defaults on rehydration
 }), { name: 'md-reader', enabled: import.meta.env.DEV }))
 

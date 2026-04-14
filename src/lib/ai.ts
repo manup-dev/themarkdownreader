@@ -105,14 +105,37 @@ export async function redetectBackend(): Promise<Backend> {
 
 // ─── API key management ────────────────────────────────────────────────────
 
+/**
+ * Canonicalize a key on both read and write so no code path can send a header
+ * containing trailing whitespace, newlines, or zero-width characters. This
+ * was previously a real bug: users pasted keys with copy-paste artifacts, the
+ * Test button used `apiKey.trim()` on React state so it succeeded, but the
+ * actual chat call sent the raw stored value and OpenRouter returned
+ * "401 missing authentication header" because the Authorization header was
+ * malformed. Defense in depth — we sanitize on write AND read AND usage.
+ */
+function canonicalizeKey(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  // Strip all whitespace (including zero-width and non-breaking spaces) from
+  // both ends. OpenRouter keys are always `sk-or-...` ASCII so aggressive
+  // stripping is safe.
+  const cleaned = raw.replace(/^[\s\u200B-\u200D\uFEFF]+|[\s\u200B-\u200D\uFEFF]+$/g, '')
+  return cleaned || null
+}
+
 export function setApiKey(key: string): void {
-  localStorage.setItem(OPENROUTER_KEY_STORAGE, key)
+  const cleaned = canonicalizeKey(key)
+  if (cleaned) {
+    localStorage.setItem(OPENROUTER_KEY_STORAGE, cleaned)
+  } else {
+    localStorage.removeItem(OPENROUTER_KEY_STORAGE)
+  }
   // Reset detection so next call re-evaluates with the new key
   backendDetected = false
 }
 
 export function getApiKey(): string | null {
-  return localStorage.getItem(OPENROUTER_KEY_STORAGE)
+  return canonicalizeKey(localStorage.getItem(OPENROUTER_KEY_STORAGE))
 }
 
 export function clearApiKey(): void {
@@ -178,12 +201,16 @@ export async function detectBestBackend(): Promise<Backend> {
         // preferred not available, fall through to auto-detect
       }
 
-      // Auto: browser-first
-      // Note: WebLLM is NOT in auto-detect because Gemma4 also uses WebGPU and is preferred.
-      // WebLLM is only available as explicit override or as fallback within the chat() function when Gemma4 fails.
-      if (await checkWebGPU()) { setActiveBackend('gemma4'); backendDetected = true; return activeBackend }
+      // Auto: config-first, then browser.
+      // Principle: if the user has explicitly configured a zero-setup backend
+      // (Ollama running, OpenRouter key set), respect that — they don't need
+      // and may not want a 500MB model download. Only fall back to WebGPU
+      // gemma4 (which requires a download) when nothing else is available.
+      // This was previously "browser-first" and it trapped users who'd
+      // already given the app a cloud key into a 500MB model download loop.
       if (await checkOllamaHealth()) { setActiveBackend('ollama'); backendDetected = true; return activeBackend }
       if (await checkOpenRouter()) { setActiveBackend('openrouter'); backendDetected = true; return activeBackend }
+      if (await checkWebGPU()) { setActiveBackend('gemma4'); backendDetected = true; return activeBackend }
 
       setActiveBackend('none')
       backendDetected = true
@@ -306,8 +333,13 @@ async function chatOpenRouterStream(
   maxTokens?: number,
   temperature?: number,
 ): Promise<string> {
-  const apiKey = getApiKey()
-  if (!apiKey) throw new Error('OpenRouter API key not set')
+  const rawKey = getApiKey()
+  if (!rawKey) throw new Error('OpenRouter API key not set')
+  // Defense in depth: getApiKey() now canonicalizes, but a raw .trim() at the
+  // usage site guarantees no code path can ever send `Bearer sk-or-...\n` to
+  // OpenRouter, which was the root cause of "401 missing authentication header"
+  // while the Test button (which already trimmed) reported success.
+  const apiKey = rawKey.trim()
 
   const res = await fetch(OPENROUTER_BASE_URL, {
     method: 'POST',
@@ -329,7 +361,11 @@ async function chatOpenRouterStream(
 
   if (!res.ok) {
     const body = await res.text().catch(() => '')
-    throw new Error(`OpenRouter error ${res.status}: ${body}`)
+    // Preserve the status code in the error so the UI can render a targeted
+    // action (e.g. "re-enter your API key" on 401, "rate limited" on 429).
+    const err = new Error(`OpenRouter error ${res.status}: ${body}`) as Error & { status?: number }
+    err.status = res.status
+    throw err
   }
 
   const reader = res.body?.getReader()
@@ -493,8 +529,27 @@ export async function chat(
 
   // Gemma 4 (primary)
   if (activeBackend === 'gemma4') {
+    const modelState = getModelState()
+    // If the model isn't already downloaded, don't trap the user in a 500MB
+    // blocking download when a zero-setup backend is ready RIGHT NOW. This
+    // specifically unblocks the case where auto-detect picked gemma4 because
+    // WebGPU is available, but the user also has Ollama running or an
+    // OpenRouter key set — they should get an answer immediately via the
+    // ready backend, not wait minutes for the model to download.
+    if (modelState.status !== 'ready') {
+      if (await checkOllamaHealth()) {
+        // Silently prefer Ollama; the browser model can still download in
+        // the background via preloadGemma — next call may land on it.
+        return chatOllamaStream(messages, onToken, signal)
+      }
+      if (await checkOpenRouter()) {
+        return chatOpenRouterStream(messages, onToken, signal)
+      }
+      // No zero-setup fallback available — fall through to the normal
+      // download + wait path.
+    }
+
     try {
-      const modelState = getModelState()
       if (modelState.status === 'downloading') {
         await waitForReady()
       } else if (modelState.status !== 'ready') {

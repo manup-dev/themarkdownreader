@@ -3,15 +3,35 @@ import { Send, Bot, User, Loader2, Sparkles, Cpu, Zap, Cloud, Trash2, Copy, Down
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
+import type { ChatMessage as Message } from '../store/useStore'
 import { chunkMarkdown } from '../lib/markdown'
 import { searchChunks } from '../lib/embeddings'
 import { askAboutDocument, summarize, detectBestBackend, getActiveBackend, isBackendReady, onBackendChange, onWebLLMProgress, onModelProgress } from '../lib/ai'
 import { trackEvent } from '../lib/telemetry'
 
-interface Message {
-  role: 'user' | 'assistant'
-  content: string
-  timestamp: number
+// Turn a raw error message from the ai.ts layer into a human, actionable string.
+// The goal: a first-time user should know EXACTLY what to do next without
+// reading a stack trace or knowing what HTTP 401 means.
+function formatAiError(msg: string): string {
+  if (msg.includes('No AI backend') || msg.includes('No AI backend available')) {
+    return 'No AI backend configured. Open **AI Settings** (gear icon) and either paste a free OpenRouter API key or download the browser model.'
+  }
+  if (msg.includes('OpenRouter API key not set')) {
+    return 'Your OpenRouter API key is empty. Open **AI Settings** and paste your key from [openrouter.ai/keys](https://openrouter.ai/keys).'
+  }
+  if (/OpenRouter error 401|missing authentication|Unauthorized/i.test(msg)) {
+    return 'OpenRouter rejected the request (`401 unauthorized`). Your key may be invalid, expired, or copied with extra whitespace. Open **AI Settings**, re-paste your key (watch for trailing spaces), and click **Test**.'
+  }
+  if (/OpenRouter error 429|rate limit/i.test(msg)) {
+    return 'OpenRouter rate-limited this request. Free-tier quota is generous but not unlimited — wait a minute and try again, or switch to Ollama / browser AI in **AI Settings**.'
+  }
+  if (/OpenRouter error 5\d\d/i.test(msg)) {
+    return 'OpenRouter is having a temporary issue (5xx). Retry in a moment, or switch to Ollama / browser AI.'
+  }
+  if (msg.includes('Gemma 4 failed')) {
+    return 'The browser AI model failed to load. Open **AI Settings** and either retry the download or configure OpenRouter / Ollama as an alternative.'
+  }
+  return `Error: ${msg}`
 }
 
 function timeAgo(ts: number): string {
@@ -25,7 +45,19 @@ function timeAgo(ts: number): string {
 
 export function Chat() {
   const markdown = useStore((s) => s.markdown)
-  const [messages, setMessages] = useState<Message[]>([])
+  // Chat history lives in the store so it survives view switches, Chat panel
+  // close/reopen, and the AI Settings modal. Cleared only when the user
+  // switches to a different document — see useStore.setMarkdown.
+  const messages = useStore((s) => s.chatMessages)
+  const setChatMessages = useStore((s) => s.setChatMessages)
+  // Setter shim that matches the old React useState API `(prev => next)` so the
+  // rest of this component (and the handlers below) keep their existing shape.
+  // Reads the latest store snapshot at call time, avoiding stale closures.
+  const setMessages = useCallback((updater: Message[] | ((prev: Message[]) => Message[])) => {
+    const prev = useStore.getState().chatMessages
+    const next = typeof updater === 'function' ? (updater as (p: Message[]) => Message[])(prev) : updater
+    setChatMessages(next)
+  }, [setChatMessages])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [streamingText, setStreamingText] = useState('')
@@ -100,17 +132,14 @@ export function Chat() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
       if (!msg.includes('abort')) {
-        const display = msg.includes('No AI backend')
-          ? 'No AI backend configured. Open **AI Settings** (gear icon) to set up a free OpenRouter API key or download the browser model.'
-          : `Error: ${msg}`
-        setMessages((prev) => [...prev, { role: 'assistant', content: display, timestamp: Date.now() }])
+        setMessages((prev) => [...prev, { role: 'assistant', content: formatAiError(msg), timestamp: Date.now() }])
       }
       setStreamingText('')
     } finally {
       setLoading(false)
       setBackend(getActiveBackend())
     }
-  }, [loading, chunks])
+  }, [loading, chunks, setMessages])
 
   const handleSend = useCallback(async () => {
     const question = input.trim()
@@ -135,10 +164,7 @@ export function Chat() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
       if (!msg.includes('abort')) {
-        const display = msg.includes('No AI backend')
-          ? 'No AI backend configured. Open **AI Settings** (gear icon) to set up a free OpenRouter API key or download the browser model.'
-          : `Error: ${msg}`
-        setMessages((prev) => [...prev, { role: 'assistant', content: display, timestamp: Date.now() }])
+        setMessages((prev) => [...prev, { role: 'assistant', content: formatAiError(msg), timestamp: Date.now() }])
       }
       setStreamingText('')
     } finally {
