@@ -2,8 +2,10 @@
 
 # md-reader
 
-**The AI-native markdown reader.**
-*Obsidian is for writing. md-reader is for understanding.*
+# Read it. → Ship it.
+
+**Comprehend. Then act. Without the alt-tab.**
+*Understand any spec as a podcast or mind map, then highlight a passage and ship a grounded prompt to Claude Code with line refs. Local, offline, MIT.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/manup-dev/themarkdownreader/actions/workflows/ci.yml/badge.svg)](https://github.com/manup-dev/themarkdownreader/actions/workflows/ci.yml)
@@ -14,38 +16,68 @@
 </div>
 
 <div align="center">
-  <img src="docs/screenshots/hero-reader.png" alt="md-reader reading view" width="800" />
-  <p><em>Beautiful reading with AI chat, highlights, and TTS</em></p>
+  <img src="public/og-card.png" alt="md-reader — Read it. Ship it." width="800" />
 </div>
 
 ---
 
 ## Why md-reader?
 
-Every markdown tool is built for **writing**. md-reader is the first one built for **reading**.
+**Comprehension and action are two distinct problems, and no tool handles both.** NotebookLM helps you understand a doc but leaves you stranded when it's time to act. Claude Code, Codex, and Cursor happily implement anything you paste, but assume you already understood it. So you read in one tab, alt-tab, retype context, lose line references, and pray.
 
-Drop a markdown file and instantly get: AI chat, mind maps, knowledge graphs, text-to-speech, and a beautiful reading experience — all running locally, no API keys required.
+md-reader closes that gap. One app, both halves:
+
+### 📖 Read it. — understand any doc in minutes
+
+- 🎙️ **Two AI voices discussing it** — like NotebookLM, but on your GPU
+- 🧠 **Auto-generated mind map** — structural overview in one click
+- 🎓 **AI tutor** — explains sections, quizzes your comprehension
+- 💬 **Chat with the doc** — grounded answers with section citations
+- 🔊 **Neural TTS** — Kokoro-82M WebGPU narration
+- 📊 **Knowledge graph + treemap** — visualize concept relationships
+
+### 🚀 Ship it. — hand off to your coding agent
+
+- ✨ **Select a paragraph** in any spec, RFC, or design doc
+- 💭 **Comment** what you want changed, reviewed, or implemented
+- 🎯 **Generate** a Claude Code / Codex / generic prompt with exact `file:line` references
+- ⚡ **One-click ship** to a VS Code terminal running `claude`, or to your clipboard for claude.ai
+
+The VS Code extension makes this a single keyboard shortcut. The Chrome extension lets you do it on any `.md` file on GitHub without cloning the repo. Local AI means your proprietary specs never leave your machine.
+
+All of it runs on your machine. No API keys. No signup. No rate limits. No data leaving your device.
 
 ```bash
 npx md-reader README.md
 ```
 
-One command. Local AI. No API keys. No signup.
+### What you'll actually save
 
-### How is this different?
+md-reader closes three loops end-to-end, each with a dollar sign or an hour count attached:
 
-| | md-reader | Obsidian | Typora | VS Code Preview |
-|---|---|---|---|---|
-| **Purpose** | Reading & understanding | Writing & PKM | Writing & export | Quick preview |
-| **AI Chat** | ✅ Built-in (3 backends) | ❌ Plugin required | ❌ | ❌ |
-| **Mind Maps** | ✅ Auto-generated | ❌ Plugin required | ❌ | ❌ |
-| **Knowledge Graph** | ✅ AI-extracted concepts | ⚠️ Link-based only | ❌ | ❌ |
-| **TTS** | ✅ Smart narration | ❌ | ❌ | ❌ |
-| **Local AI** | ✅ Ollama + WebLLM | ❌ | ❌ | ❌ |
-| **No account** | ✅ | ✅ | ⚠️ License | ✅ |
-| **Browser-based** | ✅ | ❌ | ❌ | ❌ |
-| **Open source** | ✅ MIT | ❌ | ❌ | ✅ |
-| **Price** | Free | Freemium | $15 | Free |
+| Role | The loop | Replaces | You save |
+|---|---|---|---|
+| **PMs & staff engineers** | 30-page PRD → 2-min podcast on the walk to standup → walk in knowing the debate | Skimming while pretending to listen | ~37 hours/year per PM |
+| **Consultants & freelancers** | 200-page client data room → overnight batch: `for f in data-room/*.md; do npx md-reader "$f"; done` → podcast + mind map + tutor quiz per doc | 8 hours of unpaid client prep | ~$1,600 per engagement @ $200/hr |
+| **Everyone paying for AI** | One local tool replaces ChatGPT Plus + Notion AI + Readwise Reader + Reflect | $55/mo in SaaS subscriptions | $660/year, forever |
+
+### How is this different from NotebookLM, Obsidian, and the rest?
+
+| | md-reader | NotebookLM | Obsidian | Typora | VS Code Preview |
+|---|---|---|---|---|---|
+| **Ship prompts to Claude Code / Codex** | ✅ One click, with line refs | ❌ | ❌ | ❌ | ❌ |
+| **Podcast generation** | ✅ Local, offline | ✅ Google cloud | ❌ | ❌ | ❌ |
+| **Mind maps** | ✅ Auto-generated | ❌ | ❌ Plugin required | ❌ | ❌ |
+| **AI tutor / coach** | ✅ Built-in | ⚠️ Chat only | ❌ Plugin required | ❌ | ❌ |
+| **Knowledge graph** | ✅ AI-extracted | ❌ | ⚠️ Link-based only | ❌ | ❌ |
+| **TTS** | ✅ Kokoro-82M local | ❌ | ❌ | ❌ | ❌ |
+| **Local AI** | ✅ Ollama + WebLLM | ❌ Cloud-only | ❌ | ❌ | ❌ |
+| **Works offline** | ✅ Airplane-ready | ❌ | ✅ (no AI) | ✅ | ✅ |
+| **Rate limits** | ✅ None | ❌ Google quotas | ✅ | ✅ | ✅ |
+| **No account** | ✅ | ❌ Google login | ✅ | ⚠️ License | ✅ |
+| **Open source** | ✅ MIT | ❌ | ❌ | ❌ | ✅ |
+| **Browser-based** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Price** | Free forever | Freemium (quotas) | Freemium | $15 | Free |
 
 ---
 

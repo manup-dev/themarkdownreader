@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, useEffect } from 'react'
-import { Upload as UploadIcon, Link, FileText, Library, PenLine, ArrowRight, Clock, FolderOpen, Chrome, Code2, Shield, Cpu, Eye, Headphones, Map, GraduationCap } from 'lucide-react'
+import { Upload as UploadIcon, Link, FileText, Library, PenLine, ArrowRight, Clock, FolderOpen, Chrome, Code2, Shield, Mic, Network, GraduationCap } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { getAllDocuments, type StoredDocument } from '../lib/docstore'
 import { SAMPLE_MARKDOWN } from '../lib/sample-doc'
@@ -253,37 +253,69 @@ export function Upload() {
               </div>
             ) : null
           })()}
-          <h1 className="text-5xl font-bold tracking-tight text-gray-900 dark:text-gray-50">
+          <p className="text-xs font-semibold tracking-[0.2em] uppercase text-gray-400 dark:text-gray-500">
             md-reader
+          </p>
+          <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-gray-900 dark:text-gray-50 leading-[1.1]">
+            <span className="bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
+              Read it.
+            </span>
+            <span className="text-gray-300 dark:text-gray-600 mx-2 font-light">→</span>
+            <span className="bg-gradient-to-r from-purple-600 to-emerald-500 bg-clip-text text-transparent">
+              Ship it.
+            </span>
           </h1>
-          <p className="text-lg text-gray-500 dark:text-gray-400">
-            The AI-powered markdown reader that runs entirely in your browser
+          <p className="text-base text-gray-500 dark:text-gray-400 pt-1">
+            Comprehend. Then act. Without the alt-tab. Local, offline, MIT.
           </p>
           <div className="flex items-center justify-center gap-1.5 pt-1">
             <Shield className="h-3.5 w-3.5 text-green-500" />
             <span className="text-xs text-green-600 dark:text-green-400 font-medium">
-              100% local &middot; No server &middot; Your files never leave your device
+              Open source &middot; MIT licensed &middot; Your files never leave your device
             </span>
           </div>
         </div>
 
-        {/* Feature highlights */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {/* Hero artifacts — 3 headline features */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
-            { icon: Eye, label: 'Beautiful reading', desc: 'Kindle-like experience', color: 'text-blue-500' },
-            { icon: Map, label: 'Visual exploration', desc: 'Mind maps & graphs', color: 'text-purple-500' },
-            { icon: Cpu, label: 'AI-powered Q&A', desc: 'Ask anything about your doc', color: 'text-emerald-500' },
-            { icon: Headphones, label: 'Read aloud', desc: 'Smart TTS narration', color: 'text-amber-500' },
-            { icon: GraduationCap, label: 'AI Coach', desc: 'Learn with quizzes', color: 'text-rose-500' },
-            { icon: Shield, label: 'Private by design', desc: 'Runs 100% in your browser', color: 'text-green-500' },
-          ].map(({ icon: Icon, label, desc, color }) => (
-            <div key={label} className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-white/60 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-800">
-              <Icon className={`h-4 w-4 ${color} shrink-0 mt-0.5`} />
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-gray-700 dark:text-gray-300 leading-tight">{label}</p>
-                <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-tight">{desc}</p>
+            {
+              icon: Mic,
+              label: 'Podcast',
+              desc: 'Two AI voices discussing your doc',
+              gradient: 'from-blue-500/10 to-blue-500/5',
+              border: 'hover:border-blue-400 dark:hover:border-blue-500',
+              iconColor: 'text-blue-500',
+            },
+            {
+              icon: Network,
+              label: 'Mind map',
+              desc: 'Auto-generated visual outline',
+              gradient: 'from-purple-500/10 to-purple-500/5',
+              border: 'hover:border-purple-400 dark:hover:border-purple-500',
+              iconColor: 'text-purple-500',
+            },
+            {
+              icon: GraduationCap,
+              label: 'AI tutor',
+              desc: 'Explains and quizzes you',
+              gradient: 'from-emerald-500/10 to-emerald-500/5',
+              border: 'hover:border-emerald-400 dark:hover:border-emerald-500',
+              iconColor: 'text-emerald-500',
+            },
+          ].map(({ icon: Icon, label, desc, gradient, border, iconColor }) => (
+            <button
+              key={label}
+              onClick={loadSample}
+              className={`group relative flex flex-col items-start gap-2 p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-gradient-to-br ${gradient} ${border} hover:shadow-md transition-all text-left`}
+            >
+              <Icon className={`h-5 w-5 ${iconColor}`} />
+              <div>
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{label}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 leading-snug">{desc}</p>
               </div>
-            </div>
+              <span className="absolute top-3 right-3 text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">Try →</span>
+            </button>
           ))}
         </div>
 
@@ -396,27 +428,29 @@ export function Upload() {
           </button>
         </div>
 
-        {/* Extensions */}
-        <div className="flex gap-3">
-          <a
-            href="https://github.com/manup-dev/themarkdownreader/tree/master/browser-extension#readme"
-            target="_blank"
-            rel="noopener"
-            className="flex-1 flex items-center gap-2.5 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-sm transition-all text-sm"
-          >
-            <Chrome className="h-4 w-4 text-blue-500 shrink-0" />
-            <span className="text-gray-600 dark:text-gray-300">Chrome Extension</span>
-          </a>
-          <a
-            href="https://manup-dev.github.io/themarkdownreader/md-reader-latest.vsix"
-            download="md-reader-latest.vsix"
-            rel="noopener"
-            className="flex-1 flex items-center gap-2.5 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-sm transition-all text-sm"
-          >
-            <Code2 className="h-4 w-4 text-purple-500 shrink-0" />
-            <span className="text-gray-600 dark:text-gray-300">VS Code Extension</span>
-          </a>
-        </div>
+        {/* Extensions — only surface after first doc read, so first-visit is uncluttered */}
+        {parseInt(localStorage.getItem('md-reader-docs-read') ?? '0') >= 1 && (
+          <div className="flex gap-3">
+            <a
+              href="https://github.com/manup-dev/themarkdownreader/tree/master/browser-extension#readme"
+              target="_blank"
+              rel="noopener"
+              className="flex-1 flex items-center gap-2.5 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-sm transition-all text-sm"
+            >
+              <Chrome className="h-4 w-4 text-blue-500 shrink-0" />
+              <span className="text-gray-600 dark:text-gray-300">Chrome Extension</span>
+            </a>
+            <a
+              href="https://manup-dev.github.io/themarkdownreader/md-reader-latest.vsix"
+              download="md-reader-latest.vsix"
+              rel="noopener"
+              className="flex-1 flex items-center gap-2.5 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-sm transition-all text-sm"
+            >
+              <Code2 className="h-4 w-4 text-purple-500 shrink-0" />
+              <span className="text-gray-600 dark:text-gray-300">VS Code Extension</span>
+            </a>
+          </div>
+        )}
 
         {/* GitHub star banner — below action buttons */}
         {parseInt(localStorage.getItem('md-reader-docs-read') ?? '0') >= 3 && !starDismissed && (

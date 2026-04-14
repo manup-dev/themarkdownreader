@@ -1,7 +1,7 @@
 {
-  "name": "md-reader — AI Markdown Reader",
+  "name": "md-reader — Read it. Ship it.",
   "short_name": "md-reader",
-  "description": "The AI-native markdown reader. Read, understand, and explore your documents with mind maps, AI chat, and text-to-speech.",
+  "description": "Comprehend. Then act. Without the alt-tab. Understand any spec as a podcast or mind map, then ship a grounded prompt to Claude Code. Local, offline, MIT.",
   "version": "1.0.0",
   "start_url": "/?source=pwa",
   "display": "standalone",

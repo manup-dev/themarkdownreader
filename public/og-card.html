@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>md-reader OG card</title>
+    <!--
+      ── OG CARD GENERATOR ────────────────────────────────────────
+      This file renders the 1200×630 social card for md-reader.
+      To produce og-card.png:
+
+      Option A (Playwright, recommended):
+        cd /home/manu/Desktop/code/md-reader
+        npm run dev
+        node -e "require('playwright').chromium.launch().then(async b => { const p = await b.newPage({viewport:{width:1200,height:630},deviceScaleFactor:2}); await p.goto('http://localhost:5183/og-card.html'); await p.waitForTimeout(500); await p.screenshot({path:'public/og-card.png', omitBackground:false}); await b.close(); })"
+
+      Option B (headless Chrome):
+        google-chrome --headless --disable-gpu --window-size=1200,630 --screenshot=public/og-card.png http://localhost:5183/og-card.html
+
+      Option C (manual): open in Chrome, set device emulator to 1200×630, screenshot.
+    -->
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body {
+        width: 1200px;
+        height: 630px;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+        background: #0a0a0f;
+        color: #f5f5fa;
+        -webkit-font-smoothing: antialiased;
+        position: relative;
+      }
+
+      /* Decorative background glow */
+      .glow-1 {
+        position: absolute;
+        top: -400px; left: -200px;
+        width: 900px; height: 900px;
+        background: radial-gradient(circle, rgba(59,130,246,0.22), transparent 60%);
+        pointer-events: none;
+      }
+      .glow-2 {
+        position: absolute;
+        bottom: -400px; right: -200px;
+        width: 900px; height: 900px;
+        background: radial-gradient(circle, rgba(168,85,247,0.22), transparent 60%);
+        pointer-events: none;
+      }
+
+      /* Grid pattern */
+      .grid-bg {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+        background-size: 48px 48px;
+        mask-image: radial-gradient(ellipse at center, black 40%, transparent 75%);
+        -webkit-mask-image: radial-gradient(ellipse at center, black 40%, transparent 75%);
+      }
+
+      .content {
+        position: relative;
+        z-index: 10;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        padding: 72px 80px;
+      }
+
+      /* Top: wordmark */
+      .top {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .dot {
+        width: 14px; height: 14px; border-radius: 50%;
+        background: linear-gradient(135deg, #3b82f6, #a855f7);
+        box-shadow: 0 0 20px rgba(168,85,247,0.6);
+      }
+      .wordmark {
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: #f5f5fa;
+      }
+
+      /* Center: headline */
+      .middle {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 32px 0;
+      }
+      h1 {
+        font-size: 132px;
+        font-weight: 800;
+        line-height: 0.98;
+        letter-spacing: -0.045em;
+        margin-bottom: 36px;
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        white-space: nowrap;
+      }
+      .verb-read {
+        background: linear-gradient(135deg, #60a5fa 0%, #a855f7 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .verb-ship {
+        background: linear-gradient(135deg, #a855f7 0%, #10b981 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .arrow {
+        font-size: 96px;
+        font-weight: 300;
+        color: #3a3a4a;
+        transform: translateY(-6px);
+      }
+      .sub {
+        font-size: 30px;
+        color: #b8b8c8;
+        font-weight: 500;
+        letter-spacing: -0.012em;
+        max-width: 1040px;
+        line-height: 1.35;
+      }
+      .sub .hl { color: #f5f5fa; font-weight: 600; }
+      .captions {
+        display: flex;
+        gap: 0;
+        margin-top: 28px;
+        font-size: 18px;
+        color: #6b6b7b;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+      .cap-read { width: 520px; }
+      .cap-ship { padding-left: 80px; }
+
+      /* Bottom: badges */
+      .bottom {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+      }
+      .badge {
+        padding: 10px 18px;
+        background: #1a1a24;
+        border: 1px solid #24242f;
+        border-radius: 999px;
+        font-size: 16px;
+        color: #a0a0b0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .badge strong { color: #f5f5fa; font-weight: 600; }
+      .badge .mark {
+        width: 8px; height: 8px; border-radius: 50%;
+      }
+      .badge-local .mark { background: #10b981; box-shadow: 0 0 8px #10b981; }
+      .badge-oss .mark { background: #3b82f6; box-shadow: 0 0 8px #3b82f6; }
+      .badge-free .mark { background: #a855f7; box-shadow: 0 0 8px #a855f7; }
+    </style>
+  </head>
+  <body>
+    <div class="glow-1"></div>
+    <div class="glow-2"></div>
+    <div class="grid-bg"></div>
+
+    <div class="content">
+      <div class="top">
+        <div class="dot"></div>
+        <div class="wordmark">md-reader</div>
+      </div>
+
+      <div class="middle">
+        <h1>
+          <span class="verb-read">Read it.</span>
+          <span class="arrow">→</span>
+          <span class="verb-ship">Ship it.</span>
+        </h1>
+        <div class="sub">
+          <span class="hl">Comprehend. Then act. Without the alt-tab.</span> Understand any spec as a podcast or mind map, then highlight a passage and ship a grounded prompt to Claude Code with line refs.
+        </div>
+        <div class="captions">
+          <div class="cap-read">Podcast · Mind map · Tutor</div>
+          <div class="cap-ship">Highlight → Claude Code</div>
+        </div>
+      </div>
+
+      <div class="bottom">
+        <div class="badge badge-local"><span class="mark"></span><strong>Local &amp; offline</strong></div>
+        <div class="badge badge-oss"><span class="mark"></span><strong>MIT open source</strong></div>
+        <div class="badge badge-free"><span class="mark"></span><strong>Works with Claude Code, Codex, Cursor</strong></div>
+      </div>
+    </div>
+  </body>
+</html>

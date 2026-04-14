@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
-  "description": "The AI-native markdown reader. Read, understand, and explore your documents.",
+  "description": "Read it. Ship it. Comprehend any spec as a podcast or mind map, then highlight a passage and ship a grounded prompt to Claude Code — without the alt-tab. Local, offline, MIT.",
   "author": "md-reader contributors",
   "repository": {
     "type": "git",
