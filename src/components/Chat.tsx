@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
 import { chunkMarkdown } from '../lib/markdown'
 import { searchChunks } from '../lib/embeddings'
-import { askAboutDocument, summarize, detectBestBackend, getActiveBackend, onWebLLMProgress, onModelProgress } from '../lib/ai'
+import { askAboutDocument, summarize, detectBestBackend, getActiveBackend, isBackendReady, onBackendChange, onWebLLMProgress, onModelProgress } from '../lib/ai'
 import { trackEvent } from '../lib/telemetry'
 
 interface Message {
@@ -42,6 +42,13 @@ export function Chat() {
         setModelProgress(state.progressText)
       } else if (state.status === 'ready') {
         setModelProgress(null)
+        // Model finished loading — resync in case redetect or preference change
+        // happened while we were waiting.
+        setBackend(getActiveBackend())
+      } else if (state.status === 'failed') {
+        // model-manager calls redetectBackend() in its 'failed' handler, which
+        // mutates activeBackend. Resync so the UI reflects the fallback.
+        setBackend(getActiveBackend())
       }
     })
 
@@ -51,9 +58,18 @@ export function Chat() {
       setModelProgress(text)
     })
 
+    // Re-read backend whenever ai.ts emits a change — fires from detectBestBackend,
+    // redetectBackend, and any path that calls setActiveBackend. This is how
+    // AiSettings "Save" propagates without a page reload: AiSettings awaits
+    // detectBestBackend() after writing the new key/preference, which emits here.
+    const unsubBackend = onBackendChange((b) => setBackend(b))
+
     detectBestBackend().then((b) => setBackend(b))
 
-    return unsubModel
+    return () => {
+      unsubModel()
+      unsubBackend()
+    }
   }, [])
 
   useEffect(() => {
@@ -135,7 +151,7 @@ export function Chat() {
     sendQuestion(question)
   }, [sendQuestion])
 
-  const isReady = backend === 'webllm' || backend === 'ollama' || backend === 'openrouter'
+  const isReady = isBackendReady(backend)
 
   // Delight #31: Suggested questions from document headings
   const toc = useStore((s) => s.toc)

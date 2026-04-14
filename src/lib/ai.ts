@@ -44,6 +44,50 @@ let activeBackend: Backend = 'none'
 let backendDetected = false
 let detectPromise: Promise<Backend> | null = null  // mutex: prevents concurrent detection
 
+// ─── Backend readiness + change events ────────────────────────────────────
+// Consumers (Chat, Coach, SummaryCards, Toolbar, AiLoadingIndicator) all need
+// to know: (1) is the currently-active backend ready to serve a chat call?
+// and (2) when did it change? Centralizing both here prevents drift — the bug
+// that prompted this refactor was Chat.tsx's inline allowlist missing 'gemma4'
+// after it was added as the default WebGPU backend, leaving every Chrome/Edge
+// user with a permanently-disabled "Waiting for AI..." input.
+
+const backendListeners = new Set<(b: Backend) => void>()
+
+/**
+ * Returns true if the given backend name corresponds to a real, usable backend.
+ * Keep this as the single source of truth for "can we chat right now?".
+ *
+ * IMPORTANT: If you add a new backend to the Backend union type, add it here
+ * too. There's a test in src/test/ai-backend.test.ts pinning this invariant.
+ */
+export function isBackendReady(backend: string): boolean {
+  return (
+    backend === 'gemma4' ||
+    backend === 'webllm' ||
+    backend === 'ollama' ||
+    backend === 'openrouter'
+  )
+}
+
+/**
+ * Subscribe to backend-change events. Fires whenever `activeBackend` is
+ * mutated by detection, re-detection, or user preference changes.
+ * Returns an unsubscribe function.
+ */
+export function onBackendChange(cb: (backend: Backend) => void): () => void {
+  backendListeners.add(cb)
+  return () => backendListeners.delete(cb)
+}
+
+function setActiveBackend(next: Backend): void {
+  if (activeBackend === next) return
+  activeBackend = next
+  for (const cb of backendListeners) {
+    try { cb(activeBackend) } catch { /* listener errors must not break detection */ }
+  }
+}
+
 export function getActiveBackend(): Backend { return activeBackend }
 
 /**
@@ -52,9 +96,9 @@ export function getActiveBackend(): Backend { return activeBackend }
  */
 export async function redetectBackend(): Promise<Backend> {
   // Skip Gemma/WebLLM (both use WebGPU and Gemma just failed) — try server backends
-  if (await checkOllamaHealth()) { activeBackend = 'ollama'; backendDetected = true; return activeBackend }
-  if (await checkOpenRouter()) { activeBackend = 'openrouter'; backendDetected = true; return activeBackend }
-  activeBackend = 'none'
+  if (await checkOllamaHealth()) { setActiveBackend('ollama'); backendDetected = true; return activeBackend }
+  if (await checkOpenRouter()) { setActiveBackend('openrouter'); backendDetected = true; return activeBackend }
+  setActiveBackend('none')
   backendDetected = true
   return activeBackend
 }
@@ -127,21 +171,21 @@ export async function detectBestBackend(): Promise<Backend> {
     try {
       const preferred = getPreferredBackend()
       if (preferred && preferred !== 'auto') {
-        if (preferred === 'gemma4' && await checkWebGPU()) { activeBackend = 'gemma4'; backendDetected = true; return activeBackend }
-        if (preferred === 'webllm' && await checkWebGPU()) { activeBackend = 'webllm'; backendDetected = true; return activeBackend }
-        if (preferred === 'ollama' && await checkOllamaHealth()) { activeBackend = 'ollama'; backendDetected = true; return activeBackend }
-        if (preferred === 'openrouter' && await checkOpenRouter()) { activeBackend = 'openrouter'; backendDetected = true; return activeBackend }
+        if (preferred === 'gemma4' && await checkWebGPU()) { setActiveBackend('gemma4'); backendDetected = true; return activeBackend }
+        if (preferred === 'webllm' && await checkWebGPU()) { setActiveBackend('webllm'); backendDetected = true; return activeBackend }
+        if (preferred === 'ollama' && await checkOllamaHealth()) { setActiveBackend('ollama'); backendDetected = true; return activeBackend }
+        if (preferred === 'openrouter' && await checkOpenRouter()) { setActiveBackend('openrouter'); backendDetected = true; return activeBackend }
         // preferred not available, fall through to auto-detect
       }
 
       // Auto: browser-first
       // Note: WebLLM is NOT in auto-detect because Gemma4 also uses WebGPU and is preferred.
       // WebLLM is only available as explicit override or as fallback within the chat() function when Gemma4 fails.
-      if (await checkWebGPU()) { activeBackend = 'gemma4'; backendDetected = true; return activeBackend }
-      if (await checkOllamaHealth()) { activeBackend = 'ollama'; backendDetected = true; return activeBackend }
-      if (await checkOpenRouter()) { activeBackend = 'openrouter'; backendDetected = true; return activeBackend }
+      if (await checkWebGPU()) { setActiveBackend('gemma4'); backendDetected = true; return activeBackend }
+      if (await checkOllamaHealth()) { setActiveBackend('ollama'); backendDetected = true; return activeBackend }
+      if (await checkOpenRouter()) { setActiveBackend('openrouter'); backendDetected = true; return activeBackend }
 
-      activeBackend = 'none'
+      setActiveBackend('none')
       backendDetected = true
       return activeBackend
     } finally {

@@ -65,7 +65,7 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
     setTesting(false)
   }, [apiKey, testing])
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     const trimmedKey = apiKey.trim()
     if (trimmedKey) {
       setApiKey(trimmedKey)
@@ -75,6 +75,11 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
     localStorage.setItem(LS_OLLAMA_URL, ollamaUrl.trim() || 'http://localhost:11434')
     setPreferredBackend(preferred === 'auto' ? null : preferred)
     resetDeviceProfile()  // re-detect tier when backend changes
+    // Trigger a fresh detection so every subscriber (Chat, Coach, SummaryCards,
+    // Toolbar, AiLoadingIndicator) re-reads the active backend via onBackendChange.
+    // Without this, the prior-session backend stayed cached in React state and
+    // users saw "Waiting for AI..." indefinitely even after entering a valid key.
+    try { await detectBestBackend() } catch { /* never block close on detection */ }
     onClose()
   }, [apiKey, ollamaUrl, preferred, onClose])
 
