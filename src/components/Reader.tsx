@@ -368,7 +368,7 @@ export function Reader() {
     } else {
       document.title = `${name} — md-reader`
     }
-    return () => { document.title = 'md-reader — AI Markdown Reader' }
+    return () => { document.title = 'md-reader — Read it. Ship it.' }
   }, [readingProgress, readTime])
 
   // Dynamic favicon showing reading progress

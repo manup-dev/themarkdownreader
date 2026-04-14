@@ -122,7 +122,7 @@ export function Workspace() {
 
   useEffect(() => {
     document.title = stats ? `Library (${stats.totalDocs}) — md-reader` : 'Library — md-reader'
-    return () => { document.title = 'md-reader — AI Markdown Reader' }
+    return () => { document.title = 'md-reader — Read it. Ship it.' }
   }, [stats])
 
   const handleFiles = useCallback(async (files: FileList) => {

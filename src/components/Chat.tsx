@@ -170,7 +170,7 @@ export function Chat() {
                 const fileName = useStore.getState().fileName ?? 'document'
                 const md = `# Q&A: ${fileName}\n\n` + messages.map((m) =>
                   m.role === 'user' ? `**Q:** ${m.content}` : `**A:** ${m.content}`
-                ).join('\n\n') + `\n\n---\n*Generated with [md-reader](https://github.com/manup-dev/themarkdownreader) — the AI-native markdown reader*`
+                ).join('\n\n') + `\n\n---\n*Generated with [md-reader](https://github.com/manup-dev/themarkdownreader) — Read it. Ship it.*`
                 const blob = new Blob([md], { type: 'text/markdown' })
                 const a = document.createElement('a')
                 a.href = URL.createObjectURL(blob)
