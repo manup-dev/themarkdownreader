@@ -62,6 +62,9 @@ vscode-extension/.wdio-vscode-service/
 # (personal docs)
 docs/course/
 docs/learnings/
+docs/specs/
+docs/research/
+docs/launch/
 
 # Superpowers specs/plans
 docs/superpowers/
@@ -80,3 +83,10 @@ dist-e2e/
 
 # Lighthouse reports
 lighthouse-report.*
+
+# Ad-hoc test artifacts (screenshots from manual probes in repo root)
+test-*.png
+test-screenshots/
+
+# Personal scratch notes (*.local.md never committed)
+*.local.md
