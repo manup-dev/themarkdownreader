@@ -174,7 +174,17 @@ export function Workspace() {
     // Save as a collection project and switch to collection view
     const rawFiles = result.files.map((f) => ({ path: f.path, content: f.content }))
     await saveCollectionCache(result.name, rawFiles, 0)
-    setViewMode('collection')
+    // Populate Zustand folder session — auto-selects first file (or README.md).
+    // The unified shell renders sidebar + tabs automatically.
+    const files = result.files.map((f) => ({
+      path: f.path,
+      name: f.path.split('/').pop() ?? f.path,
+      content: f.content,
+    }))
+    useStore.getState().setFolderSession(result.handle ?? null, files)
+    // Drop the user directly into reading the first file (not the Collection
+    // dashboard). They can click the Collection tab anytime for the dashboard.
+    setViewMode('read')
   }, [setViewMode])
 
   const handleRemove = useCallback(async (docId: number) => {

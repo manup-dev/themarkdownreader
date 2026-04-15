@@ -368,6 +368,35 @@ export function Toolbar() {
                   <span className="ml-auto text-[10px] text-gray-400">P</span>
                 </button>
                 <button
+                  onClick={async () => {
+                    setShowMode(false)
+                    const { openDirectory } = await import('../lib/fs-access')
+                    const { saveCollectionCache } = await import('../lib/docstore')
+                    const result = await openDirectory()
+                    if (!result || result.files.length === 0) return
+                    const rawFiles = result.files.map((f) => ({ path: f.path, content: f.content }))
+                    await saveCollectionCache(result.name, rawFiles, 0)
+                    const currentFileName = useStore.getState().fileName
+                    const files = result.files.map((f) => ({
+                      path: f.path,
+                      name: f.path.split('/').pop() ?? f.path,
+                      content: f.content,
+                    }))
+                    useStore.getState().setFolderSession(result.handle ?? null, files)
+                    // Override auto-select if current file is in the folder —
+                    // the user stays on the document they were reading.
+                    if (currentFileName) {
+                      const match = files.find((f) => f.name === currentFileName)
+                      if (match) useStore.getState().setActiveFile(match.path)
+                    }
+                    // Don't touch viewMode — user stays on whatever tab they're on
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                  <FolderOpen className="h-3.5 w-3.5" />
+                  Open Folder
+                </button>
+                <button
                   onClick={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' })); setShowMode(false) }}
                   className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
