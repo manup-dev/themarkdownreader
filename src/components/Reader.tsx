@@ -136,6 +136,27 @@ const markdownComponents = {
       )
     }
     const isExternal = href?.startsWith('http://') || href?.startsWith('https://')
+    // Intra-folder .md link — route through navigateToPath when a folder is loaded
+    if (href && !isExternal && !href.startsWith('mailto:') && /\.md(#|$)/i.test(href)) {
+      const folderFiles = useStore.getState().folderFiles
+      if (folderFiles !== null) {
+        return (
+          <a
+            href={href}
+            {...props}
+            onClick={(e) => {
+              e.preventDefault()
+              const ok = useStore.getState().navigateToPath(href)
+              if (!ok) {
+                console.warn(`[md-reader] navigateToPath: '${href}' not found in folder`)
+              }
+            }}
+          >
+            {children}
+          </a>
+        )
+      }
+    }
     return <a href={href} {...(isExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})} {...props}>{children}</a>
   },
   pre: ({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) => <pre {...props} className="relative group">{children}</pre>,
