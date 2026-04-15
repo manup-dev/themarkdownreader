@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap, GitBranch, Library, ArrowLeft, Save, Check, Settings, Contrast, Type, Maximize, Printer, Palette, SlidersHorizontal, ChevronDown, Download, Mic, Shapes } from 'lucide-react'
+import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap, GitBranch, Library, ArrowLeft, Save, Check, Settings, Contrast, Type, Maximize, Printer, Palette, SlidersHorizontal, ChevronDown, Download, Mic, Shapes, PanelLeft, FolderOpen } from 'lucide-react'
 import { AiSettings } from './AiSettings'
 import { AiLoadingIndicator } from './AiLoadingIndicator'
 import { useStore, type Theme, type ViewMode } from '../store/useStore'
@@ -25,6 +25,9 @@ export function Toolbar() {
   const viewMode = useStore((s) => s.viewMode)
   const workspaceMode = useStore((s) => s.workspaceMode)
   const markdown = useStore((s) => s.markdown)
+  const folderFiles = useStore((s) => s.folderFiles)
+  const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
+  const toggleSidebar = useStore((s) => s.toggleSidebar)
   const activeDocId = useStore((s) => s.activeDocId)
   const setTheme = useStore((s) => s.setTheme)
   const setFontSize = useStore((s) => s.setFontSize)
@@ -65,8 +68,18 @@ export function Toolbar() {
 
   const wordCount = useMemo(() => markdown?.split(/\s+/).filter(Boolean).length ?? 0, [markdown])
 
-  const isWorkspaceView = viewMode === 'workspace' || viewMode === 'cross-doc-graph' || viewMode === 'correlation' || viewMode === 'similarity-map' || viewMode === 'collection'
-  const showDocTabs = markdown && !isWorkspaceView
+  // 'collection' removed from isWorkspaceView — it's now a regular tab mode.
+  // Tabs visible whenever we have a document OR a folder loaded.
+  const isWorkspaceView = viewMode === 'workspace' || viewMode === 'cross-doc-graph' || viewMode === 'correlation' || viewMode === 'similarity-map'
+  const showDocTabs = (markdown || folderFiles !== null) && !isWorkspaceView
+
+  const tabs = useMemo(() => {
+    const base = [...singleDocModes]
+    if (folderFiles !== null) {
+      base.push({ value: 'collection' as ViewMode, icon: <FolderOpen className="h-3.5 w-3.5" />, label: 'Collection', tooltip: 'Browse folder contents' })
+    }
+    return base
+  }, [folderFiles])
 
   // Close dropdowns on click outside
   // Use 'click' (not 'mousedown') so native <select> dropdowns and
@@ -438,8 +451,20 @@ export function Toolbar() {
 
       {/* View mode tabs */}
       {showDocTabs && (
-        <nav data-view-tabs aria-label="View modes" className="flex items-center gap-1 px-4 pb-2 overflow-x-auto" style={{ maskImage: 'linear-gradient(to right, black 90%, transparent)', WebkitMaskImage: 'linear-gradient(to right, black 90%, transparent)' }}>
-          {singleDocModes.filter((vm) => {
+        <div className="flex items-center px-4 pb-2">
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+            aria-expanded={!sidebarCollapsed}
+            aria-controls="sidebar"
+            title={sidebarCollapsed ? 'Show sidebar (Ctrl+\\)' : 'Hide sidebar (Ctrl+\\)'}
+            className="p-1.5 mr-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 shrink-0"
+          >
+            <PanelLeft className="h-4 w-4" />
+          </button>
+          <nav data-view-tabs aria-label="View modes" className="flex items-center gap-1 overflow-x-auto flex-1" style={{ maskImage: 'linear-gradient(to right, black 90%, transparent)', WebkitMaskImage: 'linear-gradient(to right, black 90%, transparent)' }}>
+          {tabs.filter((vm) => {
             const gatedFlag = isViewModeGated(vm.value)
             return !gatedFlag || enabledFeatures.has(gatedFlag)
           }).map((vm) => (
@@ -460,7 +485,8 @@ export function Toolbar() {
               )}
             </button>
           ))}
-        </nav>
+          </nav>
+        </div>
       )}
     </div>
   )
