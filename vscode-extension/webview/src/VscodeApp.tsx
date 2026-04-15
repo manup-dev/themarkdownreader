@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspen
 import { Loader2, PanelLeftClose, PanelLeftOpen, MessageSquare, Sun, Moon, BookOpen, Contrast, BookText, GitBranch, LayoutGrid, TreePine, Share2, GraduationCap } from 'lucide-react'
 import { useStore } from '@app/store/useStore'
 import { Reader } from '@app/components/Reader'
-import { TableOfContents } from '@app/components/TableOfContents'
+import { OutlinePanel } from '@app/components/OutlinePanel'
 import { TtsPlayer } from '@app/components/TtsPlayer'
 import { ResizeHandle } from '@app/components/ResizeHandle'
 import { KeyboardShortcuts } from '@app/components/KeyboardShortcuts'
@@ -279,7 +279,7 @@ export function VscodeApp() {
                 <PanelLeftClose className="h-3.5 w-3.5" />
               </button>
             </div>
-            <TableOfContents />
+            <OutlinePanel maxLevel={6} />
           </aside>
           <ResizeHandle onResize={handleSidebarResize} />
         </>
