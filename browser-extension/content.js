@@ -52,12 +52,32 @@ function extractMarkdownOutline(container) {
   return lines.join('\n')
 }
 
+/**
+ * Strip leading emoji + whitespace from a heading label so the TOC and
+ * summary-view stay visually calm. Keeps emoji in the actual rendered
+ * heading inside the article (users want the flair there); only the
+ * nav index is stripped. Mirrors the treatment the web app's
+ * OutlinePanel uses.
+ */
+function stripLeadingEmoji(text) {
+  try {
+    const cleaned = String(text).replace(
+      /^(\p{Extended_Pictographic}|\p{Emoji_Component}|\uFE0F|\u200D)+/u,
+      ''
+    )
+    return cleaned.trimStart() || text
+  } catch {
+    // Older engines that don't support Unicode property escapes — skip
+    return text
+  }
+}
+
 /** Build TOC from headings */
 function buildToc(container) {
   const headings = container.querySelectorAll('h1, h2, h3, h4')
   return Array.from(headings).map((h, i) => ({
     level: parseInt(h.tagName[1]),
-    text: h.textContent.trim(),
+    text: stripLeadingEmoji(h.textContent.trim()),
     id: `mdr-heading-${i}`,
   }))
 }
@@ -87,7 +107,7 @@ function generateSummary(container) {
     const tag = node.tagName
     if (/^H[1-4]$/.test(tag)) {
       flush()
-      currentHeading = node.textContent.trim()
+      currentHeading = stripLeadingEmoji(node.textContent.trim())
       currentParagraphs = []
     } else if (tag === 'P' && node.textContent.trim().length > 20) {
       currentParagraphs.push(node.textContent.trim())

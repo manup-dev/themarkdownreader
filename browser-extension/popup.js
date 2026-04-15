@@ -1,14 +1,23 @@
-const DEFAULT_URL = 'http://localhost:5183'
+// Default to the live deploy. Users can override via the settings input
+// below (stored in chrome.storage.local → "readerUrl"). Point this at
+// your own dev server when hacking locally.
+const DEFAULT_URL = 'https://manup-dev.github.io/themarkdownreader/'
 
-// Load saved URL
+// Load saved URL and sync both the input and the "Open md-reader App"
+// secondary button to it, so users who set a custom host (e.g. local
+// dev) don't land on the hardcoded default.
 const urlInput = document.getElementById('readerUrl')
+const openAppBtn = document.getElementById('openApp')
 chrome.storage?.local?.get('readerUrl', (data) => {
-  urlInput.value = data.readerUrl || DEFAULT_URL
+  const url = data.readerUrl || DEFAULT_URL
+  urlInput.value = url
+  if (openAppBtn) openAppBtn.href = url
 })
 
 urlInput.addEventListener('change', () => {
   const url = urlInput.value.trim() || DEFAULT_URL
   chrome.storage?.local?.set({ readerUrl: url })
+  if (openAppBtn) openAppBtn.href = url
 })
 
 // Open current file
