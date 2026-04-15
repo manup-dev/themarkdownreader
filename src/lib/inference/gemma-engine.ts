@@ -136,8 +136,12 @@ async function attachGpuLostHandler(): Promise<void> {
   }
 }
 
-/** Check if model weights are already cached in the browser */
-async function isModelCached(): Promise<boolean> {
+/** Check if model weights are already cached in the browser.
+ * Exported so `ai.ts`'s detectBestBackend can decide whether gemma4 is a
+ * zero-download option (in which case it beats cloud OpenRouter) or a
+ * last-resort 500MB download (in which case it loses to cloud).
+ */
+export async function isModelCached(): Promise<boolean> {
   try {
     // Transformers.js uses the Cache API under the hood
     const cacheNames = await caches.keys()

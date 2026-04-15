@@ -5,8 +5,18 @@
  */
 
 import { PROMPTS, PROMPT_CONFIG } from './prompts'
-import { gemmaChat, loadGemmaModel } from './inference/gemma-engine'
+import { gemmaChat, loadGemmaModel, isModelCached } from './inference/gemma-engine'
 import { getModelState, waitForReady } from './inference/model-manager'
+
+/** Helper: is the gemma4 browser model usable WITHOUT triggering a download?
+ * True when the model weights are already in the Cache API (a previous
+ * session downloaded them) or already loaded into memory this session.
+ * This is the signal we use to prefer gemma4 over OpenRouter in auto-detect.
+ */
+async function isGemmaAvailableWithoutDownload(): Promise<boolean> {
+  if (getModelState().status === 'ready') return true
+  return isModelCached()
+}
 
 // ─── Config ────────────────────────────────────────────────────────────────
 
@@ -16,7 +26,17 @@ const OLLAMA_MODEL = 'qwen3:0.6b'
 const OLLAMA_TIMEOUT = 90000
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1/chat/completions'
-const OPENROUTER_FREE_MODEL = 'meta-llama/llama-3.2-3b-instruct:free'
+// Free-tier model fallback chain. OpenRouter free models are pooled upstream
+// and any one can be temporarily rate-limited (HTTP 429) without the user
+// having done anything wrong. Try each in order; skip to the next on 429.
+// These two (gemma-3-12b, glm-4.5-air) were verified working on 2026-04-14
+// when llama-3.2-3b was upstream rate-limited and several others were 404.
+const OPENROUTER_FREE_MODEL_CHAIN: string[] = [
+  'google/gemma-3-12b-it:free',           //  12B, 32K ctx — reliable primary
+  'z-ai/glm-4.5-air:free',                //  MoE,  131K ctx — large context fallback
+  'meta-llama/llama-3.2-3b-instruct:free',// 3B, 131K ctx — ubiquitous fallback, often rate-limited
+  'google/gemma-3-4b-it:free',            //   4B,  32K ctx — lightweight fallback
+]
 const OPENROUTER_TIMEOUT = 60000
 const OPENROUTER_KEY_STORAGE = 'md-reader-openrouter-key'
 
@@ -201,15 +221,33 @@ export async function detectBestBackend(): Promise<Backend> {
         // preferred not available, fall through to auto-detect
       }
 
-      // Auto: config-first, then browser.
-      // Principle: if the user has explicitly configured a zero-setup backend
-      // (Ollama running, OpenRouter key set), respect that — they don't need
-      // and may not want a 500MB model download. Only fall back to WebGPU
-      // gemma4 (which requires a download) when nothing else is available.
-      // This was previously "browser-first" and it trapped users who'd
-      // already given the app a cloud key into a 500MB model download loop.
+      // Auto-detect priority (principled: zero-network > cloud > download):
+      //
+      //   1. Ollama running                       → local GPU, fastest, free, private
+      //   2. gemma4 ALREADY CACHED + WebGPU ready → local browser, fast, no network
+      //   3. OpenRouter key set                   → cloud, needs network, zero-setup
+      //   4. WebGPU available (gemma4 downloadable) → last resort, 500MB download
+      //
+      // The split between "gemma4 ready" and "gemma4 downloadable" is the
+      // key product insight: if the user has already downloaded the browser
+      // model, it's strictly better than cloud (faster, private, free). But
+      // if they haven't, don't trap them into a 500MB download when a
+      // configured cloud key is sitting right there.
       if (await checkOllamaHealth()) { setActiveBackend('ollama'); backendDetected = true; return activeBackend }
+
+      // gemma4 is usable NOW if the model is either explicitly loaded into
+      // memory ('ready') OR downloaded to the browser cache. Check both.
+      const modelStateNow = getModelState()
+      const gemmaLoadedInMem = modelStateNow.status === 'ready'
+      const gemmaReady = gemmaLoadedInMem || (await isGemmaAvailableWithoutDownload())
+      if (gemmaReady && await checkWebGPU()) {
+        setActiveBackend('gemma4'); backendDetected = true; return activeBackend
+      }
+
       if (await checkOpenRouter()) { setActiveBackend('openrouter'); backendDetected = true; return activeBackend }
+
+      // Final fallback: WebGPU available but model not cached — would
+      // require a 500MB download.
       if (await checkWebGPU()) { setActiveBackend('gemma4'); backendDetected = true; return activeBackend }
 
       setActiveBackend('none')
@@ -341,65 +379,89 @@ async function chatOpenRouterStream(
   // while the Test button (which already trimmed) reported success.
   const apiKey = rawKey.trim()
 
-  const res = await fetch(OPENROUTER_BASE_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': window.location.origin,
-      'X-Title': 'md-reader',
-    },
-    body: JSON.stringify({
-      model: OPENROUTER_FREE_MODEL,
-      messages,
-      stream: true,
-      max_tokens: maxTokens ?? PROMPT_CONFIG.maxTokens,
-      temperature: temperature ?? PROMPT_CONFIG.temperature,
-    }),
-    signal: signal ?? AbortSignal.timeout(OPENROUTER_TIMEOUT),
-  })
+  // Try each model in the free-tier chain. On HTTP 429 (upstream rate-limit),
+  // silently fall through to the next model. On any other non-2xx, propagate
+  // immediately so the UI can render an actionable error. This specifically
+  // unblocks podcast + diagram generation, which previously failed whenever
+  // `meta-llama/llama-3.2-3b-instruct:free` was rate-limited upstream — even
+  // though the user's key authenticated fine.
+  let lastRateLimitError: (Error & { status?: number }) | null = null
+  for (let i = 0; i < OPENROUTER_FREE_MODEL_CHAIN.length; i++) {
+    const model = OPENROUTER_FREE_MODEL_CHAIN[i]
+    const res = await fetch(OPENROUTER_BASE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'md-reader',
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        stream: true,
+        max_tokens: maxTokens ?? PROMPT_CONFIG.maxTokens,
+        temperature: temperature ?? PROMPT_CONFIG.temperature,
+      }),
+      signal: signal ?? AbortSignal.timeout(OPENROUTER_TIMEOUT),
+    })
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    // Preserve the status code in the error so the UI can render a targeted
-    // action (e.g. "re-enter your API key" on 401, "rate limited" on 429).
-    const err = new Error(`OpenRouter error ${res.status}: ${body}`) as Error & { status?: number }
-    err.status = res.status
-    throw err
-  }
-
-  const reader = res.body?.getReader()
-  if (!reader) throw new Error('No response body')
-
-  const decoder = new TextDecoder()
-  let full = ''
-  let buffer = ''
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-
-    const lines = buffer.split('\n')
-    // Keep the last potentially incomplete line in the buffer
-    buffer = lines.pop() ?? ''
-
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed || !trimmed.startsWith('data: ')) continue
-      const data = trimmed.slice(6)
-      if (data === '[DONE]') continue
-      try {
-        const json = JSON.parse(data)
-        const token = json.choices?.[0]?.delta?.content ?? ''
-        if (token) {
-          full += token
-          onToken?.(token)
-        }
-      } catch { /* skip malformed SSE line */ }
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      // 429 = rate-limited → try next model in chain
+      if (res.status === 429 && i < OPENROUTER_FREE_MODEL_CHAIN.length - 1) {
+        const err = new Error(`OpenRouter error 429 (${model}): ${body}`) as Error & { status?: number }
+        err.status = 429
+        lastRateLimitError = err
+        console.warn(`[openrouter] ${model} rate-limited, trying fallback model`)
+        continue
+      }
+      // Any other error (or 429 on the final model) propagates so the UI
+      // can show a targeted message: 401 → "re-enter key", 429 → "rate
+      // limited, retry in a moment", 5xx → "temporary issue".
+      const err = new Error(`OpenRouter error ${res.status}: ${body}`) as Error & { status?: number }
+      err.status = res.status
+      throw err
     }
+
+    // Successful response — stream the SSE body.
+    const reader = res.body?.getReader()
+    if (!reader) throw new Error('No response body')
+
+    const decoder = new TextDecoder()
+    let full = ''
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      const lines = buffer.split('\n')
+      // Keep the last potentially incomplete line in the buffer
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed || !trimmed.startsWith('data: ')) continue
+        const data = trimmed.slice(6)
+        if (data === '[DONE]') continue
+        try {
+          const json = JSON.parse(data)
+          const token = json.choices?.[0]?.delta?.content ?? ''
+          if (token) {
+            full += token
+            onToken?.(token)
+          }
+        } catch { /* skip malformed SSE line */ }
+      }
+    }
+    return full
   }
-  return full
+
+  // All models in the chain were rate-limited. Surface the last error so
+  // the UI can render "429 rate limited" with the actionable retry message.
+  throw lastRateLimitError ?? new Error('OpenRouter error 429: all free models currently rate-limited upstream')
 }
 
 // ─── Ollama streaming chat ─────────────────────────────────────────────────
