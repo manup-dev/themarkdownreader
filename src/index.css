@@ -134,22 +134,58 @@ article h5:hover > span[aria-hidden], article h6:hover > span[aria-hidden] {
 .dark article h1, .dark article h2 { color: #f1f5f9 !important; font-weight: 700; }
 .dark article h3, .dark article h4 { color: #e2e8f0 !important; font-weight: 600; }
 
-/* VS Code webview — improved readability (higher contrast, better spacing) */
+/* VS Code webview — improved readability (higher contrast, better spacing).
+ *
+ * NOTE on selector order: the `.dark` class lives on <html> (set by
+ * VscodeApp's useLayoutEffect), and `.vscode-webview` is a descendant div
+ * on the React root. So the correct selector for "dark-themed webview
+ * article text" is `.dark .vscode-webview article …` — NOT the other way
+ * around. Earlier versions used `.vscode-webview .dark article …` which
+ * never matched, leaving article text at the default (black) color and
+ * producing an unreadable dark-on-dark rendering in VS Code dark themes.
+ */
 .vscode-webview article { font-size: 15px !important; line-height: 1.8 !important; }
-.vscode-webview .dark article p,
-.vscode-webview .dark article li,
-.vscode-webview .dark article td,
-.vscode-webview .dark article span { color: #e5e7eb !important; }
-.vscode-webview .dark article strong { color: #f9fafb !important; }
-.vscode-webview .dark article a { color: #93c5fd !important; }
-.vscode-webview .dark article code { color: #a5f3fc !important; }
-.vscode-webview .dark article blockquote p { color: #9ca3af !important; }
+.dark .vscode-webview article,
+.dark .vscode-webview article p,
+.dark .vscode-webview article li,
+.dark .vscode-webview article td,
+.dark .vscode-webview article span,
+.dark .vscode-webview article em { color: #e5e7eb !important; }
+.dark .vscode-webview article strong { color: #f9fafb !important; }
+.dark .vscode-webview article a { color: #93c5fd !important; }
+.dark .vscode-webview article code { color: #a5f3fc !important; }
+.dark .vscode-webview article blockquote p { color: #9ca3af !important; }
+.dark .vscode-webview article h1,
+.dark .vscode-webview article h2,
+.dark .vscode-webview article h3,
+.dark .vscode-webview article h4,
+.dark .vscode-webview article h5,
+.dark .vscode-webview article h6 { color: #f1f5f9 !important; }
 .vscode-webview article h1 { font-size: 1.75em !important; margin-top: 1.5em !important; }
 .vscode-webview article h2 { font-size: 1.4em !important; margin-top: 1.3em !important; }
 .vscode-webview article h3 { font-size: 1.15em !important; margin-top: 1.1em !important; }
 /* VS Code sidebar readability */
-.vscode-webview .dark aside { color: #d1d5db; }
-.vscode-webview .dark aside a { color: #93c5fd !important; }
+.dark .vscode-webview aside { color: #d1d5db; }
+.dark .vscode-webview aside a { color: #93c5fd !important; }
+/* Sepia mode in the webview — mirror the dark fix so sepia picks up
+ * its own palette on the outer wrapper. */
+.sepia .vscode-webview article,
+.sepia .vscode-webview article p,
+.sepia .vscode-webview article li,
+.sepia .vscode-webview article td,
+.sepia .vscode-webview article span { color: #5c4a2e !important; }
+.sepia .vscode-webview article h1,
+.sepia .vscode-webview article h2,
+.sepia .vscode-webview article h3,
+.sepia .vscode-webview article h4 { color: #3f2e17 !important; }
+/* Belt-and-braces fallback: if for any reason the dark-class propagation
+ * fails (early paint before React mounts, host stylesheet conflict, etc.),
+ * inherit text color from VS Code's editor foreground token so text is at
+ * worst readable against VS Code's own background. We intentionally do
+ * NOT set background-color here because the Tailwind `bg-gray-950` /
+ * `bg-gray-50` / etc. utilities on the same element should win for the
+ * chosen theme; this only provides a sane default for `color`. */
+.vscode-webview { color: var(--vscode-editor-foreground, inherit); }
 /* Code block borders for better delineation */
 article pre { border: 1px solid #e5e7eb; border-radius: 0.5rem; }
 .dark article pre { border-color: #374151; }
