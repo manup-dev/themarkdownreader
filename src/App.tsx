@@ -51,9 +51,17 @@ function App() {
   const viewMode = useStore((s) => s.viewMode)
   const workspaceMode = useStore((s) => s.workspaceMode)
   const folderFiles = useStore((s) => s.folderFiles)
+  const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
+  const toggleSidebar = useStore((s) => s.toggleSidebar)
   const chatWidth = useStore((s) => s.chatWidth)
   const setChatWidth = useStore((s) => s.setChatWidth)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  // Single source of truth for sidebar visibility: store.sidebarCollapsed.
+  // Toolbar's sidebar-toggle button + Ctrl+\ shortcut + the floating
+  // re-open button (further down this file) all flip the same store
+  // field via toggleSidebar(), avoiding the dual-state sync bug where
+  // App's local sidebarOpen and Sidebar's internal sidebarCollapsed
+  // could disagree.
+  const sidebarOpen = !sidebarCollapsed
   const [chatOpen, setChatOpen] = useState(false)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [commentCount, setCommentCount] = useState(0)
@@ -93,8 +101,25 @@ function App() {
       }))
       useStore.getState().setFolderSession(null, files)
     }
+
+    // Debug hook: expose the last backend-detection diagnostic so users
+    // can check *why* a particular backend was chosen. Usage in DevTools:
+    //   await window.__mdReaderDetectInfo()
+    // Returns { at, preferred, ollamaHealthy, webGPUAvailable,
+    //           gemmaLoadedInMemory, gemmaCacheHit, openRouterKeySet,
+    //           chosenBackend, reason }. Helpful for reproducing the
+    // "picked OpenRouter even though I have gemma4 cached" class of bugs.
+    const wd = window as unknown as { __mdReaderDetectInfo?: () => Promise<unknown> }
+    wd.__mdReaderDetectInfo = async () => {
+      const ai = await import('./lib/ai')
+      const info = ai.getDetectInfo()
+      console.log('[md-reader] last detect info:', info)
+      return info
+    }
+
     return () => {
       delete w.__mdReaderLoadCollection
+      delete wd.__mdReaderDetectInfo
     }
   }, [])
 
@@ -431,10 +456,16 @@ function App() {
       <div id="main-content" className="flex-1 flex flex-col min-w-0" role="main">
         <Toolbar />
         <div className="flex-1 flex min-h-0">
-          {/* Sidebar toggle */}
-          {!showSidebar && markdown && (viewMode === 'read' || viewMode === 'coach') && (
+          {/* Sidebar toggle — visible in any unified-shell view so users
+              can re-open the sidebar regardless of which reading tab they
+              were on when they toggled focus mode. Previously gated on
+              read/coach only, which stranded users in mindmap/treemap/
+              podcast/diagram/collection. */}
+          {!showSidebar && isUnifiedShellView && hasDocState && (
             <button
-              onClick={() => setSidebarOpen(true)}
+              onClick={toggleSidebar}
+              aria-label="Show sidebar"
+              title="Show sidebar (Ctrl+\\)"
               className="absolute top-24 left-2 z-10 p-1.5 bg-white dark:bg-gray-800 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none"
             >
               <PanelLeftOpen className="h-4 w-4" />

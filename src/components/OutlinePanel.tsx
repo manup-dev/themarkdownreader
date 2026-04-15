@@ -14,17 +14,29 @@ import { useActiveSection, type Heading } from '../hooks/useActiveSection'
  * refactor. Reader's embedded Contents sidebar is deleted in Task 18
  * once this component is wired into the App shell via <Sidebar>.
  */
-export function OutlinePanel() {
+/** Match Reader.tsx's historical behavior: show only h1-h2 in the
+ * outline sidebar. Deeper headings clutter the nav on long documents.
+ * Override via the `maxLevel` prop if you want everything. */
+const DEFAULT_MAX_LEVEL = 2
+
+interface OutlinePanelProps {
+  /** Max heading level to display (inclusive). Default 2 (h1/h2 only). */
+  maxLevel?: number
+}
+
+export function OutlinePanel({ maxLevel = DEFAULT_MAX_LEVEL }: OutlinePanelProps = {}) {
   const toc = useStore(s => s.toc)
 
-  // Normalize toc entries to the Heading shape useActiveSection expects.
-  // store.toc may have extra fields (anchor, slug, children) — we only
-  // care about {id, text, level}.
-  const headings: Heading[] = toc.map((h) => ({
-    id: h.id,
-    text: h.text,
-    level: h.level,
-  }))
+  // Normalize toc entries to the Heading shape useActiveSection expects
+  // AND filter to maxLevel. store.toc may have extra fields (anchor,
+  // slug, children) — we only care about {id, text, level}.
+  const headings: Heading[] = toc
+    .filter((h) => h.level <= maxLevel)
+    .map((h) => ({
+      id: h.id,
+      text: h.text,
+      level: h.level,
+    }))
 
   const activeId = useActiveSection(headings)
 

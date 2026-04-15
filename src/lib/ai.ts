@@ -250,17 +250,67 @@ async function checkOpenRouter(): Promise<boolean> {
   return key !== null && key.trim().length > 0
 }
 
+// Diagnostic info from the last detection run. Exposed via
+// window.__mdReaderDetectInfo for debugging (e.g. "why did detection
+// pick OpenRouter when I have gemma cached?"). Updated on every
+// detectBestBackend call.
+interface DetectInfo {
+  at: number  // timestamp
+  preferred: string | null
+  ollamaHealthy: boolean
+  webGPUAvailable: boolean
+  gemmaLoadedInMemory: boolean
+  gemmaCacheHit: boolean
+  openRouterKeySet: boolean
+  chosenBackend: Backend
+  reason: string
+}
+let lastDetectInfo: DetectInfo | null = null
+export function getDetectInfo(): DetectInfo | null { return lastDetectInfo }
+
 export async function detectBestBackend(): Promise<Backend> {
   if (backendDetected) return activeBackend
   if (detectPromise) return detectPromise
   detectPromise = (async () => {
     try {
-      const preferred = getPreferredBackend()
+      const info: DetectInfo = {
+        at: Date.now(),
+        preferred: getPreferredBackend(),
+        ollamaHealthy: false,
+        webGPUAvailable: false,
+        gemmaLoadedInMemory: false,
+        gemmaCacheHit: false,
+        openRouterKeySet: false,
+        chosenBackend: 'none',
+        reason: '',
+      }
+
+      const preferred = info.preferred
       if (preferred && preferred !== 'auto') {
-        if (preferred === 'gemma4' && await checkWebGPU()) { setActiveBackend('gemma4'); backendDetected = true; return activeBackend }
-        if (preferred === 'webllm' && await checkWebGPU()) { setActiveBackend('webllm'); backendDetected = true; return activeBackend }
-        if (preferred === 'ollama' && await checkOllamaHealth()) { setActiveBackend('ollama'); backendDetected = true; return activeBackend }
-        if (preferred === 'openrouter' && await checkOpenRouter()) { setActiveBackend('openrouter'); backendDetected = true; return activeBackend }
+        if (preferred === 'gemma4' && (info.webGPUAvailable = await checkWebGPU())) {
+          setActiveBackend('gemma4'); backendDetected = true
+          info.chosenBackend = 'gemma4'; info.reason = 'user-preferred gemma4, webgpu available'
+          lastDetectInfo = info
+          return activeBackend
+        }
+        if (preferred === 'webllm' && (info.webGPUAvailable = await checkWebGPU())) {
+          setActiveBackend('webllm'); backendDetected = true
+          info.chosenBackend = 'webllm'; info.reason = 'user-preferred webllm, webgpu available'
+          lastDetectInfo = info
+          return activeBackend
+        }
+        if (preferred === 'ollama' && (info.ollamaHealthy = await checkOllamaHealth())) {
+          setActiveBackend('ollama'); backendDetected = true
+          info.chosenBackend = 'ollama'; info.reason = 'user-preferred ollama, reachable'
+          lastDetectInfo = info
+          return activeBackend
+        }
+        if (preferred === 'openrouter' && (info.openRouterKeySet = await checkOpenRouter())) {
+          setActiveBackend('openrouter'); backendDetected = true
+          info.chosenBackend = 'openrouter'; info.reason = 'user-preferred openrouter, key set'
+          lastDetectInfo = info
+          return activeBackend
+        }
         // preferred not available, fall through to auto-detect
       }
 
@@ -276,25 +326,49 @@ export async function detectBestBackend(): Promise<Backend> {
       // model, it's strictly better than cloud (faster, private, free). But
       // if they haven't, don't trap them into a 500MB download when a
       // configured cloud key is sitting right there.
-      if (await checkOllamaHealth()) { setActiveBackend('ollama'); backendDetected = true; return activeBackend }
+      info.ollamaHealthy = await checkOllamaHealth()
+      if (info.ollamaHealthy) {
+        setActiveBackend('ollama'); backendDetected = true
+        info.chosenBackend = 'ollama'; info.reason = 'auto: ollama reachable'
+        lastDetectInfo = info
+        return activeBackend
+      }
 
       // gemma4 is usable NOW if the model is either explicitly loaded into
       // memory ('ready') OR downloaded to the browser cache. Check both.
       const modelStateNow = getModelState()
-      const gemmaLoadedInMem = modelStateNow.status === 'ready'
-      const gemmaReady = gemmaLoadedInMem || (await isGemmaAvailableWithoutDownload())
-      if (gemmaReady && await checkWebGPU()) {
-        setActiveBackend('gemma4'); backendDetected = true; return activeBackend
+      info.gemmaLoadedInMemory = modelStateNow.status === 'ready'
+      info.gemmaCacheHit = info.gemmaLoadedInMemory || (await isGemmaAvailableWithoutDownload())
+      info.webGPUAvailable = await checkWebGPU()
+      if (info.gemmaCacheHit && info.webGPUAvailable) {
+        setActiveBackend('gemma4'); backendDetected = true
+        info.chosenBackend = 'gemma4'; info.reason = 'auto: gemma4 cached + webgpu'
+        lastDetectInfo = info
+        return activeBackend
       }
 
-      if (await checkOpenRouter()) { setActiveBackend('openrouter'); backendDetected = true; return activeBackend }
+      info.openRouterKeySet = await checkOpenRouter()
+      if (info.openRouterKeySet) {
+        setActiveBackend('openrouter'); backendDetected = true
+        info.chosenBackend = 'openrouter'
+        info.reason = `auto: openrouter key set (gemma4 not cached or webgpu unavailable — cacheHit=${info.gemmaCacheHit}, webgpu=${info.webGPUAvailable})`
+        lastDetectInfo = info
+        return activeBackend
+      }
 
       // Final fallback: WebGPU available but model not cached — would
       // require a 500MB download.
-      if (await checkWebGPU()) { setActiveBackend('gemma4'); backendDetected = true; return activeBackend }
+      if (info.webGPUAvailable) {
+        setActiveBackend('gemma4'); backendDetected = true
+        info.chosenBackend = 'gemma4'; info.reason = 'auto: webgpu available (model not cached, will download)'
+        lastDetectInfo = info
+        return activeBackend
+      }
 
       setActiveBackend('none')
       backendDetected = true
+      info.chosenBackend = 'none'; info.reason = 'auto: no backend available'
+      lastDetectInfo = info
       return activeBackend
     } finally {
       detectPromise = null

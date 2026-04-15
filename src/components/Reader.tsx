@@ -380,9 +380,14 @@ export function Reader() {
     return scored.sort((a, b) => b.score - a.score)[0] ?? null
   }, [markdown])
 
-  // Dynamic page title with progress
+  // Dynamic page title with progress. Must subscribe to `fileName` via
+  // the hook (not just read it through getState) AND include it in the
+  // dep array — otherwise switching files in folder mode leaves the
+  // title stale. Same bug class as Chat.tsx's old "Waiting for AI..."
+  // gotcha where reading store snapshots without subscribing missed
+  // the re-render.
   useEffect(() => {
-    const name = useStore.getState().fileName ?? 'Document'
+    const name = fileName ?? 'Document'
     if (readingProgress > 5) {
       const minsLeft = Math.max(1, Math.ceil(readTime * (1 - readingProgress / 100)))
       document.title = `(${minsLeft}m left) ${name} — md-reader`
@@ -390,7 +395,7 @@ export function Reader() {
       document.title = `${name} — md-reader`
     }
     return () => { document.title = 'md-reader — Read it. Ship it.' }
-  }, [readingProgress, readTime])
+  }, [readingProgress, readTime, fileName])
 
   // Dynamic favicon showing reading progress
   const progressBucket = Math.round(readingProgress / 5) * 5

@@ -48,25 +48,48 @@ describe('<OutlinePanel>', () => {
     expect(screen.getByRole('navigation', { name: /outline|contents/i })).toBeInTheDocument()
   })
 
-  it('indents entries by heading level via inline padding', () => {
+  it('indents entries by heading level via inline padding (h1 vs h2)', () => {
     useStore.setState({
       toc: [
         { id: 'a', text: 'Level1', level: 1 },
         { id: 'b', text: 'Level2', level: 2 },
-        { id: 'c', text: 'Level3', level: 3 },
       ],
     })
     render(<OutlinePanel />)
     const l1 = screen.getByText('Level1').closest('button')
     const l2 = screen.getByText('Level2').closest('button')
-    const l3 = screen.getByText('Level3').closest('button')
     expect(l1).toBeTruthy()
     expect(l2).toBeTruthy()
-    expect(l3).toBeTruthy()
-    // Padding should be computed from level; level 2 > level 1, level 3 > level 2
     const pad = (el: HTMLElement | null) =>
       el ? parseFloat(el.style.paddingLeft || '0') : 0
     expect(pad(l2)).toBeGreaterThan(pad(l1))
-    expect(pad(l3)).toBeGreaterThan(pad(l2))
+  })
+
+  it('filters out headings deeper than maxLevel (default 2 matches Reader baseline)', () => {
+    useStore.setState({
+      toc: [
+        { id: 'a', text: 'ShownH1', level: 1 },
+        { id: 'b', text: 'ShownH2', level: 2 },
+        { id: 'c', text: 'HiddenH3', level: 3 },
+        { id: 'd', text: 'HiddenH4', level: 4 },
+      ],
+    })
+    render(<OutlinePanel />)
+    expect(screen.getByText('ShownH1')).toBeInTheDocument()
+    expect(screen.getByText('ShownH2')).toBeInTheDocument()
+    expect(screen.queryByText('HiddenH3')).toBeNull()
+    expect(screen.queryByText('HiddenH4')).toBeNull()
+  })
+
+  it('maxLevel prop override lets h3+ through', () => {
+    useStore.setState({
+      toc: [
+        { id: 'a', text: 'H1', level: 1 },
+        { id: 'c', text: 'H3', level: 3 },
+      ],
+    })
+    render(<OutlinePanel maxLevel={6} />)
+    expect(screen.getByText('H1')).toBeInTheDocument()
+    expect(screen.getByText('H3')).toBeInTheDocument()
   })
 })

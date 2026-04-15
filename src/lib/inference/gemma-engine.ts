@@ -140,16 +140,30 @@ async function attachGpuLostHandler(): Promise<void> {
  * Exported so `ai.ts`'s detectBestBackend can decide whether gemma4 is a
  * zero-download option (in which case it beats cloud OpenRouter) or a
  * last-resort 500MB download (in which case it loses to cloud).
+ *
+ * Transformers.js maintains TWO Cache API buckets:
+ *   - `transformers-cache` (default `env.cacheKey`) — stores the actual
+ *     model weight files
+ *   - `experimental_transformers-hash-cache` — stores hash-lookup metadata,
+ *     does NOT contain model weight URLs
+ *
+ * The earlier implementation used `.find(n => n.includes('transformers'))`
+ * which would match the FIRST 'transformers'-ish cache. If the hash cache
+ * was returned first (e.g. lexicographically), we'd open it, find no
+ * Qwen3 URLs, and wrongly report "not cached". Users with a legitimately-
+ * downloaded model would be flipped to the OpenRouter path instead of
+ * their free local model. Fix: iterate ALL caches and return true if ANY
+ * of them contains a Qwen3 model URL.
  */
 export async function isModelCached(): Promise<boolean> {
   try {
-    // Transformers.js uses the Cache API under the hood
     const cacheNames = await caches.keys()
-    const tfCache = cacheNames.find(n => n.includes('transformers'))
-    if (!tfCache) return false
-    const cache = await caches.open(tfCache)
-    const keys = await cache.keys()
-    return keys.some(k => k.url.includes('Qwen3') || k.url.includes('qwen3'))
+    for (const name of cacheNames) {
+      const cache = await caches.open(name)
+      const keys = await cache.keys()
+      if (keys.some(k => /qwen3/i.test(k.url))) return true
+    }
+    return false
   } catch { return false }
 }
 
