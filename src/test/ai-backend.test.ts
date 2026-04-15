@@ -35,3 +35,12 @@ describe('isBackendReady', () => {
     expect(isBackendReady('gemma4')).toBe(true)
   })
 })
+
+// The "set OpenRouter key mid-session doesn't take effect until refresh"
+// regression is fixed in ai.ts (setApiKey/clearApiKey/setPreferredBackend
+// now null detectPromise in addition to backendDetected). A unit test for
+// this would require mocking the full Ollama/WebGPU/OpenRouter detection
+// pipeline across dynamic module imports and vi.resetModules — the mocks
+// proved flaky in jsdom. The fix is a 3-line change with a comment
+// pointing at this bug; if it regresses, the Playwright smoke on the
+// live site catches it end-to-end.

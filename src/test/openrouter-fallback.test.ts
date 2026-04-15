@@ -57,6 +57,20 @@ function successStreamResponse(token: string): Response {
   return new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } })
 }
 
+// Build a Response that mimics a reasoning-mode model — emits chain-of-thought
+// into `delta.reasoning` and leaves `delta.content` null. This is the
+// 2026-04-15 regression: z-ai/glm-4.5-air accidentally landed in the chain
+// and diagram/quiz/podcast parsers all failed because the stream yielded
+// empty strings. The defensive empty-content guard must skip past this model.
+function emptyContentReasoningResponse(): Response {
+  const sse =
+    `data: {"choices":[{"delta":{"reasoning":"Let me think about this..."}}]}\n\n` +
+    `data: {"choices":[{"delta":{"reasoning":" The answer is..."}}]}\n\n` +
+    `data: {"choices":[{"finish_reason":"length"}]}\n\n` +
+    `data: [DONE]\n\n`
+  return new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+}
+
 describe('OpenRouter model fallback chain', () => {
   it('succeeds on the first model when it is NOT rate-limited', async () => {
     const calls: { model: string }[] = []
@@ -77,6 +91,57 @@ describe('OpenRouter model fallback chain', () => {
     // re-order the chain without breaking the test; it just verifies the
     // first call happened.
     expect(calls[0].model).toMatch(/:free$/)
+  })
+
+  it('falls through on 200-but-empty-content (reasoning model masquerading as success)', async () => {
+    // Regression: z-ai/glm-4.5-air (a reasoning model) returned 200 with
+    // delta.content=null and delta.reasoning=<cot>, causing chatOpenRouterStream
+    // to return ''. parseDiagramDSL('') → null → "Failed to generate diagram".
+    // The fix is to treat empty content as a transient failure and skip to
+    // the next model. This test pins that behavior so future chain edits
+    // can't silently reintroduce the bug.
+    const calls: { model: string }[] = []
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse((init?.body as string) ?? '{}')
+      calls.push({ model: body.model })
+      // First call → reasoning-mode 200 with empty content
+      // Second call → real content
+      if (calls.length === 1) return emptyContentReasoningResponse()
+      return successStreamResponse('real-content')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const ai = await import('../lib/ai')
+    const result = await ai.chat([{ role: 'user', content: 'make diagram' }])
+
+    expect(result).toBe('real-content')
+    expect(calls.length).toBe(2)
+    expect(calls[0].model).not.toBe(calls[1].model)
+  })
+
+  it('throws a targeted error if EVERY model in the chain returns empty content', async () => {
+    const calls: { model: string }[] = []
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('openrouter.ai') && url.includes('chat/completions')) {
+        const body = JSON.parse((init?.body as string) ?? '{}')
+        calls.push({ model: body.model })
+        return emptyContentReasoningResponse()
+      }
+      // Simulate Ollama unreachable so chat()'s error-path fallback doesn't
+      // mask the OpenRouter exhaustion error we want to assert on.
+      return new Response('', { status: 503 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const ai = await import('../lib/ai')
+    // Must throw a message that references "empty content" so the UI's
+    // error formatter can explain the reasoning-mode issue specifically.
+    await expect(ai.chat([{ role: 'user', content: 'test' }])).rejects.toThrow(/empty content/)
+    // Must have tried EVERY model in the chain — no silent bailout after
+    // the first empty response.
+    const uniqueModels = new Set(calls.map(c => c.model))
+    expect(uniqueModels.size).toBe(calls.length)
+    expect(calls.length).toBeGreaterThanOrEqual(2)
   })
 
   it('falls through to the second model on 429 from the first', async () => {

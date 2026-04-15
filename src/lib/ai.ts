@@ -28,14 +28,23 @@ const OLLAMA_TIMEOUT = 90000
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1/chat/completions'
 // Free-tier model fallback chain. OpenRouter free models are pooled upstream
 // and any one can be temporarily rate-limited (HTTP 429) without the user
-// having done anything wrong. Try each in order; skip to the next on 429.
-// These two (gemma-3-12b, glm-4.5-air) were verified working on 2026-04-14
-// when llama-3.2-3b was upstream rate-limited and several others were 404.
+// having done anything wrong. Try each in order; skip to the next on 429
+// OR on empty content (reasoning-model edge case — see chatOpenRouterStream).
+//
+// CRITICAL: Every entry here must be a NON-REASONING model. Reasoning models
+// (z-ai/glm-4.5-air, openai/gpt-oss, nvidia/nemotron, etc.) return their
+// chain-of-thought in `delta.reasoning` and leave `delta.content` null.
+// Our streaming path only reads `delta.content`, so we'd silently get empty
+// strings and diagram/podcast/quiz parsers would all fail with
+// "Failed to generate" — exactly the 2026-04-15 regression. To add a model
+// here, verify its `supported_parameters` at https://openrouter.ai/api/v1/models
+// does NOT contain `reasoning`.
 const OPENROUTER_FREE_MODEL_CHAIN: string[] = [
-  'google/gemma-3-12b-it:free',           //  12B, 32K ctx — reliable primary
-  'z-ai/glm-4.5-air:free',                //  MoE,  131K ctx — large context fallback
-  'meta-llama/llama-3.2-3b-instruct:free',// 3B, 131K ctx — ubiquitous fallback, often rate-limited
-  'google/gemma-3-4b-it:free',            //   4B,  32K ctx — lightweight fallback
+  'google/gemma-3-12b-it:free',               //  12B,  32K ctx — reliable primary, non-reasoning
+  'google/gemma-3-27b-it:free',               //  27B, 131K ctx — best-quality non-reasoning fallback
+  'meta-llama/llama-3.3-70b-instruct:free',   //  70B,  66K ctx — large non-reasoning fallback
+  'meta-llama/llama-3.2-3b-instruct:free',   //   3B, 131K ctx — ubiquitous small fallback
+  'google/gemma-3-4b-it:free',                //   4B,  32K ctx — lightweight final fallback
 ]
 const OPENROUTER_TIMEOUT = 60000
 const OPENROUTER_KEY_STORAGE = 'md-reader-openrouter-key'
@@ -150,8 +159,15 @@ export function setApiKey(key: string): void {
   } else {
     localStorage.removeItem(OPENROUTER_KEY_STORAGE)
   }
-  // Reset detection so next call re-evaluates with the new key
+  // Reset BOTH the detection flag AND the in-flight promise. The flag alone
+  // isn't enough: if a detection was already running when the user set the
+  // key (common — Reader.tsx kicks one off on mount), the in-flight promise
+  // is still cached and a fresh `detectBestBackend()` call returns it via
+  // the "if (detectPromise) return detectPromise" guard — re-using a stale
+  // result that was computed WITHOUT the new key. That's why users reported
+  // having to refresh the page after entering their key. See ai-backend.test.ts.
   backendDetected = false
+  detectPromise = null
 }
 
 export function getApiKey(): string | null {
@@ -161,6 +177,7 @@ export function getApiKey(): string | null {
 export function clearApiKey(): void {
   localStorage.removeItem(OPENROUTER_KEY_STORAGE)
   backendDetected = false
+  detectPromise = null
 }
 
 // ─── Preferred backend override ────────────────────────────────────────────
@@ -178,6 +195,7 @@ export function setPreferredBackend(backend: string | null): void {
     localStorage.removeItem(LS_PREFERRED_BACKEND)
   }
   backendDetected = false
+  detectPromise = null
 }
 
 // ─── Backend detection ─────────────────────────────────────────────────────
@@ -455,6 +473,26 @@ async function chatOpenRouterStream(
           }
         } catch { /* skip malformed SSE line */ }
       }
+    }
+
+    // Defense against reasoning-mode models that slip into the chain:
+    // some OpenRouter free models (e.g. z-ai/glm-4.5-air, openai/gpt-oss,
+    // nvidia/nemotron) emit chain-of-thought into `delta.reasoning` and
+    // leave `delta.content` null. The stream ends with `full === ''` and
+    // `finish_reason === 'length'`. To the caller this looks identical to
+    // a successful empty answer — diagram/quiz/podcast parsers then throw
+    // "Failed to generate". Treat empty content as a transient failure
+    // and fall through to the next model in the chain. If it was the last
+    // model, surface a targeted error so the UI can explain it.
+    if (full.trim() === '') {
+      if (i < OPENROUTER_FREE_MODEL_CHAIN.length - 1) {
+        console.warn(`[openrouter] ${model} returned empty content (likely a reasoning-mode model), trying fallback`)
+        const err = new Error(`OpenRouter error 200 (${model}): empty content`) as Error & { status?: number }
+        err.status = 200
+        lastRateLimitError = err
+        continue
+      }
+      throw new Error(`OpenRouter returned empty content from all models in the free chain. This usually means every non-reasoning free model is rate-limited. Try again in a minute, or add your own key at openrouter.ai/settings/credits.`)
     }
     return full
   }
