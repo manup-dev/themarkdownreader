@@ -271,17 +271,24 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     const contents = new Map<string, string>()
     files.forEach(f => contents.set(f.path, f.content))
 
-    // Auto-select: prefer README.md (case-insensitive) else first file
-    const readme = files.find(f => /^readme\.md$/i.test(f.name))
-    const first = readme ?? files[0]
+    // Try to restore the last-active file for this folder (scoped by folder name).
+    // Fall back to README.md (case-insensitive) else first file.
+    const folderKey = handle?.name ?? '__cache__'
+    const persisted = typeof localStorage !== 'undefined'
+      ? localStorage.getItem(`md-reader-active-file:${folderKey}`)
+      : null
+    let chosenFile = persisted ? files.find(f => f.path === persisted) : undefined
+    if (!chosenFile) {
+      chosenFile = files.find(f => /^readme\.md$/i.test(f.name)) ?? files[0]
+    }
 
     set({
       folderHandle: handle,
       folderFiles: ordered,
       folderFileContents: contents,
-      activeFilePath: first?.path ?? null,
-      markdown: first?.content ?? '',
-      fileName: first?.name ?? null,
+      activeFilePath: chosenFile?.path ?? null,
+      markdown: chosenFile?.content ?? '',
+      fileName: chosenFile?.name ?? null,
     })
   },
 
@@ -298,6 +305,13 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       markdown: contents.get(path) ?? '',
       fileName: file?.name ?? path,
     })
+    // Persist scoped by folder name so a reload restores the last-viewed file.
+    const folderKey = get().folderHandle?.name ?? '__cache__'
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(`md-reader-active-file:${folderKey}`, path)
+      } catch { /* quota exceeded — non-fatal */ }
+    }
   },
 
   closeFolderSession: () => {

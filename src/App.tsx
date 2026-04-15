@@ -326,11 +326,20 @@ function App() {
     return () => { cancelled = true; clearInterval(interval) }
   }, [activeDocId])
 
-  // Keyboard shortcuts: Escape closes chat/focus, Ctrl+Shift+F toggles focus mode
+  // Keyboard shortcuts: Escape closes chat/focus, Ctrl+Shift+F toggles focus mode,
+  // Cmd/Ctrl+\ toggles the sidebar.
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { setChatOpen(false); setCommentsOpen(false); setFocusMode(false); setFabMenuOpen(false) }
       if (e.ctrlKey && e.shiftKey && e.key === 'F') { e.preventDefault(); setFocusMode((f) => !f) }
+      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+        const target = e.target as HTMLElement | null
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+          return
+        }
+        e.preventDefault()
+        useStore.getState().toggleSidebar()
+      }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)

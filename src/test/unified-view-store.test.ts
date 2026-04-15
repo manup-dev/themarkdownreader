@@ -20,6 +20,12 @@ describe('useStore — unified view state', () => {
       fileName: null,
       viewMode: 'read',
     })
+    // Clear persisted active-file keys so tests don't leak state across each other
+    if (typeof localStorage !== 'undefined') {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('md-reader-active-file:'))
+        .forEach(k => localStorage.removeItem(k))
+    }
   })
 
   describe('setFolderSession', () => {
@@ -147,6 +153,46 @@ describe('useStore — unified view state', () => {
       const ok = useStore.getState().navigateToPath('./missing.md')
       expect(ok).toBe(false)
       expect(useStore.getState().activeFilePath).toBe('intro.md')  // unchanged
+    })
+  })
+
+  describe('activeFilePath persistence', () => {
+    beforeEach(() => {
+      if (typeof localStorage !== 'undefined') {
+        Object.keys(localStorage)
+          .filter(k => k.startsWith('md-reader-active-file:'))
+          .forEach(k => localStorage.removeItem(k))
+      }
+    })
+
+    it('writes activeFilePath to localStorage on setActiveFile', () => {
+      const files = [
+        { path: 'a.md', name: 'a.md', content: '# A' },
+        { path: 'b.md', name: 'b.md', content: '# B' },
+      ]
+      useStore.getState().setFolderSession(null, files)
+      useStore.getState().setActiveFile('b.md')
+      expect(localStorage.getItem('md-reader-active-file:__cache__')).toBe('b.md')
+    })
+
+    it('restores previously-active file on setFolderSession', () => {
+      localStorage.setItem('md-reader-active-file:__cache__', 'b.md')
+      const files = [
+        { path: 'a.md', name: 'a.md', content: '# A' },
+        { path: 'b.md', name: 'b.md', content: '# B' },
+      ]
+      useStore.getState().setFolderSession(null, files)
+      expect(useStore.getState().activeFilePath).toBe('b.md')
+      expect(useStore.getState().markdown).toBe('# B')
+    })
+
+    it('falls back to README.md if persisted file no longer exists', () => {
+      localStorage.setItem('md-reader-active-file:__cache__', 'deleted.md')
+      useStore.getState().setFolderSession(null, [
+        { path: 'README.md', name: 'README.md', content: '# R' },
+        { path: 'other.md', name: 'other.md', content: '# O' },
+      ])
+      expect(useStore.getState().activeFilePath).toBe('README.md')
     })
   })
 })

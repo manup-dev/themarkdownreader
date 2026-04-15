@@ -120,6 +120,12 @@ export function Toolbar() {
 
   const doClose = useCallback(() => {
     setShowCloseConfirm(false)
+    // Folder mode: clear the active file but KEEP the folder session.
+    // This returns the user to the folder dashboard / empty reader, not the upload screen.
+    if (useStore.getState().folderFiles !== null) {
+      useStore.getState().setActiveFile(null)
+      return
+    }
     if (workspaceMode) { backToWorkspace() } else {
       const state = useStore.getState()
       const wordsRead = Math.round(state.markdown.split(/\s+/).length * (state.readingProgress / 100))
