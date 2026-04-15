@@ -31,21 +31,46 @@ const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1/chat/completions'
 // having done anything wrong. Try each in order; skip to the next on 429
 // OR on empty content (reasoning-model edge case — see chatOpenRouterStream).
 //
-// CRITICAL: Every entry here must be a NON-REASONING model. Reasoning models
-// (z-ai/glm-4.5-air, openai/gpt-oss, nvidia/nemotron, etc.) return their
-// chain-of-thought in `delta.reasoning` and leave `delta.content` null.
-// Our streaming path only reads `delta.content`, so we'd silently get empty
-// strings and diagram/podcast/quiz parsers would all fail with
-// "Failed to generate" — exactly the 2026-04-15 regression. To add a model
-// here, verify its `supported_parameters` at https://openrouter.ai/api/v1/models
-// does NOT contain `reasoning`.
-const OPENROUTER_FREE_MODEL_CHAIN: string[] = [
+// TWO chains, chosen per-task by the `reasoning` flag on chatOpenRouterStream:
+//
+//   STRUCTURED — non-reasoning models ONLY. For strict-JSON tasks with tight
+//                token budgets (diagram, quiz, summaries, podcast script).
+//                Reasoning models would eat the whole max_tokens budget on
+//                internal chain-of-thought and leave `content` null, which
+//                looks like a 200 OK to the streaming path but returns an
+//                empty string — the 2026-04-15 diagram regression.
+//
+//   REASONING  — reasoning-capable models, paired with larger max_tokens
+//                budgets (2500+). For free-form analytical tasks where the
+//                LLM's internal thinking improves answer quality: chat Q&A
+//                and coach explanations. Structured tasks MUST NOT use this
+//                chain — their 350-800 token budgets are too tight for the
+//                model to finish thinking AND emit content.
+//
+// To add a model to STRUCTURED, verify its `supported_parameters` at
+// https://openrouter.ai/api/v1/models does NOT contain `reasoning`.
+// To add a model to REASONING, verify it DOES contain `reasoning`.
+const OPENROUTER_FREE_CHAIN_STRUCTURED: string[] = [
   'google/gemma-3-12b-it:free',               //  12B,  32K ctx — reliable primary, non-reasoning
   'google/gemma-3-27b-it:free',               //  27B, 131K ctx — best-quality non-reasoning fallback
   'meta-llama/llama-3.3-70b-instruct:free',   //  70B,  66K ctx — large non-reasoning fallback
   'meta-llama/llama-3.2-3b-instruct:free',   //   3B, 131K ctx — ubiquitous small fallback
   'google/gemma-3-4b-it:free',                //   4B,  32K ctx — lightweight final fallback
 ]
+const OPENROUTER_FREE_CHAIN_REASONING: string[] = [
+  'openai/gpt-oss-120b:free',                 // 120B, 131K ctx — strong reasoning primary
+  'z-ai/glm-4.5-air:free',                    //  MoE, 131K ctx — reliable reasoning fallback
+  'openai/gpt-oss-20b:free',                  //  20B, 131K ctx — smaller reasoning fallback
+  'nvidia/nemotron-3-super-120b-a12b:free',   // 120B, 262K ctx — large reasoning fallback
+]
+// Default max_tokens for REASONING chain — leaves room for thinking + answer.
+// Anything lower and the model runs out of budget mid-thought. Callers can
+// still override explicitly via ChatFastOptions.maxTokens.
+const REASONING_DEFAULT_MAX_TOKENS = 2500
+// Hard memory cap on streamed response size. A 1MB text response at these
+// token budgets would be a bug or an infinite loop — abort fast so the
+// browser doesn't spin on a runaway stream.
+const STREAM_RESPONSE_MAX_BYTES = 1_000_000
 const OPENROUTER_TIMEOUT = 60000
 const OPENROUTER_KEY_STORAGE = 'md-reader-openrouter-key'
 
@@ -388,6 +413,8 @@ async function chatOpenRouterStream(
   signal?: AbortSignal,
   maxTokens?: number,
   temperature?: number,
+  reasoning?: boolean,
+  onReasoning?: (token: string) => void,
 ): Promise<string> {
   const rawKey = getApiKey()
   if (!rawKey) throw new Error('OpenRouter API key not set')
@@ -397,15 +424,20 @@ async function chatOpenRouterStream(
   // while the Test button (which already trimmed) reported success.
   const apiKey = rawKey.trim()
 
-  // Try each model in the free-tier chain. On HTTP 429 (upstream rate-limit),
-  // silently fall through to the next model. On any other non-2xx, propagate
-  // immediately so the UI can render an actionable error. This specifically
-  // unblocks podcast + diagram generation, which previously failed whenever
-  // `meta-llama/llama-3.2-3b-instruct:free` was rate-limited upstream — even
-  // though the user's key authenticated fine.
+  // Per-task chain selection: reasoning tasks (Q&A, coach) use the reasoning
+  // chain with a higher default token budget; structured tasks (diagram, quiz,
+  // summaries) use the non-reasoning chain with tighter budgets. See the
+  // constants above for why mixing the two corrupts each chain's use case.
+  const chain = reasoning ? OPENROUTER_FREE_CHAIN_REASONING : OPENROUTER_FREE_CHAIN_STRUCTURED
+  const effectiveMaxTokens = maxTokens ?? (reasoning ? REASONING_DEFAULT_MAX_TOKENS : PROMPT_CONFIG.maxTokens)
+
+  // Try each model in the selected chain. On HTTP 429 (upstream rate-limit)
+  // OR on empty content (reasoning-model edge case — see the post-stream
+  // guard below), silently fall through to the next model. On any other
+  // non-2xx, propagate immediately so the UI can render an actionable error.
   let lastRateLimitError: (Error & { status?: number }) | null = null
-  for (let i = 0; i < OPENROUTER_FREE_MODEL_CHAIN.length; i++) {
-    const model = OPENROUTER_FREE_MODEL_CHAIN[i]
+  for (let i = 0; i < chain.length; i++) {
+    const model = chain[i]
     const res = await fetch(OPENROUTER_BASE_URL, {
       method: 'POST',
       headers: {
@@ -418,7 +450,7 @@ async function chatOpenRouterStream(
         model,
         messages,
         stream: true,
-        max_tokens: maxTokens ?? PROMPT_CONFIG.maxTokens,
+        max_tokens: effectiveMaxTokens,
         temperature: temperature ?? PROMPT_CONFIG.temperature,
       }),
       signal: signal ?? AbortSignal.timeout(OPENROUTER_TIMEOUT),
@@ -427,7 +459,7 @@ async function chatOpenRouterStream(
     if (!res.ok) {
       const body = await res.text().catch(() => '')
       // 429 = rate-limited → try next model in chain
-      if (res.status === 429 && i < OPENROUTER_FREE_MODEL_CHAIN.length - 1) {
+      if (res.status === 429 && i < chain.length - 1) {
         const err = new Error(`OpenRouter error 429 (${model}): ${body}`) as Error & { status?: number }
         err.status = 429
         lastRateLimitError = err
@@ -450,49 +482,75 @@ async function chatOpenRouterStream(
     let full = ''
     let buffer = ''
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
 
-      const lines = buffer.split('\n')
-      // Keep the last potentially incomplete line in the buffer
-      buffer = lines.pop() ?? ''
+        const lines = buffer.split('\n')
+        // Keep the last potentially incomplete line in the buffer
+        buffer = lines.pop() ?? ''
 
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed || !trimmed.startsWith('data: ')) continue
-        const data = trimmed.slice(6)
-        if (data === '[DONE]') continue
-        try {
-          const json = JSON.parse(data)
-          const token = json.choices?.[0]?.delta?.content ?? ''
-          if (token) {
-            full += token
-            onToken?.(token)
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || !trimmed.startsWith('data: ')) continue
+          const data = trimmed.slice(6)
+          if (data === '[DONE]') continue
+          try {
+            const json = JSON.parse(data)
+            const delta = json.choices?.[0]?.delta
+            // Content tokens — always accumulated, this is what we return.
+            const contentToken: string = delta?.content ?? ''
+            if (contentToken) {
+              full += contentToken
+              onToken?.(contentToken)
+              // Memory guard: abort runaway streams that somehow break past
+              // the model's max_tokens (provider bugs, infinite loops). At
+              // normal Q&A budgets this never triggers — 2500 tokens is
+              // ~10KB of text, not 1MB.
+              if (full.length >= STREAM_RESPONSE_MAX_BYTES) {
+                try { await reader.cancel() } catch { /* non-fatal */ }
+                throw new Error(`OpenRouter stream exceeded ${STREAM_RESPONSE_MAX_BYTES} bytes — aborting to protect browser memory`)
+              }
+            }
+            // Reasoning tokens — ONLY forwarded if the caller subscribed.
+            // When no onReasoning callback is provided, thinking tokens
+            // are discarded immediately (not stored in any variable), so
+            // a 2000-token reasoning stream has zero memory cost.
+            if (onReasoning) {
+              const reasoningToken: string = delta?.reasoning ?? ''
+              if (reasoningToken) onReasoning(reasoningToken)
+            }
+          } catch (e) {
+            // Re-throw memory guard (not a JSON parse error)
+            if (e instanceof Error && e.message.includes('exceeded')) throw e
+            /* skip malformed SSE line */
           }
-        } catch { /* skip malformed SSE line */ }
+        }
       }
+    } finally {
+      // Release the reader so the underlying connection can be garbage-
+      // collected even if an exception bubbled out mid-stream.
+      try { reader.releaseLock() } catch { /* already released */ }
     }
 
-    // Defense against reasoning-mode models that slip into the chain:
-    // some OpenRouter free models (e.g. z-ai/glm-4.5-air, openai/gpt-oss,
-    // nvidia/nemotron) emit chain-of-thought into `delta.reasoning` and
-    // leave `delta.content` null. The stream ends with `full === ''` and
-    // `finish_reason === 'length'`. To the caller this looks identical to
-    // a successful empty answer — diagram/quiz/podcast parsers then throw
-    // "Failed to generate". Treat empty content as a transient failure
-    // and fall through to the next model in the chain. If it was the last
-    // model, surface a targeted error so the UI can explain it.
+    // Defense against reasoning-mode models that slip into the STRUCTURED
+    // chain OR against reasoning models in the REASONING chain that ran out
+    // of budget mid-thought: if the stream ended with no content tokens,
+    // treat it as a transient failure and fall through to the next model.
+    // On the reasoning chain this is especially important because models
+    // like z-ai/glm-4.5-air may burn through the entire 2500-token budget
+    // on CoT alone and leave content empty.
     if (full.trim() === '') {
-      if (i < OPENROUTER_FREE_MODEL_CHAIN.length - 1) {
-        console.warn(`[openrouter] ${model} returned empty content (likely a reasoning-mode model), trying fallback`)
+      if (i < chain.length - 1) {
+        console.warn(`[openrouter] ${model} returned empty content (reasoning-mode, budget exhausted, or structured task on a reasoning model), trying fallback`)
         const err = new Error(`OpenRouter error 200 (${model}): empty content`) as Error & { status?: number }
         err.status = 200
         lastRateLimitError = err
         continue
       }
-      throw new Error(`OpenRouter returned empty content from all models in the free chain. This usually means every non-reasoning free model is rate-limited. Try again in a minute, or add your own key at openrouter.ai/settings/credits.`)
+      throw new Error(`OpenRouter returned empty content from all models in the free chain. This usually means every free model is rate-limited or the token budget is too low for the task. Try again in a minute, or add your own key at openrouter.ai/settings/credits.`)
     }
     return full
   }
@@ -586,6 +644,21 @@ export interface ChatFastOptions {
   temperature?: number
   repeatPenalty?: number
   model?: string
+  /**
+   * Opt into the reasoning-capable model chain with larger default token
+   * budgets. Use for free-form analytical tasks (chat Q&A, coach tutor)
+   * where the LLM's internal thinking improves answer quality. Do NOT use
+   * for structured-JSON tasks (diagram, quiz) — reasoning models burn
+   * tokens on chain-of-thought and leave content empty at tight budgets.
+   */
+  reasoning?: boolean
+  /**
+   * Optional callback that receives reasoning tokens as they stream in
+   * from a reasoning-capable model. When omitted (the default), thinking
+   * tokens are discarded immediately and do NOT accumulate in memory.
+   * Only set this if the UI wants to show the model's chain-of-thought.
+   */
+  onReasoning?: (token: string) => void
 }
 
 export async function chatFast(
@@ -597,7 +670,11 @@ export async function chatFast(
   const opts: ChatFastOptions = signalOrOpts instanceof AbortSignal
     ? { signal: signalOrOpts, onToken }
     : signalOrOpts ?? {}
-  const { signal, onToken: tokenCb, maxTokens, temperature, repeatPenalty, model } = { onToken, ...opts }
+  const { signal, onToken: tokenCb, maxTokens, temperature, repeatPenalty, model, reasoning, onReasoning } = { onToken, ...opts }
+
+  // Reasoning-mode tasks on Ollama/Gemma just need a bigger token budget;
+  // they don't have a separate "reasoning chain" the way OpenRouter does.
+  const effectiveMaxTokens = maxTokens ?? (reasoning ? REASONING_DEFAULT_MAX_TOKENS : undefined)
 
   // If browser model is the selected backend, use it only if already loaded.
   // chatFast never triggers a model download — that would block for minutes
@@ -608,24 +685,30 @@ export async function chatFast(
       try { return await gemmaChat(messages, tokenCb, signal) } catch { /* fall through */ }
     } else {
       // Model not loaded — prefer server backends instead of triggering download
-      if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, maxTokens, temperature, repeatPenalty, model)
-      if (await checkOpenRouter()) return chatOpenRouterStream(messages, tokenCb, signal, maxTokens, temperature)
+      if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, effectiveMaxTokens, temperature, repeatPenalty, model)
+      if (await checkOpenRouter()) return chatOpenRouterStream(messages, tokenCb, signal, effectiveMaxTokens, temperature, reasoning, onReasoning)
       throw new Error('No AI backend available. Open AI Settings to download the browser model or configure Ollama/OpenRouter.')
     }
   }
 
   // Non-browser backends
-  if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, maxTokens, temperature, repeatPenalty, model)
-  if (await checkOpenRouter()) return chatOpenRouterStream(messages, tokenCb, signal, maxTokens, temperature)
-  return chat(messages, signal, tokenCb)
+  if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, effectiveMaxTokens, temperature, repeatPenalty, model)
+  if (await checkOpenRouter()) return chatOpenRouterStream(messages, tokenCb, signal, effectiveMaxTokens, temperature, reasoning, onReasoning)
+  return chat(messages, signal, tokenCb, reasoning)
 }
 
 export async function chat(
   messages: ChatMessage[],
   signal?: AbortSignal,
   onToken?: (token: string) => void,
+  reasoning?: boolean,
 ): Promise<string> {
   if (!backendDetected) await detectBestBackend()
+
+  // When the task wants reasoning, give Ollama/Gemma a bigger token budget
+  // so they have room to produce a thoughtful answer. OpenRouter gets this
+  // budget PLUS the reasoning chain (see chatOpenRouterStream).
+  const maxTokens = reasoning ? REASONING_DEFAULT_MAX_TOKENS : undefined
 
   // Gemma 4 (primary)
   if (activeBackend === 'gemma4') {
@@ -640,10 +723,10 @@ export async function chat(
       if (await checkOllamaHealth()) {
         // Silently prefer Ollama; the browser model can still download in
         // the background via preloadGemma — next call may land on it.
-        return chatOllamaStream(messages, onToken, signal)
+        return chatOllamaStream(messages, onToken, signal, maxTokens)
       }
       if (await checkOpenRouter()) {
-        return chatOpenRouterStream(messages, onToken, signal)
+        return chatOpenRouterStream(messages, onToken, signal, maxTokens, undefined, reasoning)
       }
       // No zero-setup fallback available — fall through to the normal
       // download + wait path.
@@ -661,8 +744,8 @@ export async function chat(
       try {
         if (await checkWebGPU()) return await chatWebLLM(messages, onToken)
       } catch { /* fall through */ }
-      if (await checkOllamaHealth()) return chatOllamaStream(messages, onToken, signal)
-      if (await checkOpenRouter()) return chatOpenRouterStream(messages, onToken, signal)
+      if (await checkOllamaHealth()) return chatOllamaStream(messages, onToken, signal, maxTokens)
+      if (await checkOpenRouter()) return chatOpenRouterStream(messages, onToken, signal, maxTokens, undefined, reasoning)
       throw new Error(`Gemma 4 failed: ${e instanceof Error ? e.message : e}`)
     }
   }
@@ -673,24 +756,24 @@ export async function chat(
       return await chatWebLLM(messages, onToken)
     } catch {
       backendDetected = false
-      if (await checkOllamaHealth()) return chatOllamaStream(messages, onToken, signal)
+      if (await checkOllamaHealth()) return chatOllamaStream(messages, onToken, signal, maxTokens)
       throw new Error('No AI backend available')
     }
   }
 
   // Ollama
   if (activeBackend === 'ollama') {
-    return chatOllamaStream(messages, onToken, signal)
+    return chatOllamaStream(messages, onToken, signal, maxTokens)
   }
 
   // OpenRouter
   if (activeBackend === 'openrouter') {
     try {
-      return await chatOpenRouterStream(messages, onToken, signal)
+      return await chatOpenRouterStream(messages, onToken, signal, maxTokens, undefined, reasoning)
     } catch (e) {
       console.warn('OpenRouter failed:', e)
       backendDetected = false
-      if (await checkOllamaHealth()) return chatOllamaStream(messages, onToken, signal)
+      if (await checkOllamaHealth()) return chatOllamaStream(messages, onToken, signal, maxTokens)
       throw new Error(`OpenRouter failed: ${e instanceof Error ? e.message : e}`)
     }
   }
@@ -731,10 +814,14 @@ export async function askAboutDocument(
 ): Promise<string> {
   const maxChunk = activeBackend === 'gemma4' ? 1500 : PROMPT_CONFIG.qaMaxChunkLen
   const numbered = contextChunks.map((c, i) => `[${i + 1}] ${c.slice(0, maxChunk)}`).join('\n\n')
+  // Q&A is the canonical reasoning-benefit task: the model needs to read
+  // cited context, think about the question, and produce a grounded answer.
+  // Route through the reasoning chain on OpenRouter and a bigger token
+  // budget on Ollama/Gemma so the model can actually finish.
   return chat([
     { role: 'system', content: PROMPTS.askDocument },
     { role: 'user', content: `Context:\n${numbered}\n\nQ: ${question}` },
-  ], signal, onToken)
+  ], signal, onToken, /* reasoning */ true)
 }
 
 /**
@@ -836,10 +923,13 @@ export async function generateCoachExplanation(
   docTitle: string,
   signal?: AbortSignal,
 ): Promise<string> {
+  // Coach/tutor explanations benefit from reasoning: the model needs to
+  // pick a good teaching order, decide what analogies to use, and craft
+  // a pedagogically sound explanation. Opt into the reasoning chain.
   return chat([
     { role: 'system', content: PROMPTS.coach },
     { role: 'user', content: `Doc: "${docTitle}"\n\n${sectionText.slice(0, PROMPT_CONFIG.coachMaxInput)}` },
-  ], signal)
+  ], signal, undefined, /* reasoning */ true)
 }
 
 export async function generateQuiz(

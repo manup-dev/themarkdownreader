@@ -71,6 +71,18 @@ function emptyContentReasoningResponse(): Response {
   return new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } })
 }
 
+// Build a Response that mimics a reasoning model that FINISHED thinking and
+// produced real content. Both delta.reasoning and delta.content are present
+// — the streaming path must return content only (reasoning is discarded
+// unless the caller subscribes to onReasoning).
+function reasoningThenContentResponse(content: string, reasoning: string): Response {
+  const sse =
+    `data: {"choices":[{"delta":{"reasoning":${JSON.stringify(reasoning)}}}]}\n\n` +
+    `data: {"choices":[{"delta":{"content":${JSON.stringify(content)}}}]}\n\n` +
+    `data: [DONE]\n\n`
+  return new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+}
+
 describe('OpenRouter model fallback chain', () => {
   it('succeeds on the first model when it is NOT rate-limited', async () => {
     const calls: { model: string }[] = []
@@ -204,6 +216,72 @@ describe('OpenRouter model fallback chain', () => {
     await expect(ai.chat([{ role: 'user', content: 'test' }])).rejects.toThrow(/401|OpenRouter failed/)
     // 401 is not retryable — must NOT try additional OpenRouter models
     expect(openrouterCalls.length).toBe(1)
+  })
+
+  it('reasoning task returns content only, reasoning tokens discarded by default', async () => {
+    // Regression: when a reasoning model produces BOTH delta.reasoning and
+    // delta.content, chatOpenRouterStream must return only the content. The
+    // reasoning tokens should NOT appear in the returned string — they're
+    // internal model state, not answer text. And without an onReasoning
+    // callback, reasoning tokens should be dropped immediately (no memory).
+    const fetchMock = vi.fn(async () =>
+      reasoningThenContentResponse('The answer is 42.', 'Thinking about the question...')
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    // askAboutDocument opts into reasoning; use it instead of plain chat()
+    // to verify the wiring end-to-end.
+    const ai = await import('../lib/ai')
+    const result = await ai.askAboutDocument('What is the meaning of life?', ['some context'])
+
+    expect(result).toBe('The answer is 42.')
+    expect(result).not.toContain('Thinking about')
+  })
+
+  it('reasoning task selects a DIFFERENT chain than structured tasks', async () => {
+    // Pin the invariant: reasoning and structured tasks must land on
+    // different models at position 0. If the chain arrays ever get merged
+    // or deduplicated, this test fails loudly.
+    const modelsCalled: string[] = []
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse((init?.body as string) ?? '{}')
+      modelsCalled.push(body.model)
+      return successStreamResponse('ok')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const ai = await import('../lib/ai')
+    // Structured call (default chat)
+    await ai.chat([{ role: 'user', content: 'test' }])
+    // Reasoning call (askAboutDocument opts in)
+    await ai.askAboutDocument('test question', ['ctx'])
+
+    expect(modelsCalled.length).toBe(2)
+    expect(modelsCalled[0]).not.toBe(modelsCalled[1])
+    // Both must still be :free
+    expect(modelsCalled[0]).toMatch(/:free$/)
+    expect(modelsCalled[1]).toMatch(/:free$/)
+  })
+
+  it('reasoning chain ALSO skips empty-content responses (budget exhausted mid-thought)', async () => {
+    // Same defensive guard as the structured chain: if a reasoning model
+    // burns the entire 2500-token budget on CoT and emits no content,
+    // fall through to the next reasoning model. Without this, a user's
+    // Q&A would fail silently whenever the reasoning primary got stuck.
+    const calls: string[] = []
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse((init?.body as string) ?? '{}')
+      calls.push(body.model)
+      if (calls.length === 1) return emptyContentReasoningResponse()
+      return reasoningThenContentResponse('real answer', 'short thought')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const ai = await import('../lib/ai')
+    const result = await ai.askAboutDocument('question', ['context'])
+
+    expect(result).toBe('real answer')
+    expect(calls.length).toBe(2)
   })
 
   it('always sends a clean Authorization header (no trailing whitespace)', async () => {
