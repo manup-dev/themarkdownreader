@@ -30,17 +30,26 @@ export interface Heading {
  * hook; an optional `root` parameter may be added then.
  */
 export function useActiveSection(headings: Heading[]): string | null {
-  const [activeId, setActiveId] = useState<string | null>(null)
-
-  // Initial value: first heading (so the outline highlights *something*
-  // even before the user scrolls).
-  useEffect(() => {
-    if (headings.length > 0) {
-      setActiveId(headings[0].id)
-    } else {
-      setActiveId(null)
-    }
-  }, [headings])
+  // Derived state: when the headings CONTENT changes, reset activeId to
+  // the first heading (so the outline highlights *something* even before
+  // the user scrolls). We compare by a stable content-key rather than
+  // the array reference, because callers may recompute `headings` as a
+  // fresh array on every render (e.g. `toc.map(...)`) — comparing by
+  // reference would trip infinite re-renders.
+  //
+  // This is the React-recommended "state-in-render" pattern:
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  // It replaces a useEffect+setState that the react-hooks/set-state-in-effect
+  // lint rule rightly flags.
+  const headingsKey = headings.map(h => h.id).join('|')
+  const [activeId, setActiveId] = useState<string | null>(
+    headings.length > 0 ? headings[0].id : null
+  )
+  const [prevKey, setPrevKey] = useState(headingsKey)
+  if (prevKey !== headingsKey) {
+    setPrevKey(headingsKey)
+    setActiveId(headings.length > 0 ? headings[0].id : null)
+  }
 
   useEffect(() => {
     if (headings.length === 0) return
