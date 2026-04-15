@@ -92,4 +92,29 @@ describe('<OutlinePanel>', () => {
     expect(screen.getByText('H1')).toBeInTheDocument()
     expect(screen.getByText('H3')).toBeInTheDocument()
   })
+
+  it('strips leading emoji from sidebar entries while keeping the rest of the heading intact', () => {
+    useStore.setState({
+      toc: [
+        { id: 'a', text: '📖 Read it — six ways to understand any doc', level: 2 },
+        { id: 'b', text: '🚀 Ship it — highlight, comment, send to your coding agent', level: 2 },
+        { id: 'c', text: 'Why md-reader exists', level: 2 },
+      ],
+    })
+    render(<OutlinePanel />)
+    expect(screen.getByText('Read it — six ways to understand any doc')).toBeInTheDocument()
+    expect(screen.getByText('Ship it — highlight, comment, send to your coding agent')).toBeInTheDocument()
+    expect(screen.getByText('Why md-reader exists')).toBeInTheDocument()
+    // Negative: the raw emoji-prefixed strings should not appear
+    expect(screen.queryByText(/^📖/)).toBeNull()
+    expect(screen.queryByText(/^🚀/)).toBeNull()
+  })
+
+  it('leaves headings without emoji unchanged', () => {
+    useStore.setState({
+      toc: [{ id: 'a', text: 'Plain heading', level: 1 }],
+    })
+    render(<OutlinePanel />)
+    expect(screen.getByText('Plain heading')).toBeInTheDocument()
+  })
 })

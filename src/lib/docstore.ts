@@ -702,6 +702,10 @@ export async function updateHighlightNote(id: number, note: string) {
   return db.highlights.update(id, { note })
 }
 
+export async function updateHighlightColor(id: number, color: string) {
+  return db.highlights.update(id, { color })
+}
+
 // ─── Comments / Annotations ─────────────────────────────────────────────
 
 export async function addComment(c: Omit<Comment, 'id'>): Promise<number> {

@@ -19,6 +19,21 @@ import { useActiveSection, type Heading } from '../hooks/useActiveSection'
  * Override via the `maxLevel` prop if you want everything. */
 const DEFAULT_MAX_LEVEL = 2
 
+/**
+ * Strip leading emoji + whitespace from a heading label so the outline
+ * sidebar stays visually calm. Keeps emoji in the actual rendered heading
+ * inside the article (that's where people want the flair); the sidebar is
+ * just a nav index. Covers BMP symbols, pictographs, and emoji sequences
+ * joined by ZWJ.
+ */
+function stripLeadingEmoji(text: string): string {
+  // Unicode property escapes match any "extended pictographic" char plus
+  // joiners/variation selectors. Repeat to consume full multi-codepoint
+  // emoji sequences (flags, ZWJ sequences, keycaps, …).
+  const cleaned = text.replace(/^(\p{Extended_Pictographic}|\p{Emoji_Component}|\uFE0F|\u200D)+/u, '')
+  return cleaned.trimStart() || text
+}
+
 interface OutlinePanelProps {
   /** Max heading level to display (inclusive). Default 2 (h1/h2 only). */
   maxLevel?: number
@@ -76,7 +91,7 @@ export function OutlinePanel({ maxLevel = DEFAULT_MAX_LEVEL }: OutlinePanelProps
                   : 'text-gray-600 dark:text-gray-300 border-l-2 border-transparent')
               }
             >
-              {h.text}
+              {stripLeadingEmoji(h.text)}
             </button>
           </li>
         ))}

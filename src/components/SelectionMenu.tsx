@@ -16,11 +16,73 @@ const COLOR_NAMES: Record<string, string> = {
   '#fbcfe8': 'pink',
   '#fed7aa': 'orange',
 }
+const LAST_COLOR_KEY = 'md-reader-last-highlight-color'
+
+/**
+ * Returns the id of the nearest preceding heading (h1..h6) for the current
+ * selection inside <article>, or null if none can be found. Used to
+ * attribute comments / highlights to the correct section regardless of
+ * what the scroll-tracker thinks is "active".
+ */
+function computeSelectionSectionId(): string | null {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return null
+  const range = sel.getRangeAt(0)
+  let node: Node | null = range.startContainer
+  // Walk up to the containing element
+  let el: Element | null = node.nodeType === Node.ELEMENT_NODE
+    ? (node as Element)
+    : node.parentElement
+  const article = el?.closest('article')
+  if (!article || !el) return null
+  // Walk up to a direct child of the article, then step back through
+  // previous siblings (and their descendants) looking for the most recent
+  // heading in document order.
+  while (el && el.parentElement && el.parentElement !== article) el = el.parentElement
+  let cursor: Element | null = el
+  while (cursor) {
+    if (/^H[1-6]$/.test(cursor.tagName) && cursor.id) return cursor.id
+    // If this element contains a heading, find the LAST one before the
+    // selection — but since cursor is at or before the selection, any
+    // heading inside counts.
+    const inner = cursor.querySelector?.('h1, h2, h3, h4, h5, h6')
+    if (inner && inner.id && cursor.contains(range.startContainer)) {
+      // Heading inside the same block as the selection — use it
+      return inner.id
+    }
+    cursor = cursor.previousElementSibling
+  }
+  return null
+}
+
+/**
+ * Trims leading/trailing whitespace and dangling punctuation from a text
+ * fragment so saved highlights/comments don't end with stray commas or
+ * sentence fragments like "shipping are two distinct problems, and".
+ */
+function cleanSelectionText(text: string): string {
+  return text
+    .replace(/\s+/g, ' ')
+    .trim()
+    // Drop trailing conjunctions / articles left dangling by sloppy selection
+    .replace(/[\s,;:—–-]+(and|or|but|the|a|an|of|to|in|on|at|by|for|with|as|is|are|was|were)$/i, '')
+    // Drop trailing punctuation that isn't sentence-ending
+    .replace(/[,;:]+$/, '')
+    .trim()
+}
 
 interface MenuPos {
   x: number
   y: number
   text: string
+  /**
+   * Section id captured at mouseup time (while the selection is still live).
+   * Used later by handleSaveComment so the comment attaches to the nearest
+   * heading *containing the selection*, not to `activeSection`, which can
+   * be stale. Captured up-front because clicking into the comment textarea
+   * collapses the selection and we can't recompute it from there.
+   */
+  sectionId: string | null
 }
 
 export function SelectionMenu() {
@@ -36,6 +98,8 @@ export function SelectionMenu() {
   const [showGlossary, setShowGlossary] = useState(false)
   const [showCommentInput, setShowCommentInput] = useState(false)
   const [commentText, setCommentText] = useState('')
+  const [showColorPicker, setShowColorPicker] = useState(false)
+  const [showMore, setShowMore] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const refreshHighlights = useCallback(async () => {
@@ -58,26 +122,46 @@ export function SelectionMenu() {
         if (!menuRef.current?.contains(e.target as Node)) {
           setMenu(null)
           setAiResponse(null)
+          setShowColorPicker(false)
+          setShowMore(false)
+          setShowCommentInput(false)
         }
         return
       }
 
-      const text = sel.toString().trim()
+      const rawText = sel.toString()
+      const text = cleanSelectionText(rawText)
       if (text.length < 2) return
 
       const range = sel.getRangeAt(0)
       const rect = range.getBoundingClientRect()
+      const sectionId = computeSelectionSectionId()
 
       setMenu({
         x: rect.left + rect.width / 2,
         y: rect.top - 10,
         text,
+        sectionId,
       })
       setAiResponse(null)
     }
 
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMenu(null)
+        setAiResponse(null)
+        setShowColorPicker(false)
+        setShowMore(false)
+        setShowCommentInput(false)
+        setShowCopyMenu(false)
+      }
+    }
     document.addEventListener('mouseup', handleMouseUp)
-    return () => document.removeEventListener('mouseup', handleMouseUp)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mouseup', handleMouseUp)
+      document.removeEventListener('keydown', handleKey)
+    }
   }, [])
 
   const handleHighlight = useCallback(async (color: string) => {
@@ -100,23 +184,13 @@ export function SelectionMenu() {
       note: '',
       createdAt: Date.now(),
     })
-    // Visual flash to confirm highlight was saved
-    const sel = window.getSelection()
-    if (sel && sel.rangeCount > 0) {
-      const range = sel.getRangeAt(0)
-      const span = document.createElement('span')
-      span.style.background = color
-      span.style.transition = 'background 800ms ease-out'
-      span.style.borderRadius = '2px'
-      try {
-        range.surroundContents(span)
-        setTimeout(() => { span.style.background = 'transparent' }, 100)
-        setTimeout(() => { span.replaceWith(...span.childNodes) }, 1000)
-      } catch { /* selection spans multiple elements — skip visual flash */ }
-    }
+    // Remember this color so the next one-click highlight reuses it
+    try { localStorage.setItem(LAST_COLOR_KEY, color) } catch { /* storage disabled */ }
     window.getSelection()?.removeAllRanges()
     setMenu(null)
     await refreshHighlights()
+    // Notify Reader to re-apply inline highlight spans immediately
+    window.dispatchEvent(new CustomEvent('md-reader-highlight-changed'))
     trackEvent('highlight_added')
   }, [menu, activeDocId, refreshHighlights])
 
@@ -191,7 +265,9 @@ export function SelectionMenu() {
       docId = result.docId
       setActiveDocId(docId)
     }
-    const sectionId = useStore.getState().activeSection ?? ''
+    // Prefer the section captured at mouseup time (when the selection was
+    // still live); fall back to activeSection only if that wasn't computable.
+    const sectionId = menu.sectionId ?? useStore.getState().activeSection ?? ''
     const author = localStorage.getItem('md-reader-username') || 'You'
     await addComment({
       docId,
@@ -220,6 +296,7 @@ export function SelectionMenu() {
   const handleRemoveHighlight = useCallback(async (id: number) => {
     await removeHighlight(id)
     await refreshHighlights()
+    window.dispatchEvent(new CustomEvent('md-reader-highlight-changed'))
   }, [refreshHighlights])
 
   const handleUpdateNote = useCallback(async (id: number, note: string) => {
@@ -285,101 +362,47 @@ export function SelectionMenu() {
             )
           })()}
 
-          {/* Action buttons — two rows for clarity */}
-          <div className="bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 rounded-xl shadow-xl p-2 space-y-1.5 min-w-[280px]">
-            {/* Row 1: Highlight colors + comment */}
-            <div className="flex items-center gap-1.5">
-              {COLORS.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => handleHighlight(c)}
-                  className="w-7 h-7 rounded-full border-2 border-gray-300 dark:border-gray-600 hover:border-gray-500 dark:hover:border-gray-400 transition-all hover:scale-110 shrink-0"
-                  style={{ background: c }}
-                  title={`Highlight ${COLOR_NAMES[c] ?? c}`}
-                  aria-label={`Highlight ${COLOR_NAMES[c] ?? c}`}
-                />
-              ))}
-              <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-0.5" />
-              <button
-                onClick={() => { setShowCommentInput(!showCommentInput); setCommentText('') }}
-                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-teal-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                title="Add comment"
-              >
-                <MessageSquare className="h-4 w-4" />
-              </button>
-              <button
-                onClick={handleCopy}
-                onContextMenu={(e) => { e.preventDefault(); setShowCopyMenu(!showCopyMenu) }}
-                className={`p-1.5 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 ${copied ? 'text-green-500' : 'text-gray-500 dark:text-gray-400 hover:text-green-500'}`}
-                title="Copy (right-click for options)"
-              >
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              </button>
-              <button
-                onClick={() => { setMenu(null); setAiResponse(null) }}
-                className="p-1.5 text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors rounded-lg ml-auto"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-
-            {/* Row 2: AI + tools */}
-            <div className="flex items-center gap-0.5 border-t border-gray-100 dark:border-gray-800 pt-1.5">
-              <button
-                onClick={() => { handleAskAI('Explain this concisely in 2-3 sentences. Use simple language.'); trackEvent('ai_explain') }}
-                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-blue-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                title="Explain with AI"
-              >
-                <Bot className="h-4 w-4" />
-              </button>
-
-              <button
-                onClick={() => { handleAskAI('Explain this to a 10-year-old in 2-3 simple sentences. Use everyday words. No jargon.'); trackEvent('ai_explain') }}
-                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-emerald-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                title="Simplify (ELI5)"
-              >
-                <span className="text-xs font-bold leading-none">5</span>
-              </button>
-
-              <button
-                onClick={() => handleAskAI('Describe this as if explaining a diagram. Use simple ASCII art or arrows if helpful. Max 100 words.')}
-                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-orange-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                title="Visualize as diagram"
-              >
-                <span className="text-xs leading-none">▣</span>
-              </button>
-
-              {(() => { const g = isViewModeGated('diagram'); return !g || enabledFeatures.has(g) })() && (
+          {/* Action bar — Google Docs-style compact pill with 4 primary actions */}
+          <div className="bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 rounded-xl shadow-xl overflow-hidden">
+            <div className="flex items-center p-1 gap-0.5">
+              {/* Highlight — one click applies last-used color;
+                  right-click or chevron opens the color picker */}
               <button
                 onClick={() => {
-                  useStore.getState().setViewMode('diagram')
-                  setMenu(null)
+                  const last = (typeof localStorage !== 'undefined' && localStorage.getItem(LAST_COLOR_KEY)) || COLORS[0]
+                  const color = COLORS.includes(last) ? last : COLORS[0]
+                  handleHighlight(color)
                 }}
-                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-purple-500 dark:hover:text-purple-400 rounded transition-colors"
-                title="Diagram this"
+                onContextMenu={(e) => { e.preventDefault(); setShowColorPicker(v => !v); setShowMore(false); setShowCommentInput(false); setShowCopyMenu(false) }}
+                className={`flex items-center gap-1.5 pl-2.5 pr-1.5 py-1.5 text-xs font-medium rounded-lg transition-colors ${showColorPicker ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                title="Highlight (right-click for colors)"
+                aria-label="Highlight"
               >
-                <Shapes className="h-4 w-4" />
+                <Highlighter className="h-3.5 w-3.5" strokeWidth={1.75} />
+                <span>Highlight</span>
+                <span
+                  role="button"
+                  aria-label="Choose highlight color"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowColorPicker(v => !v); setShowMore(false); setShowCommentInput(false); setShowCopyMenu(false)
+                  }}
+                  className="ml-0.5 -mr-0.5 px-0.5 text-[10px] leading-none opacity-60 hover:opacity-100"
+                >▾</span>
               </button>
-              )}
 
+              {/* Comment — opens inline composer */}
               <button
-                onClick={() => handleAskAI('Define this term or concept. Give a clear, concise definition and one example.')}
-                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-purple-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                title="Define"
+                onClick={() => { setShowCommentInput(v => !v); setCommentText(''); setShowColorPicker(false); setShowMore(false); setShowCopyMenu(false) }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors ${showCommentInput ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                title="Add comment"
+                aria-expanded={showCommentInput}
               >
-                <BookOpen className="h-4 w-4" />
+                <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.75} />
+                <span>Comment</span>
               </button>
 
-              <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-0.5" />
-
-              <button
-                onClick={handleSearch}
-                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-amber-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                title="Find in document"
-              >
-                <Search className="h-4 w-4" />
-              </button>
-
+              {/* Chat — sends selection into the AI chat */}
               <button
                 onClick={() => {
                   if (!menu) return
@@ -395,36 +418,60 @@ export function SelectionMenu() {
                   }, 200)
                   setMenu(null)
                 }}
-                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                title="Ask about this in Chat"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                title="Ask AI chat about this"
               >
-                <div className="flex items-center gap-0.5">
-                  <Bot className="h-3.5 w-3.5" />
-                  <span className="text-[9px] font-medium">Chat</span>
-                </div>
+                <Bot className="h-3.5 w-3.5" strokeWidth={1.75} />
+                <span>Chat</span>
               </button>
 
+              {/* Copy — rightmost utility (left-click copies, right-click submenu) */}
               <button
-                onClick={() => {
-                  if (!menu) return
-                  const term = menu.text.split(/\s+/).slice(0, 3).join(' ')
-                  const docId = useStore.getState().activeDocId ?? 'unsaved'
-                  const key = `md-reader-glossary-${docId}`
-                  const glossary = JSON.parse(localStorage.getItem(key) ?? '{}')
-                  glossary[term] = menu.text
-                  localStorage.setItem(key, JSON.stringify(glossary))
-                  setMenu(null)
-                }}
-                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-indigo-500 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                title="Save to glossary"
+                onClick={handleCopy}
+                onContextMenu={(e) => { e.preventDefault(); setShowCopyMenu(v => !v); setShowColorPicker(false); setShowMore(false); setShowCommentInput(false) }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors ${copied ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                title="Copy (right-click for options)"
               >
-                <BookOpen className="h-4 w-4" />
+                {copied ? <Check className="h-3.5 w-3.5" strokeWidth={1.75} /> : <Copy className="h-3.5 w-3.5" strokeWidth={1.75} />}
+                <span>{copied ? 'Copied' : 'Copy'}</span>
+              </button>
+
+              <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-0.5" />
+
+              {/* More — secondary AI + tools collapsed by default */}
+              <button
+                onClick={() => { setShowMore(v => !v); setShowColorPicker(false); setShowCommentInput(false); setShowCopyMenu(false) }}
+                className={`p-1.5 rounded-lg transition-colors ${showMore ? 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                title="More actions"
+                aria-label="More actions"
+                aria-expanded={showMore}
+              >
+                <span className="text-sm leading-none font-bold">⋯</span>
               </button>
             </div>
 
+            {/* Highlight color picker — appears when the chevron is clicked */}
+            {showColorPicker && (() => {
+              const lastColor = (typeof localStorage !== 'undefined' && localStorage.getItem(LAST_COLOR_KEY)) || COLORS[0]
+              return (
+                <div className="flex items-center gap-2 pl-3 pr-2 py-2 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/30">
+                  {COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => { handleHighlight(c); setShowColorPicker(false) }}
+                      className={`w-6 h-6 rounded-full border-2 transition-all hover:scale-110 shrink-0 ${c === lastColor ? 'border-gray-700 dark:border-gray-200 ring-2 ring-offset-1 ring-gray-400 dark:ring-gray-500' : 'border-gray-300 dark:border-gray-600 hover:border-gray-600 dark:hover:border-gray-300'}`}
+                      style={{ background: c }}
+                      title={`${COLOR_NAMES[c] ?? c}${c === lastColor ? ' (default)' : ''}`}
+                      aria-label={`Highlight ${COLOR_NAMES[c] ?? c}`}
+                    />
+                  ))}
+                </div>
+              )
+            })()}
+
             {/* Copy submenu */}
             {showCopyMenu && (
-              <div className="border-t border-gray-100 dark:border-gray-800 pt-1.5 space-y-0.5">
+              <div className="border-t border-gray-100 dark:border-gray-800 p-1 space-y-0.5">
                 <button onClick={handleCopy} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
                   <Copy className="h-3 w-3" /> Copy text
                 </button>
@@ -447,6 +494,59 @@ export function SelectionMenu() {
                   className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
                 >
                   <Quote className="h-3 w-3" /> Cite this
+                </button>
+              </div>
+            )}
+
+            {/* More dropdown — secondary AI + tools */}
+            {showMore && (
+              <div className="border-t border-gray-100 dark:border-gray-800 p-1 space-y-0.5 min-w-[220px]">
+                <button
+                  onClick={() => { handleAskAI('Explain this concisely in 2-3 sentences. Use simple language.'); trackEvent('ai_explain'); setShowMore(false) }}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                >
+                  <Bot className="h-3 w-3" /> Explain with AI
+                </button>
+                <button
+                  onClick={() => { handleAskAI('Explain this to a 10-year-old in 2-3 simple sentences. Use everyday words. No jargon.'); trackEvent('ai_explain'); setShowMore(false) }}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                >
+                  <span className="inline-block w-3 text-center font-bold">5</span> Simplify (ELI5)
+                </button>
+                <button
+                  onClick={() => { handleAskAI('Define this term or concept. Give a clear, concise definition and one example.'); setShowMore(false) }}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                >
+                  <BookOpen className="h-3 w-3" /> Define
+                </button>
+                {(() => { const g = isViewModeGated('diagram'); return !g || enabledFeatures.has(g) })() && (
+                  <button
+                    onClick={() => { useStore.getState().setViewMode('diagram'); setMenu(null) }}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                  >
+                    <Shapes className="h-3 w-3" /> Diagram this
+                  </button>
+                )}
+                <button
+                  onClick={() => { handleSearch(); setShowMore(false) }}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                >
+                  <Search className="h-3 w-3" /> Find in document
+                </button>
+                <button
+                  onClick={() => {
+                    if (!menu) return
+                    const term = menu.text.split(/\s+/).slice(0, 3).join(' ')
+                    const docId = useStore.getState().activeDocId ?? 'unsaved'
+                    const key = `md-reader-glossary-${docId}`
+                    const glossary = JSON.parse(localStorage.getItem(key) ?? '{}')
+                    glossary[term] = menu.text
+                    localStorage.setItem(key, JSON.stringify(glossary))
+                    setMenu(null)
+                  }}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                >
+                  <BookOpen className="h-3 w-3" /> Save to glossary
                 </button>
               </div>
             )}

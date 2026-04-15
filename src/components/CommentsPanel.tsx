@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
-import { X, Check, Trash2, Download, ExternalLink, Eye, EyeOff, Wand2 } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { X, Check, Trash2, Download, ExternalLink, Eye, EyeOff, Wand2, MoreHorizontal, Pencil } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { getComments, updateComment, removeComment, type Comment } from '../lib/docstore'
 import { trackEvent } from '../lib/telemetry'
+import { markProgrammaticScroll } from '../lib/scroll-guard'
 import { PromptBuilder } from './PromptBuilder'
 
 function timeAgo(ts: number): string {
@@ -24,6 +25,9 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
   const [showResolved, setShowResolved] = useState(false)
   const [showPromptBuilder, setShowPromptBuilder] = useState(false)
   const [username, setUsername] = useState(() => localStorage.getItem('md-reader-username') || 'You')
+  const [editingName, setEditingName] = useState(false)
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(async () => {
     if (!activeDocId) return
@@ -44,6 +48,17 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
     localStorage.setItem('md-reader-username', name)
   }, [])
 
+  // Close the per-card overflow menu when clicking anywhere outside it
+  useEffect(() => {
+    if (openMenuId == null) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-comment-overflow]')) setOpenMenuId(null)
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [openMenuId])
+
   const handleResolve = useCallback(async (id: number, resolved: boolean) => {
     await updateComment(id, { resolved: !resolved })
     await refresh()
@@ -55,16 +70,44 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
     await refresh()
   }, [refresh])
 
-  const handleJumpTo = useCallback((sectionId: string) => {
+  const handleJumpTo = useCallback((comment: Comment) => {
     useStore.getState().setViewMode('read')
-    setTimeout(() => {
-      const el = document.getElementById(sectionId)
+    // Suppress the Reading-Complete celebration while we're programmatically
+    // scrolling the viewport. 2s covers the smooth-scroll animation and any
+    // retry attempts below.
+    markProgrammaticScroll(2500)
+    // Wait for Reader to render (and for inline comment spans to be applied).
+    // Prefer the actual highlighted selection; fall back to the section heading
+    // only if the inline span can't be found (e.g., the selectedText no longer
+    // matches the document, or the comment has no selectedText).
+    const tryJump = (attempt: number) => {
+      const span = comment.id != null
+        ? (document.querySelector(`[data-comment-highlight="${comment.id}"]`) as HTMLElement | null)
+        : null
+      if (span) {
+        span.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        // Brief flash to draw the eye to the exact highlighted text
+        const prev = span.style.outline
+        span.style.outline = '2px solid #2dd4bf'
+        span.style.outlineOffset = '2px'
+        setTimeout(() => { span.style.outline = prev }, 1600)
+        return true
+      }
+      // Span not in DOM yet — retry a few times while Reader mounts/applies
+      if (attempt < 8) {
+        setTimeout(() => tryJump(attempt + 1), 120)
+        return false
+      }
+      // Final fallback: scroll to the section heading
+      const el = comment.sectionId ? document.getElementById(comment.sectionId) : null
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'start' })
         el.style.background = document.documentElement.classList.contains('sepia') ? '#e8d5be' : '#bfdbfe'
         setTimeout(() => { el.style.background = '' }, 2000)
       }
-    }, 200)
+      return false
+    }
+    setTimeout(() => tryJump(0), 50)
   }, [])
 
   const handleExport = useCallback(() => {
@@ -96,30 +139,65 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
     return <PromptBuilder comments={comments} onClose={() => setShowPromptBuilder(false)} />
   }
 
+  // Compute a 1-2 character avatar initials from the username
+  const initials = (username || 'You').trim().split(/\s+/).map((s) => s[0]?.toUpperCase()).filter(Boolean).slice(0, 2).join('') || 'Y'
+
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
+    <div ref={panelRef} className="flex flex-col h-full">
+      {/* Header — compact; Your-name is now an avatar chip that expands on click */}
       <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-800">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400">
-            Comments ({comments.length})
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 flex items-center gap-1.5">
+            Comments
+            <span className="text-[11px] font-normal text-gray-400">({comments.length})</span>
           </h3>
           <div className="flex items-center gap-1">
+            {/* Your-name avatar chip: click to edit inline */}
+            {editingName ? (
+              <input
+                type="text"
+                value={username}
+                autoFocus
+                onChange={(e) => handleUsernameChange(e.target.value)}
+                onBlur={() => setEditingName(false)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') setEditingName(false) }}
+                className="w-24 text-xs px-2 py-0.5 rounded border border-teal-300 dark:border-teal-700 bg-transparent text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                placeholder="Your name"
+                aria-label="Your display name"
+                data-testid="username-input"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditingName(true)}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-teal-50 dark:bg-teal-950/30 hover:bg-teal-100 dark:hover:bg-teal-900/40 transition-colors"
+                title={`Signed in as "${username}" — click to change`}
+                aria-label={`Edit display name (${username})`}
+                data-testid="username-chip"
+              >
+                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-teal-500 text-white text-[9px] font-bold">
+                  {initials}
+                </span>
+                <Pencil className="h-2.5 w-2.5 text-teal-600 dark:text-teal-400 opacity-60" />
+              </button>
+            )}
             {comments.length > 0 && (
               <>
                 <button
                   onClick={() => { setShowPromptBuilder(true); trackEvent('prompt_builder_opened') }}
-                  className="p-1 text-gray-300 hover:text-teal-400 transition-colors rounded"
+                  className="p-1 text-gray-400 hover:text-teal-500 transition-colors rounded"
                   title="Generate AI prompt from comments"
+                  aria-label="Generate AI prompt from comments"
                 >
-                  <Wand2 className="h-3 w-3" />
+                  <Wand2 className="h-3.5 w-3.5" />
                 </button>
                 <button
                   onClick={handleExport}
-                  className="p-1 text-gray-300 hover:text-blue-400 transition-colors rounded"
+                  className="p-1 text-gray-400 hover:text-blue-500 transition-colors rounded"
                   title="Export comments as markdown"
+                  aria-label="Export comments"
                 >
-                  <Download className="h-3 w-3" />
+                  <Download className="h-3.5 w-3.5" />
                 </button>
               </>
             )}
@@ -127,22 +205,11 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
               onClick={onClose}
               className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded"
               title="Close comments"
+              aria-label="Close comments panel"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
-        </div>
-
-        {/* Author name input */}
-        <div className="mt-2 flex items-center gap-2">
-          <label className="text-[10px] text-gray-400 shrink-0">Your name:</label>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => handleUsernameChange(e.target.value)}
-            className="flex-1 text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-teal-500"
-            placeholder="Your name"
-          />
         </div>
 
         {/* Filter */}
@@ -194,13 +261,19 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
                 </span>
               </div>
 
-              {/* Quoted text */}
+              {/* Quoted text — click to jump to the exact highlighted passage */}
               {c.selectedText && (
-                <div className="border-l-2 border-blue-400 pl-2">
+                <button
+                  type="button"
+                  onClick={() => handleJumpTo(c)}
+                  className="block w-full text-left border-l-2 border-blue-400 pl-2 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 rounded-r transition-colors cursor-pointer"
+                  title="Jump to this passage"
+                  data-testid="comment-quote-jump"
+                >
                   <p className="text-[11px] text-gray-500 dark:text-gray-400 italic line-clamp-2">
                     {c.selectedText.slice(0, 80)}{c.selectedText.length > 80 ? '...' : ''}
                   </p>
-                </div>
+                </button>
               )}
 
               {/* Comment text */}
@@ -215,40 +288,59 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
                 </span>
               )}
 
-              {/* Actions */}
-              <div className="flex items-center gap-2 pt-1">
+              {/* Actions — icon-only, Delete moved behind the overflow menu */}
+              <div className="flex items-center gap-0.5 pt-1">
+                <button
+                  onClick={() => handleJumpTo(c)}
+                  className="p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded transition-colors"
+                  title={c.selectedText ? 'Jump to highlighted text' : 'Jump to section'}
+                  aria-label={c.selectedText ? 'Jump to highlighted text' : 'Jump to section'}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </button>
+
                 <button
                   onClick={() => handleResolve(c.id!, c.resolved)}
-                  className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded transition-colors ${
+                  className={`p-1 rounded transition-colors ${
                     c.resolved
-                      ? 'text-amber-600 hover:text-amber-700 bg-amber-50 dark:bg-amber-950/30'
-                      : 'text-green-600 hover:text-green-700 bg-green-50 dark:bg-green-950/30'
+                      ? 'text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+                      : 'text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-950/30'
                   }`}
-                  title={c.resolved ? 'Unresolve' : 'Resolve'}
+                  title={c.resolved ? 'Unresolve comment' : 'Resolve comment'}
+                  aria-label={c.resolved ? 'Unresolve comment' : 'Resolve comment'}
                 >
-                  <Check className="h-3 w-3" />
-                  {c.resolved ? 'Unresolve' : 'Resolve'}
+                  <Check className="h-3.5 w-3.5" />
                 </button>
 
-                {section && (
+                {/* Overflow menu — houses destructive/rare actions like Delete */}
+                <div className="relative ml-auto" data-comment-overflow>
                   <button
-                    onClick={() => handleJumpTo(c.sectionId)}
-                    className="flex items-center gap-0.5 text-[10px] text-blue-500 hover:text-blue-700 px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/30 transition-colors"
-                    title="Jump to section"
+                    onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === c.id ? null : c.id!) }}
+                    className={`p-1 rounded transition-colors ${openMenuId === c.id ? 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200' : 'text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                    title="More actions"
+                    aria-label="More actions"
+                    aria-haspopup="menu"
+                    aria-expanded={openMenuId === c.id}
                   >
-                    <ExternalLink className="h-3 w-3" />
-                    Jump to
+                    <MoreHorizontal className="h-3.5 w-3.5" />
                   </button>
-                )}
-
-                <button
-                  onClick={() => handleDelete(c.id!)}
-                  className="flex items-center gap-0.5 text-[10px] text-red-400 hover:text-red-600 px-1.5 py-0.5 rounded hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors ml-auto"
-                  title="Delete comment"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  Delete
-                </button>
+                  {openMenuId === c.id && (
+                    <div
+                      role="menu"
+                      className="absolute right-0 top-full mt-1 z-20 w-36 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg shadow-xl py-1"
+                      data-comment-overflow
+                    >
+                      <button
+                        role="menuitem"
+                        onClick={() => { setOpenMenuId(null); handleDelete(c.id!) }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Delete comment
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )

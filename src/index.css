@@ -89,6 +89,9 @@ article *, article *::before, article *::after { transition: none; }
 @keyframes scaleIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .animate-scale-in { animation: scaleIn 150ms ease-out; }
 
+@keyframes fadeInOut { 0% { opacity: 0; } 20% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+.animate-fade-in-out { animation: fadeInOut 1200ms ease-in-out; }
+
 /* Toast notification */
 @keyframes toastIn { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes toastOut { from { opacity: 1; } to { opacity: 0; } }

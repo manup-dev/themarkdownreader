@@ -6,11 +6,9 @@ import remarkMath from 'remark-math'
 import { useStore } from '../store/useStore'
 import ScrollMinimap from './ScrollMinimap'
 import { extractToc, wordCount, estimateDifficulty, slugify } from '../lib/markdown'
-import { getComments, updateComment, removeComment, type Comment } from '../lib/docstore'
+import { getComments, updateComment, removeComment, type Comment, getHighlights, addHighlight, removeHighlight, updateHighlightNote, updateHighlightColor, type Highlight } from '../lib/docstore'
+import { markProgrammaticScroll, isProgrammaticScroll } from '../lib/scroll-guard'
 import { trackEvent } from '../lib/telemetry'
-
-// Module-level constant to avoid re-creating on every render
-const STOP_WORDS = new Set(['this','that','with','from','have','been','will','your','they','their','which','when','what','each','other','about','more','than','also','only','into','some','very','just','like','over','such','most','these','there','could','would','should','using','where','after','before','because','through','between','under','above','within','without','during','following','along','across','behind','beyond','every','another','those','being','while','since','until','however','although','either','neither','whether','among','around','against','though','still','already','rather','often','never','always','sometimes','usually','perhaps','quite','really','actually','certainly','definitely','probably','possibly','maybe'])
 
 // Delight #24: Click heading to copy anchor link
 function HeadingRenderer(level: number) {
@@ -362,15 +360,6 @@ export function Reader() {
     if (hasCode) return 'Technical'
     return 'Narrative'
   }, [markdown])
-  const keyTerm = useMemo(() => {
-    const text = markdown.toLowerCase()
-    const wordList = text.match(/\b[a-z]{4,}\b/g) ?? []
-    const freq = new Map<string, number>()
-    const stop = STOP_WORDS
-    for (const w of wordList) { if (!stop.has(w)) freq.set(w, (freq.get(w) ?? 0) + 1) }
-    const top = [...freq.entries()].filter(([,c]) => c >= 3).sort((a,b) => b[1]-a[1])[0]
-    return top ?? null
-  }, [markdown])
   const quotableSentence = useMemo(() => {
     const sentences = markdown.split(/[.!?]\s+/).filter((s) => s.length > 30 && s.length < 200)
     const scored = sentences.map((s) => ({
@@ -663,6 +652,11 @@ export function Reader() {
       setMilestone(`${pct}%`)
       setTimeout(() => setMilestone(null), 1500)
     } else if (pct >= 99 && !shownMilestones.current.has('done')) {
+      // Skip the celebration if the user just programmatically jumped (e.g.
+      // CommentsPanel "Jump to" or "Back to top") or has only been on the
+      // page for a few seconds — a fast scroll-through is not a reading
+      // completion, and firing a full-screen modal mid-navigation is hostile.
+      if (isProgrammaticScroll() || sessionMinutes < 1) return
       shownMilestones.current.add('done')
       setMilestone('Done!')
       setTimeout(() => setMilestone(null), 2500)
@@ -674,7 +668,7 @@ export function Reader() {
       // Show reading report card after confetti settles
       setTimeout(() => setShowReport(true), 2000)
     }
-  }, [readingProgress])
+  }, [readingProgress, sessionMinutes])
 
   // Time-based reading milestones
   useEffect(() => {
@@ -689,7 +683,7 @@ export function Reader() {
     }
   }, [sessionMinutes])
 
-  const scrollToTop = () => contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  const scrollToTop = () => { markProgrammaticScroll(); contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' }) }
   const [showScrollHint, setShowScrollHint] = useState(true)
   useEffect(() => {
     const el = contentRef.current
@@ -825,6 +819,107 @@ export function Reader() {
     window.addEventListener('click', dismiss)
     return () => window.removeEventListener('click', dismiss)
   }, [commentPopover])
+
+  // ─── Inline highlights (persistent, reflect add/remove/color change) ───
+  const [inlineHighlights, setInlineHighlights] = useState<Highlight[]>([])
+  const [highlightPopover, setHighlightPopover] = useState<{ highlight: Highlight; x: number; y: number } | null>(null)
+  const [noteSaved, setNoteSaved] = useState(false)  // "Saved ✓" flash after note blur
+  const appliedHighlightIdsRef = useRef<Set<number>>(new Set())
+
+  useEffect(() => {
+    if (!activeDocId) {
+      setInlineHighlights([])
+      appliedHighlightIdsRef.current.clear()
+      // Unwrap any stale spans from previous doc
+      document.querySelectorAll('[data-highlight-id]').forEach((el) => {
+        const parent = el.parentNode
+        if (!parent) return
+        while (el.firstChild) parent.insertBefore(el.firstChild, el)
+        parent.removeChild(el)
+        parent.normalize()
+      })
+      return
+    }
+    const refresh = () => getHighlights(activeDocId).then(setInlineHighlights)
+    refresh()
+    const onHighlightChanged = () => refresh()
+    window.addEventListener('md-reader-highlight-changed', onHighlightChanged)
+    return () => window.removeEventListener('md-reader-highlight-changed', onHighlightChanged)
+  }, [activeDocId])
+
+  // Apply inline highlight spans — always reconcile from scratch so that
+  // color edits, note edits, and deletions reliably reflect in the DOM.
+  useEffect(() => {
+    const article = contentRef.current?.querySelector('article')
+    if (!article) return
+
+    // 1. Unwrap every existing highlight span, clear the applied set
+    document.querySelectorAll('[data-highlight-id]').forEach((el) => {
+      const parent = el.parentNode
+      if (!parent) return
+      while (el.firstChild) parent.insertBefore(el.firstChild, el)
+      parent.removeChild(el)
+      parent.normalize()
+    })
+    appliedHighlightIdsRef.current.clear()
+
+    // 2. Apply every current highlight fresh (closures capture latest `h`)
+    for (const h of inlineHighlights) {
+      const searchText = h.text.trim()
+      if (!searchText || searchText.length < 2) continue
+
+      const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
+      let node: Text | null
+      let found = false
+      while ((node = walker.nextNode() as Text | null)) {
+        if (node.parentElement?.closest('[data-highlight-id]')) continue
+        const idx = node.textContent?.indexOf(searchText) ?? -1
+        if (idx === -1) continue
+        const range = document.createRange()
+        range.setStart(node, idx)
+        range.setEnd(node, idx + searchText.length)
+
+        const span = document.createElement('span')
+        span.setAttribute('data-highlight-id', String(h.id))
+        span.setAttribute('data-highlight-color', h.color)
+        span.style.cssText = `background-color: ${h.color}; border-radius: 2px; padding: 1px 0; cursor: pointer; transition: filter 120ms;`
+        span.title = h.note ? `Highlight · ${h.note}` : 'Highlight — click to edit'
+        span.addEventListener('mouseenter', () => { span.style.filter = 'brightness(0.95)' })
+        span.addEventListener('mouseleave', () => { span.style.filter = '' })
+        span.addEventListener('click', (e) => {
+          e.stopPropagation()
+          const rect = span.getBoundingClientRect()
+          const containerRect = contentRef.current?.getBoundingClientRect()
+          setHighlightPopover({
+            highlight: h,
+            x: rect.left - (containerRect?.left ?? 0),
+            y: rect.bottom - (containerRect?.top ?? 0) + (contentRef.current?.scrollTop ?? 0),
+          })
+        })
+        try {
+          range.surroundContents(span)
+          found = true
+          break
+        } catch {
+          // Range spans multiple elements — skip this occurrence
+        }
+      }
+      if (found) appliedHighlightIdsRef.current.add(h.id!)
+    }
+  }, [inlineHighlights])
+
+  // Dismiss highlight popover on click outside
+  useEffect(() => {
+    if (!highlightPopover) return
+    const dismiss = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-highlight-id]') && !target.closest('.highlight-popover')) {
+        setHighlightPopover(null)
+      }
+    }
+    window.addEventListener('click', dismiss)
+    return () => window.removeEventListener('click', dismiss)
+  }, [highlightPopover])
 
   // Delight #15: Footnote popover on hover
   const footnoteMap = useMemo(() => {
@@ -1096,16 +1191,14 @@ export function Reader() {
               const trend = liveWpm ? (liveWpm > avgWpm * 1.15 ? '\u2191' : liveWpm < avgWpm * 0.85 ? '\u2193' : '') : ''
               return trend ? <span className={`text-[9px] ${trend === '\u2191' ? 'text-green-500' : 'text-amber-500'}`} title={`${trend === '\u2191' ? 'Reading faster' : 'Reading slower'} than your ${avgWpm} WPM average`}>{trend}</span> : null
             })()}
-            {sessionMinutes > 0 && (
-              <span className="text-[10px] text-gray-400">
-                · {sessionMinutes}m reading
-                {sessionMinutes >= 3 && readingProgress > 5 && readingProgress < 95 && (() => {
-                  const pacePerMin = readingProgress / sessionMinutes
-                  const minsToFinish = Math.round((100 - readingProgress) / pacePerMin)
-                  return minsToFinish <= 10 ? <span className="text-green-500 ml-1">· finishing soon!</span> : null
-                })()}
-              </span>
-            )}
+            {/* "· finishing soon!" nudge — actionable signal, kept inline.
+                Elapsed session time moved to the expanded stats panel below
+                since "Nm reading" duplicated the primary time figure. */}
+            {sessionMinutes >= 3 && readingProgress > 5 && readingProgress < 95 && (() => {
+              const pacePerMin = readingProgress / sessionMinutes
+              const minsToFinish = Math.round((100 - readingProgress) / pacePerMin)
+              return minsToFinish <= 10 ? <span className="text-[10px] text-green-500 ml-1">· finishing soon!</span> : null
+            })()}
             <svg className={`w-3 h-3 inline ml-1 opacity-40 transition-transform ${statsExpanded ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
           </button>
           {statsExpanded && <div className="flex items-center gap-4 mt-1 text-xs">
@@ -1138,19 +1231,14 @@ export function Reader() {
             {hasMath && (
               <span className="text-[10px] text-gray-400">has math</span>
             )}
+            {sessionMinutes > 0 && (
+              <span className="text-[10px] text-gray-400" title="Time you've spent in this document this session">
+                elapsed: {sessionMinutes}m
+              </span>
+            )}
           </div>}
         </div>
       </div>
-
-      {/* Featured term — only shown before user scrolls past 25% */}
-      {readingProgress < 25 && keyTerm && (
-        <div className="max-w-3xl mx-auto px-8 pb-2">
-          <p className="text-[10px] text-gray-400 inline-flex items-center gap-1.5">
-            Key term: <span className="px-1.5 py-0.5 bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 rounded font-medium">{keyTerm[0]}</span>
-            <span className="text-gray-300">({keyTerm[1]}× in document)</span>
-          </p>
-        </div>
-      )}
 
       {/* Feature 20: "What changed?" badge */}
       {hasChanges && (
@@ -1303,6 +1391,112 @@ export function Reader() {
                 Delete
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Inline highlight popover — color swatches, note, delete */}
+      {highlightPopover && (
+        <div
+          className="highlight-popover absolute z-50 w-72 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-2xl p-3 space-y-2"
+          style={{ left: highlightPopover.x, top: highlightPopover.y + 8 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400" title={new Date(highlightPopover.highlight.createdAt).toLocaleString()}>
+              Highlight
+            </span>
+            <button onClick={() => setHighlightPopover(null)} className="text-gray-400 hover:text-gray-600 text-xs" aria-label="Close highlight popover">✕</button>
+          </div>
+          <div className="border-l-2 pl-2" style={{ borderColor: highlightPopover.highlight.color }}>
+            <p className="text-[11px] text-gray-600 dark:text-gray-400 italic line-clamp-2">
+              {highlightPopover.highlight.text.slice(0, 120)}{highlightPopover.highlight.text.length > 120 ? '…' : ''}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {['#fef08a', '#bbf7d0', '#bfdbfe', '#fbcfe8', '#fed7aa'].map((c) => (
+              <button
+                key={c}
+                onClick={async () => {
+                  // In-place color update — preserves id, createdAt and note
+                  const h = highlightPopover.highlight
+                  if (h.color === c) return
+                  await updateHighlightColor(h.id!, c)
+                  const updated = { ...h, color: c }
+                  setHighlightPopover({ ...highlightPopover, highlight: updated })
+                  if (activeDocId) setInlineHighlights(await getHighlights(activeDocId))
+                  window.dispatchEvent(new CustomEvent('md-reader-highlight-changed'))
+                }}
+                className={`w-6 h-6 rounded-full border-2 transition-all hover:scale-110 ${highlightPopover.highlight.color === c ? 'border-gray-700 dark:border-gray-200 ring-2 ring-offset-1 ring-gray-400' : 'border-gray-300 dark:border-gray-600'}`}
+                style={{ background: c }}
+                aria-label={`Change color to ${c}`}
+                title={`Change color`}
+              />
+            ))}
+          </div>
+          <div className="relative">
+            <textarea
+              rows={2}
+              placeholder="Add a note…"
+              defaultValue={highlightPopover.highlight.note ?? ''}
+              onBlur={async (e) => {
+                const newNote = e.target.value.trim()
+                if (newNote === (highlightPopover.highlight.note ?? '')) return
+                await updateHighlightNote(highlightPopover.highlight.id!, newNote)
+                if (activeDocId) setInlineHighlights(await getHighlights(activeDocId))
+                window.dispatchEvent(new CustomEvent('md-reader-highlight-changed'))
+                setNoteSaved(true)
+                setTimeout(() => setNoteSaved(false), 1200)
+              }}
+              className="w-full text-xs px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-transparent text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-amber-400 resize-none"
+            />
+            {noteSaved && (
+              <span className="absolute top-1 right-2 text-[10px] text-green-600 dark:text-green-400 font-medium pointer-events-none animate-fade-in-out">
+                Saved ✓
+              </span>
+            )}
+          </div>
+          <div className="flex items-center justify-between pt-1 border-t border-gray-100 dark:border-gray-800">
+            <span className="text-[10px] text-gray-400">Click a color to change</span>
+            <button
+              onClick={async () => {
+                // Delete-with-undo: stash the highlight, remove it, show a
+                // toast for 5s that re-adds the exact same payload on click.
+                const h = highlightPopover.highlight
+                const snapshot: Omit<Highlight, 'id'> = {
+                  docId: h.docId, text: h.text, startOffset: h.startOffset,
+                  endOffset: h.endOffset, color: h.color, note: h.note,
+                  createdAt: h.createdAt,
+                }
+                await removeHighlight(h.id!)
+                if (activeDocId) setInlineHighlights(await getHighlights(activeDocId))
+                setHighlightPopover(null)
+                window.dispatchEvent(new CustomEvent('md-reader-highlight-changed'))
+
+                // Show an undo toast
+                const toast = document.createElement('div')
+                toast.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm rounded-lg shadow-2xl flex items-center gap-3'
+                toast.innerHTML = '<span>Highlight removed</span>'
+                const undoBtn = document.createElement('button')
+                undoBtn.textContent = 'Undo'
+                undoBtn.className = 'text-amber-400 dark:text-amber-600 font-medium hover:underline'
+                toast.appendChild(undoBtn)
+                document.body.appendChild(toast)
+                const cleanup = () => { try { toast.remove() } catch { /* already gone */ } }
+                const undoTimer = setTimeout(cleanup, 5000)
+                undoBtn.onclick = async () => {
+                  clearTimeout(undoTimer)
+                  cleanup()
+                  await addHighlight(snapshot)
+                  if (activeDocId) setInlineHighlights(await getHighlights(activeDocId))
+                  window.dispatchEvent(new CustomEvent('md-reader-highlight-changed'))
+                }
+              }}
+              className="text-[10px] px-2 py-0.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors"
+              title="Remove highlight (undoable for 5s)"
+            >
+              Remove
+            </button>
           </div>
         </div>
       )}
