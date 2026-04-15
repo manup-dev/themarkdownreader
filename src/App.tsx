@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
-import { MessageSquare, MessageSquareText, PanelLeftClose, PanelLeftOpen, Loader2, Menu, Volume2, X } from 'lucide-react'
+import { MessageSquare, MessageSquareText, PanelLeftOpen, Loader2, Menu, Volume2, X } from 'lucide-react'
 import { useStore, type ViewMode } from './store/useStore'
 import { getCommentCount } from './lib/docstore'
 import { SAMPLE_MARKDOWN } from './lib/sample-doc'
@@ -16,6 +16,7 @@ import { KeyboardShortcuts } from './components/KeyboardShortcuts'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { OnboardingOverlay } from './components/OnboardingOverlay'
 import { TelemetryBanner } from './components/TelemetryBanner'
+import { Sidebar } from './components/Sidebar'
 import { FEATURE_FLAGS, resolveEnabledFeatures, enableFeature as enableFeatureFlag, disableFeature as disableFeatureFlag, resetFeatures } from './lib/feature-flags'
 
 // Lazy load heavy/optional components
@@ -32,7 +33,7 @@ const Workspace = lazy(() => import('./components/Workspace').then((m) => ({ def
 const CrossDocGraph = lazy(() => import('./components/CrossDocGraph').then((m) => ({ default: m.CrossDocGraph })))
 const CorrelationView = lazy(() => import('./components/CorrelationView').then((m) => ({ default: m.CorrelationView })))
 const SimilarityMap = lazy(() => import('./components/SimilarityMap').then((m) => ({ default: m.SimilarityMap })))
-const CollectionReader = lazy(() => import('./components/CollectionReader').then((m) => ({ default: m.CollectionReader })))
+const CollectionView = lazy(() => import('./components/CollectionView').then((m) => ({ default: m.CollectionView })))
 
 function LazyFallback() {
   return (
@@ -49,9 +50,8 @@ function App() {
   const theme = useStore((s) => s.theme)
   const viewMode = useStore((s) => s.viewMode)
   const workspaceMode = useStore((s) => s.workspaceMode)
-  const sidebarWidth = useStore((s) => s.sidebarWidth)
+  const folderFiles = useStore((s) => s.folderFiles)
   const chatWidth = useStore((s) => s.chatWidth)
-  const setSidebarWidth = useStore((s) => s.setSidebarWidth)
   const setChatWidth = useStore((s) => s.setChatWidth)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [chatOpen, setChatOpen] = useState(false)
@@ -385,23 +385,25 @@ function App() {
   }, [])
 
   // Use getState() to avoid stale closures during rapid dragging
-  const handleSidebarResize = useCallback((delta: number) => {
-    const cur = useStore.getState().sidebarWidth
-    setSidebarWidth(Math.max(180, Math.min(400, cur + delta)))
-  }, [setSidebarWidth])
-
   const handleChatResize = useCallback((delta: number) => {
     const cur = useStore.getState().chatWidth
     setChatWidth(Math.max(250, Math.min(600, cur - delta)))
   }, [setChatWidth])
 
-  if (!markdown && !workspaceMode) {
+  if (!markdown && !workspaceMode && !folderFiles) {
     return <Upload />
   }
 
   const themeClasses: Record<string, string> = { light: 'bg-gray-50', dark: 'bg-gray-950', sepia: 'bg-sepia-100', 'high-contrast': 'bg-black' }
-  const isWorkspaceView = viewMode === 'workspace' || viewMode === 'cross-doc-graph' || viewMode === 'correlation' || viewMode === 'similarity-map' || viewMode === 'collection'
-  const showSidebar = sidebarOpen && markdown && (viewMode === 'read' || viewMode === 'coach')
+  // Library-level modes render full-width without the unified sidebar.
+  const isLibraryView = viewMode === 'workspace' || viewMode === 'cross-doc-graph' || viewMode === 'correlation' || viewMode === 'similarity-map'
+  // Modes that participate in the unified shell (Sidebar + main pane).
+  const isUnifiedShellView = !isLibraryView
+  // Legacy flag: true for any non-reading (library OR collection) view — used
+  // by chat/comments/TTS/FAB guards to match previous behavior.
+  const isWorkspaceView = isLibraryView || viewMode === 'collection'
+  const hasDocState = !!markdown || !!folderFiles
+  const showSidebar = sidebarOpen && hasDocState && isUnifiedShellView
   const showChat = chatOpen && markdown && !isWorkspaceView
   const showComments = commentsOpen && markdown && !isWorkspaceView
   const showTts = !!markdown && !isWorkspaceView
@@ -411,30 +413,10 @@ function App() {
       <a href="#main-content" className="skip-to-content">Skip to content</a>
       <KeyboardShortcuts />
 
-      {/* Sidebar: TOC (resizable, collapsible) */}
-      {showSidebar && (
-        <>
-          <aside
-            className="shrink-0 border-r border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white dark:bg-gray-900 sepia:bg-sepia-50 overflow-y-auto p-4"
-            style={{ width: sidebarWidth }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <span className="text-sm font-bold text-gray-700 dark:text-gray-200 sepia:text-sepia-800">md-reader</span>
-                <span className="block text-[9px] text-gray-400 -mt-0.5">Table of Contents</span>
-              </div>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 sepia:text-sepia-800"
-              >
-                <PanelLeftClose className="h-4 w-4" />
-              </button>
-            </div>
-            <TableOfContents />
-          </aside>
-          <ResizeHandle onResize={handleSidebarResize} />
-        </>
-      )}
+      {/* Unified sidebar: rendered by <Sidebar> (OutlinePanel for single-file,
+          FileExplorer for folder mode). The component manages its own chrome
+          and internally honors store.sidebarCollapsed. */}
+      {showSidebar && <ErrorBoundary name="Sidebar"><Sidebar /></ErrorBoundary>}
 
       {/* Main content */}
       <div id="main-content" className="flex-1 flex flex-col min-w-0" role="main">
@@ -453,13 +435,17 @@ function App() {
           {/* Views — fade transition on switch, ErrorBoundary + Suspense for lazy loads */}
           <div key={viewMode} className={`flex-1 flex min-h-0 ${viewDirection === 'right' ? 'animate-slide-in-right' : viewDirection === 'left' ? 'animate-slide-in-left' : 'animate-scale-in'}`}>
             <Suspense fallback={<LazyFallback />}>
-              {isWorkspaceView && viewMode === 'workspace' && <ErrorBoundary name="Workspace"><Workspace /></ErrorBoundary>}
-              {isWorkspaceView && viewMode === 'cross-doc-graph' && <ErrorBoundary name="Doc Graph"><CrossDocGraph /></ErrorBoundary>}
-              {isWorkspaceView && viewMode === 'correlation' && <ErrorBoundary name="Correlations"><CorrelationView /></ErrorBoundary>}
-              {isWorkspaceView && viewMode === 'similarity-map' && <ErrorBoundary name="Similarity Map"><SimilarityMap /></ErrorBoundary>}
-              {isWorkspaceView && viewMode === 'collection' && <ErrorBoundary name="Collection"><CollectionReader /></ErrorBoundary>}
+              {/* Library + cross-doc modes render full-width, no unified sidebar */}
+              {viewMode === 'workspace' && <ErrorBoundary name="Workspace"><Workspace /></ErrorBoundary>}
+              {viewMode === 'cross-doc-graph' && <ErrorBoundary name="Doc Graph"><CrossDocGraph /></ErrorBoundary>}
+              {viewMode === 'correlation' && <ErrorBoundary name="Correlations"><CorrelationView /></ErrorBoundary>}
+              {viewMode === 'similarity-map' && <ErrorBoundary name="Similarity Map"><SimilarityMap /></ErrorBoundary>}
 
-              {!isWorkspaceView && markdown && (
+              {/* Collection tab: folder dashboard (part of unified reading shell) */}
+              {viewMode === 'collection' && <ErrorBoundary name="Collection"><CollectionView /></ErrorBoundary>}
+
+              {/* Reading modes (single-file OR active file within a folder) */}
+              {viewMode !== 'workspace' && viewMode !== 'cross-doc-graph' && viewMode !== 'correlation' && viewMode !== 'similarity-map' && viewMode !== 'collection' && markdown && (
                 <>
                   {viewMode === 'read' && <ErrorBoundary name="Reader"><Reader /></ErrorBoundary>}
                   {viewMode === 'mindmap' && <ErrorBoundary name="Mind Map"><MindMapView /></ErrorBoundary>}
