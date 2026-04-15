@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react'
-import { FileText, Layers, ChevronRight } from 'lucide-react'
+import { FileText, Layers, ChevronRight, CheckCircle2, Hash, FolderOpen } from 'lucide-react'
 import { useStore } from '../store/useStore'
 
 /**
@@ -17,28 +17,50 @@ import { useStore } from '../store/useStore'
 export function CollectionView() {
   const folderFiles = useStore(s => s.folderFiles)
   const folderFileContents = useStore(s => s.folderFileContents)
+  const folderHandle = useStore(s => s.folderHandle)
   const setActiveFile = useStore(s => s.setActiveFile)
   const setViewMode = useStore(s => s.setViewMode)
   const setMarkdown = useStore(s => s.setMarkdown)
 
-  // Per-file stats computed once per folder change.
+  // Per-file stats + unique heading count ("concepts") across the collection.
   const stats = useMemo(() => {
     if (!folderFiles || !folderFileContents) {
-      return { totalWords: 0, perFile: [] as Array<{ path: string; name: string; words: number }> }
+      return {
+        totalWords: 0,
+        perFile: [] as Array<{ path: string; name: string; words: number; headings: number }>,
+        concepts: 0,
+      }
     }
+    const headingSet = new Set<string>()
     const perFile = folderFiles.map(f => {
       const content = folderFileContents.get(f.path) ?? ''
-      // Simple word count: strip markdown fences/inline code/punctuation, split on whitespace
+      // Word count: strip fences/inline code/punctuation
       const plain = content
         .replace(/```[\s\S]*?```/g, '')
         .replace(/`[^`]*`/g, '')
         .replace(/[#*_>[\]()]/g, ' ')
       const words = plain.split(/\s+/).filter(Boolean).length
-      return { path: f.path, name: f.name, words }
+      // Count h1/h2 headings per file, collect normalized text for collection-wide concept set
+      const headingMatches = content.match(/^#{1,2}\s+.+$/gm) ?? []
+      for (const h of headingMatches) {
+        const normalized = h.replace(/^#{1,2}\s+/, '').trim().toLowerCase()
+        if (normalized) headingSet.add(normalized)
+      }
+      return { path: f.path, name: f.name, words, headings: headingMatches.length }
     })
     const totalWords = perFile.reduce((sum, f) => sum + f.words, 0)
-    return { totalWords, perFile }
+    return { totalWords, perFile, concepts: headingSet.size }
   }, [folderFiles, folderFileContents])
+
+  // Collection completion: based on md-reader-viewed-files:<folderName>
+  const viewedMap = useMemo(() => {
+    const key = `md-reader-viewed-files:${folderHandle?.name ?? '__cache__'}`
+    try { return JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, boolean> }
+    catch { return {} }
+  }, [folderHandle, folderFiles])
+  const viewedCount = folderFiles?.filter(f => viewedMap[f.path]).length ?? 0
+  const totalCount = folderFiles?.length ?? 0
+  const allViewed = totalCount > 0 && viewedCount === totalCount
 
   const handleOpenFile = useCallback((path: string) => {
     setActiveFile(path)
@@ -60,10 +82,28 @@ export function CollectionView() {
     setViewMode('read')
   }, [folderFiles, folderFileContents, setMarkdown, setViewMode])
 
-  if (!folderFiles || folderFiles.length === 0) {
+  if (!folderFiles) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-400 dark:text-gray-500">
-        <p>No folder loaded.</p>
+      <div className="flex flex-col items-center justify-center h-full text-center px-8">
+        <FolderOpen className="h-10 w-10 text-gray-300 dark:text-gray-600 mb-3" />
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">No folder open</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 max-w-xs">
+          Open a folder from the toolbar (Mode → Open Folder) to see a collection overview here.
+        </p>
+      </div>
+    )
+  }
+
+  if (folderFiles.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center px-8">
+        <FileText className="h-10 w-10 text-gray-300 dark:text-gray-600 mb-3" />
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
+          No markdown files in this folder
+        </p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 max-w-xs">
+          md-reader reads <code className="text-[11px]">.md</code>, <code className="text-[11px]">.markdown</code>, and <code className="text-[11px]">.excalidraw</code> files. Add some and click refresh.
+        </p>
       </div>
     )
   }
@@ -83,7 +123,39 @@ export function CollectionView() {
           {stats.totalWords.toLocaleString()} words
           {' · '}
           ~{readingMinutes} min total read
+          {stats.concepts > 0 && (
+            <>
+              {' · '}
+              <span title="Unique H1/H2 headings across the collection" className="inline-flex items-center gap-0.5">
+                <Hash className="inline h-3 w-3" />
+                {stats.concepts} concept{stats.concepts === 1 ? '' : 's'}
+              </span>
+            </>
+          )}
         </p>
+
+        {allViewed ? (
+          <div className="mt-4 flex items-center gap-2 px-4 py-3 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900/50 text-green-800 dark:text-green-300">
+            <CheckCircle2 className="h-5 w-5 shrink-0" />
+            <div className="text-sm">
+              <span className="font-medium">Collection complete</span>
+              <span className="ml-1 text-xs opacity-80">— you've opened every file ({viewedCount}/{totalCount})</span>
+            </div>
+          </div>
+        ) : viewedCount > 0 ? (
+          <div className="mt-4">
+            <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 mb-1">
+              <span>Progress</span>
+              <span className="tabular-nums">{viewedCount}/{totalCount} opened</span>
+            </div>
+            <div className="h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-500 rounded-full transition-all"
+                style={{ width: `${(viewedCount / totalCount) * 100}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-6 flex gap-2">
           <button
@@ -101,24 +173,31 @@ export function CollectionView() {
             Files
           </h2>
           <ul className="divide-y divide-gray-200 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-            {stats.perFile.map(f => (
-              <li key={f.path}>
-                <button
-                  type="button"
-                  onClick={() => handleOpenFile(f.path)}
-                  className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <FileText className="h-4 w-4 text-gray-400 shrink-0" />
-                    <span className="text-sm text-gray-700 dark:text-gray-200 truncate">{f.name}</span>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-xs text-gray-400">{f.words.toLocaleString()} words</span>
-                    <ChevronRight className="h-4 w-4 text-gray-400" />
-                  </div>
-                </button>
-              </li>
-            ))}
+            {stats.perFile.map(f => {
+              const isViewed = !!viewedMap[f.path]
+              return (
+                <li key={f.path}>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenFile(f.path)}
+                    className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {isViewed
+                        ? <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" aria-label="Opened" />
+                        : <FileText className="h-4 w-4 text-gray-400 shrink-0" />}
+                      <span className={'text-sm truncate ' + (isViewed ? 'text-gray-500 dark:text-gray-400' : 'text-gray-700 dark:text-gray-200')}>
+                        {f.name}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-xs text-gray-400">{f.words.toLocaleString()} words</span>
+                      <ChevronRight className="h-4 w-4 text-gray-400" />
+                    </div>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         </div>
       </div>

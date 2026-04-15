@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { FolderOpen, X, ChevronRight, ChevronDown, Link as LinkIcon, ArrowRight, ArrowLeft } from 'lucide-react'
+import { FolderOpen, X, ChevronRight, ChevronDown, Link as LinkIcon, ArrowRight, ArrowLeft, RefreshCw } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { useActiveSection, type Heading } from '../hooks/useActiveSection'
 
@@ -61,12 +61,36 @@ export function FileExplorer() {
   const folderFileContents = useStore(s => s.folderFileContents)
   const activeFilePath = useStore(s => s.activeFilePath)
   const sidebarExpandedFile = useStore(s => s.sidebarExpandedFile)
+  const folderHandle = useStore(s => s.folderHandle)
   const setActiveFile = useStore(s => s.setActiveFile)
   const setSidebarExpandedFile = useStore(s => s.setSidebarExpandedFile)
   const closeFolderSession = useStore(s => s.closeFolderSession)
+  const refreshFolder = useStore(s => s.refreshFolder)
   const toc = useStore(s => s.toc)
 
   const [linksOpen, setLinksOpen] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshToast, setRefreshToast] = useState<string | null>(null)
+
+  const handleRefresh = useCallback(async () => {
+    if (refreshing) return
+    setRefreshing(true)
+    try {
+      const result = await refreshFolder()
+      if (result.ok) {
+        const parts: string[] = []
+        if (result.added) parts.push(`+${result.added} added`)
+        if (result.changed) parts.push(`${result.changed} changed`)
+        if (result.removed) parts.push(`-${result.removed} removed`)
+        setRefreshToast(parts.length ? parts.join(', ') : 'Up to date')
+      } else {
+        setRefreshToast(result.reason)
+      }
+    } finally {
+      setRefreshing(false)
+      setTimeout(() => setRefreshToast(null), 2800)
+    }
+  }, [refreshing, refreshFolder])
 
   // Normalize toc → Heading[] for the hook
   const headings: Heading[] = toc.map(h => ({ id: h.id, text: h.text, level: h.level }))
@@ -144,16 +168,35 @@ export function FileExplorer() {
         <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
           Folder
         </h3>
-        <button
-          type="button"
-          onClick={closeFolderSession}
-          aria-label="Close folder"
-          title="Close folder"
-          className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          {folderHandle && (
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              aria-label="Refresh folder from disk"
+              title={refreshing ? 'Refreshing…' : 'Refresh from disk'}
+              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 disabled:opacity-50"
+            >
+              <RefreshCw className={'h-3.5 w-3.5 ' + (refreshing ? 'animate-spin' : '')} />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={closeFolderSession}
+            aria-label="Close folder"
+            title="Close folder"
+            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </header>
+      {refreshToast && (
+        <div className="px-4 py-1 text-[10px] text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/40 border-b border-gray-200 dark:border-gray-700 shrink-0">
+          {refreshToast}
+        </div>
+      )}
 
       <ul className="flex-1 overflow-y-auto py-1 min-h-0">
         {folderFiles.map((file) => {

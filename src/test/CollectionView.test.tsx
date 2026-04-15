@@ -26,7 +26,7 @@ describe('<CollectionView>', () => {
 
   it('shows empty state when no folder loaded', () => {
     render(<CollectionView />)
-    expect(screen.getByText(/no folder loaded/i)).toBeInTheDocument()
+    expect(screen.getByText(/no folder open/i)).toBeInTheDocument()
   })
 
   it('shows file count and file list when folder loaded', () => {

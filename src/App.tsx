@@ -7,7 +7,7 @@ import { extractToc } from './lib/markdown'
 import { Upload } from './components/Upload'
 import { Reader } from './components/Reader'
 import { Toolbar } from './components/Toolbar'
-import { TableOfContents } from './components/TableOfContents'
+import { OutlinePanel } from './components/OutlinePanel'
 import { TtsPlayer } from './components/TtsPlayer'
 import { SelectionMenu } from './components/SelectionMenu'
 import { SearchOverlay } from './components/SearchOverlay'
@@ -629,7 +629,7 @@ function App() {
               <span className="text-sm font-bold text-gray-700 dark:text-gray-200 sepia:text-sepia-800">Table of Contents</span>
               <button onClick={() => setMobileTocOpen(false)} className="p-1 text-gray-400 hover:text-gray-600">&times;</button>
             </div>
-            <TableOfContents />
+            <OutlinePanel maxLevel={6} />
           </div>
           <div className="absolute inset-0 bg-black/30" />
         </div>

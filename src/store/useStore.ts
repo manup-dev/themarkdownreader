@@ -142,6 +142,7 @@ export interface DocumentState {
   setSidebarExpandedFile: (path: string | null) => void
   navigateToPath: (relOrAbsPath: string) => boolean
   hydrateFolderFromCache: () => Promise<void>
+  refreshFolder: () => Promise<{ ok: true; added: number; changed: number; removed: number } | { ok: false; reason: string }>
 }
 
 // Persist theme/fontSize to localStorage — auto-detect system dark mode on first visit
@@ -290,6 +291,20 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       markdown: chosenFile?.content ?? '',
       fileName: chosenFile?.name ?? null,
     })
+    // Mark the auto-selected file as viewed, mirroring setActiveFile's
+    // tracking. Without this, the collection-complete banner under-counts
+    // the initially-displayed file.
+    if (chosenFile && typeof localStorage !== 'undefined') {
+      try {
+        const viewedKey = `md-reader-viewed-files:${folderKey}`
+        let viewed: Record<string, boolean> = {}
+        try { viewed = JSON.parse(localStorage.getItem(viewedKey) ?? '{}') } catch { /* ignore */ }
+        if (!viewed[chosenFile.path]) {
+          viewed[chosenFile.path] = true
+          localStorage.setItem(viewedKey, JSON.stringify(viewed))
+        }
+      } catch { /* quota exceeded — non-fatal */ }
+    }
   },
 
   setActiveFile: (path) => {
@@ -306,10 +321,18 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       fileName: file?.name ?? path,
     })
     // Persist scoped by folder name so a reload restores the last-viewed file.
+    // Also mark this file as viewed for the collection-completion banner.
     const folderKey = get().folderHandle?.name ?? '__cache__'
     if (typeof localStorage !== 'undefined') {
       try {
         localStorage.setItem(`md-reader-active-file:${folderKey}`, path)
+        const viewedKey = `md-reader-viewed-files:${folderKey}`
+        let viewed: Record<string, boolean> = {}
+        try { viewed = JSON.parse(localStorage.getItem(viewedKey) ?? '{}') } catch { /* ignore */ }
+        if (!viewed[path]) {
+          viewed[path] = true
+          localStorage.setItem(viewedKey, JSON.stringify(viewed))
+        }
       } catch { /* quota exceeded — non-fatal */ }
     }
   },
@@ -409,6 +432,52 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       }
     }
     get().setFolderSession(null, files)
+  },
+
+  // Re-read the currently-open folder from disk using the stored
+  // FileSystemDirectoryHandle. Requires user to have granted the live
+  // handle (not the IndexedDB cache path). Preserves the active file
+  // selection if it still exists on disk.
+  refreshFolder: async () => {
+    const handle = get().folderHandle
+    if (!handle) return { ok: false as const, reason: 'No live folder handle — reopen the folder to refresh.' }
+    try {
+      const { reopenDirectory } = await import('../lib/fs-access')
+      const files = await reopenDirectory(handle)
+      const prevFiles = get().folderFiles ?? []
+      const prevContents = get().folderFileContents ?? new Map<string, string>()
+      const prevActive = get().activeFilePath
+
+      const prevPaths = new Set(prevFiles.map(f => f.path))
+      const newPaths = new Set(files.map(f => f.path))
+      let added = 0, changed = 0, removed = 0
+      for (const f of files) {
+        if (!prevPaths.has(f.path)) added++
+        else if (prevContents.get(f.path) !== f.content) changed++
+      }
+      for (const p of prevPaths) if (!newPaths.has(p)) removed++
+
+      // Persist cache so reload-after-refresh stays fresh.
+      try {
+        const { saveCollectionCache } = await import('../lib/docstore')
+        const rawFiles = files.map(f => ({ path: f.path, content: f.content }))
+        await saveCollectionCache(handle.name, rawFiles, 0)
+      } catch { /* cache write is best-effort */ }
+
+      const mapped = files.map(f => ({
+        path: f.path,
+        name: f.path.split('/').pop() ?? f.path,
+        content: f.content,
+      }))
+      get().setFolderSession(handle, mapped)
+      // Prefer keeping the previously active file if it still exists.
+      if (prevActive && newPaths.has(prevActive)) {
+        get().setActiveFile(prevActive)
+      }
+      return { ok: true as const, added, changed, removed }
+    } catch (e) {
+      return { ok: false as const, reason: (e as Error).message || 'Failed to re-read folder' }
+    }
   },
 }), {
   name: 'md-reader-session',

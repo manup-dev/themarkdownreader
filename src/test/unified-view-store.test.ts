@@ -20,12 +20,37 @@ describe('useStore — unified view state', () => {
       fileName: null,
       viewMode: 'read',
     })
-    // Clear persisted active-file keys so tests don't leak state across each other
+    // Clear persisted active-file + viewed-files keys so tests don't leak state across each other
     if (typeof localStorage !== 'undefined') {
       Object.keys(localStorage)
-        .filter(k => k.startsWith('md-reader-active-file:'))
+        .filter(k => k.startsWith('md-reader-active-file:') || k.startsWith('md-reader-viewed-files:'))
         .forEach(k => localStorage.removeItem(k))
     }
+  })
+
+  describe('setActiveFile viewed tracking', () => {
+    it('marks files as viewed in localStorage when setActiveFile is called', () => {
+      const files = [
+        { path: 'a.md', name: 'a.md', content: '# A' },
+        { path: 'b.md', name: 'b.md', content: '# B' },
+      ]
+      useStore.getState().setFolderSession(null, files)
+      // setFolderSession auto-selects a.md → viewed
+      useStore.getState().setActiveFile('b.md')
+      const viewed = JSON.parse(localStorage.getItem('md-reader-viewed-files:__cache__') ?? '{}')
+      expect(viewed['a.md']).toBe(true)
+      expect(viewed['b.md']).toBe(true)
+    })
+
+    it('does not write viewed entry when setActiveFile(null) is called', () => {
+      useStore.getState().setFolderSession(null, [
+        { path: 'a.md', name: 'a.md', content: '# A' },
+      ])
+      useStore.getState().setActiveFile(null)
+      const viewed = JSON.parse(localStorage.getItem('md-reader-viewed-files:__cache__') ?? '{}')
+      // a.md got marked during setFolderSession auto-select; passing null doesn't clear it
+      expect(viewed['a.md']).toBe(true)
+    })
   })
 
   describe('setFolderSession', () => {
