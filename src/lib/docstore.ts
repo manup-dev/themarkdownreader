@@ -213,6 +213,27 @@ export async function loadCollectionCache(id?: string): Promise<CollectionCache 
   return cached ?? null
 }
 
+/**
+ * Unified-view cache reader — returns the most-recently-active folder
+ * session in the shape the store's hydrateFolderFromCache action expects.
+ * Thin adapter over loadCollectionCache that normalizes field names and
+ * drops the Dexie internals (id, currentFileIndex) the unified view doesn't
+ * care about.
+ */
+export async function getCollectionCache(): Promise<{
+  name: string
+  files: Array<{ path: string; content: string }>
+  timestamp: number
+} | null> {
+  const cached = await loadCollectionCache()
+  if (!cached) return null
+  return {
+    name: cached.name,
+    files: cached.files,
+    timestamp: cached.savedAt,
+  }
+}
+
 export async function clearCollectionCache(): Promise<void> {
   await db.collectionCache.delete('last')
 }

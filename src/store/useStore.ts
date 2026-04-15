@@ -141,6 +141,7 @@ export interface DocumentState {
   toggleSidebar: () => void
   setSidebarExpandedFile: (path: string | null) => void
   navigateToPath: (relOrAbsPath: string) => boolean
+  hydrateFolderFromCache: () => Promise<void>
 }
 
 // Persist theme/fontSize to localStorage — auto-detect system dark mode on first visit
@@ -359,6 +360,41 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     if (!match) return false
     get().setActiveFile(match.path)
     return true
+  },
+
+  hydrateFolderFromCache: async () => {
+    if (get().folderFiles !== null) return  // already hydrated
+    const { getCollectionCache } = await import('../lib/docstore')
+    const cache = await getCollectionCache()
+    if (!cache || cache.files.length === 0) return
+    const files = cache.files.map(f => ({
+      path: f.path,
+      name: f.path.split('/').pop() ?? f.path,
+      content: f.content,
+    }))
+    // Migrate legacy viewedFiles from index-keyed to path-keyed format.
+    // Old: md-reader-collection-viewed-<name> → number[]  (indices into file list)
+    // New: md-reader-viewed-files:<name>     → Record<string, boolean>
+    // Installed by CollectionReader pre-refactor; surviving users should
+    // keep their read-markers across the unified view migration.
+    const legacyKey = `md-reader-collection-viewed-${cache.name}`
+    const newKey = `md-reader-viewed-files:${cache.name}`
+    const legacy = typeof localStorage !== 'undefined' ? localStorage.getItem(legacyKey) : null
+    if (legacy) {
+      try {
+        const indices: number[] = JSON.parse(legacy)
+        const pathMap: Record<string, boolean> = {}
+        for (const i of indices) {
+          if (cache.files[i]) pathMap[cache.files[i].path] = true
+        }
+        localStorage.setItem(newKey, JSON.stringify(pathMap))
+        localStorage.removeItem(legacyKey)
+      } catch {
+        // Corrupt legacy data — just drop it
+        localStorage.removeItem(legacyKey)
+      }
+    }
+    get().setFolderSession(null, files)
   },
 }), {
   name: 'md-reader-session',

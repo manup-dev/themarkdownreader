@@ -66,6 +66,38 @@ function App() {
   const activeDocId = useStore((s) => s.activeDocId)
   const dyslexicFont = useStore((s) => s.dyslexicFont)
 
+  // Unified view: hydrate folder session from cache on mount (no prompt) +
+  // install the __mdReaderLoadCollection test hook (used by E2E tests).
+  // Both previously lived inside CollectionReader.tsx; promoted to App level
+  // as part of the 2026-04-15 unified view refactor so they survive the
+  // CollectionReader deletion. The global hook keeps its original
+  // (files, name) signature so existing E2E tests continue to work.
+  useEffect(() => {
+    useStore.getState().hydrateFolderFromCache().catch(() => {
+      // Non-fatal: cache read failed, user can re-open the folder manually.
+    })
+
+    const w = window as unknown as {
+      __mdReaderLoadCollection?: (
+        files: Array<{ path: string; content: string }>,
+        name: string,
+      ) => Promise<void>
+    }
+    w.__mdReaderLoadCollection = async (rawFiles, name) => {
+      const { saveCollectionCache } = await import('./lib/docstore')
+      await saveCollectionCache(name, rawFiles, 0)
+      const files = rawFiles.map((f) => ({
+        path: f.path,
+        name: f.path.split('/').pop() ?? f.path,
+        content: f.content,
+      }))
+      useStore.getState().setFolderSession(null, files)
+    }
+    return () => {
+      delete w.__mdReaderLoadCollection
+    }
+  }, [])
+
   // Browser extension: handle incoming markdown from extension
   useEffect(() => {
     const hash = window.location.hash
