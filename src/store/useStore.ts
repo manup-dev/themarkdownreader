@@ -122,6 +122,25 @@ export interface DocumentState {
   reset: () => void
   backToWorkspace: () => void
   backToCollection: () => void
+
+  // Unified view state (added 2026-04-15)
+  folderHandle: FileSystemDirectoryHandle | null
+  folderFiles: Array<{ path: string; name: string }> | null
+  folderFileContents: Map<string, string> | null
+  activeFilePath: string | null
+  sidebarCollapsed: boolean
+  sidebarExpandedFile: string | null
+
+  // Unified view actions
+  setFolderSession: (
+    handle: FileSystemDirectoryHandle | null,
+    files: Array<{ path: string; name: string; content: string }>
+  ) => void
+  setActiveFile: (path: string | null) => void
+  closeFolderSession: () => void
+  toggleSidebar: () => void
+  setSidebarExpandedFile: (path: string | null) => void
+  navigateToPath: (relOrAbsPath: string) => boolean
 }
 
 // Persist theme/fontSize to localStorage — auto-detect system dark mode on first visit
@@ -131,7 +150,7 @@ const savedFontSize = parseInt(localStorage.getItem('md-reader-fontSize') ?? '18
 const savedSidebarWidth = parseInt(localStorage.getItem('md-reader-sidebarW') ?? '256')
 const savedChatWidth = parseInt(localStorage.getItem('md-reader-chatW') ?? '320')
 
-export const useStore = create<DocumentState>()(devtools(persist((set) => ({
+export const useStore = create<DocumentState>()(devtools(persist((set, get) => ({
   markdown: '',
   fileName: null,
   toc: [],
@@ -236,6 +255,111 @@ export const useStore = create<DocumentState>()(devtools(persist((set) => ({
   reset: () => set({ markdown: '', fileName: null, toc: [], readingProgress: 0, activeSection: null, viewMode: 'read', ttsPlaying: false, ttsSectionIndex: 0, activeDocId: null, workspaceMode: false, readScrollTop: 0, podcastScript: null, diagramDsl: null, chatMessages: [] }),
   backToWorkspace: () => set({ markdown: '', fileName: null, toc: [], viewMode: 'workspace', activeDocId: null }),
   backToCollection: () => set({ markdown: '', fileName: null, toc: [], viewMode: 'collection', activeDocId: null }),
+
+  // Unified view state
+  folderHandle: null,
+  folderFiles: null,
+  folderFileContents: null,
+  activeFilePath: null,
+  sidebarCollapsed: (typeof localStorage !== 'undefined'
+    && localStorage.getItem('md-reader-sidebar-collapsed') === 'true'),
+  sidebarExpandedFile: null,
+
+  setFolderSession: (handle, files) => {
+    const ordered = files.map(f => ({ path: f.path, name: f.name }))
+    const contents = new Map<string, string>()
+    files.forEach(f => contents.set(f.path, f.content))
+
+    // Auto-select: prefer README.md (case-insensitive) else first file
+    const readme = files.find(f => /^readme\.md$/i.test(f.name))
+    const first = readme ?? files[0]
+
+    set({
+      folderHandle: handle,
+      folderFiles: ordered,
+      folderFileContents: contents,
+      activeFilePath: first?.path ?? null,
+      markdown: first?.content ?? '',
+      fileName: first?.name ?? null,
+    })
+  },
+
+  setActiveFile: (path) => {
+    if (path === null) {
+      set({ activeFilePath: null, markdown: '', fileName: null })
+      return
+    }
+    const contents = get().folderFileContents
+    if (!contents?.has(path)) return  // no-op for unknown path
+    const file = get().folderFiles?.find(f => f.path === path)
+    set({
+      activeFilePath: path,
+      markdown: contents.get(path) ?? '',
+      fileName: file?.name ?? path,
+    })
+  },
+
+  closeFolderSession: () => {
+    set({
+      folderHandle: null,
+      folderFiles: null,
+      folderFileContents: null,
+      activeFilePath: null,
+      sidebarExpandedFile: null,
+      markdown: '',
+      fileName: null,
+    })
+  },
+
+  toggleSidebar: () => {
+    const next = !get().sidebarCollapsed
+    set({ sidebarCollapsed: next })
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('md-reader-sidebar-collapsed', String(next))
+    }
+  },
+
+  setSidebarExpandedFile: (path) => set({ sidebarExpandedFile: path }),
+
+  navigateToPath: (relOrAbsPath) => {
+    // Resolve intra-collection markdown link. Examples:
+    //   './api.md' (relative to current file)
+    //   'api.md'   (bare)
+    //   '../docs/api.md' (parent-relative)
+    //
+    // Strategy: normalize by resolving against the currently active file's
+    // directory, then look up in folderFiles. Returns true if the target
+    // was found and setActiveFile was called; false otherwise.
+    const files = get().folderFiles
+    if (!files) return false
+
+    const current = get().activeFilePath ?? ''
+    const currentDir = current.includes('/') ? current.substring(0, current.lastIndexOf('/')) : ''
+
+    // Strip leading './' and resolve '../' segments
+    let target = relOrAbsPath.replace(/^\.\//, '')
+    if (target.startsWith('../')) {
+      const parts = currentDir.split('/').filter(Boolean)
+      while (target.startsWith('../')) {
+        parts.pop()
+        target = target.slice(3)
+      }
+      target = parts.length > 0 ? `${parts.join('/')}/${target}` : target
+    } else if (!target.startsWith('/') && currentDir) {
+      target = `${currentDir}/${target}`
+    }
+    // Strip any leading slash for consistency with folderFiles path keys
+    target = target.replace(/^\//, '')
+
+    // Strip URL fragments like '#anchor' — anchor scroll happens after file load
+    const fragmentIdx = target.indexOf('#')
+    const targetPath = fragmentIdx >= 0 ? target.slice(0, fragmentIdx) : target
+
+    const match = files.find(f => f.path === targetPath)
+    if (!match) return false
+    get().setActiveFile(match.path)
+    return true
+  },
 }), {
   name: 'md-reader-session',
   storage: {
