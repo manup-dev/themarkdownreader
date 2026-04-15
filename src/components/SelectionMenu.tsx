@@ -28,7 +28,7 @@ function computeSelectionSectionId(): string | null {
   const sel = window.getSelection()
   if (!sel || sel.rangeCount === 0) return null
   const range = sel.getRangeAt(0)
-  let node: Node | null = range.startContainer
+  const node: Node = range.startContainer
   // Walk up to the containing element
   let el: Element | null = node.nodeType === Node.ELEMENT_NODE
     ? (node as Element)
