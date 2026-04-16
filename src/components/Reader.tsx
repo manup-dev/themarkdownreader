@@ -723,10 +723,7 @@ export function Reader() {
     // Listen for immediate refresh after comment save/edit/delete
     const onCommentChanged = () => refresh()
     window.addEventListener('md-reader-comment-changed', onCommentChanged)
-    // Also poll every 3s as fallback
-    const interval = setInterval(refresh, 3000)
     return () => {
-      clearInterval(interval)
       window.removeEventListener('md-reader-comment-changed', onCommentChanged)
     }
   }, [activeDocId])
@@ -764,13 +761,45 @@ export function Reader() {
       let node: Text | null
       let found = false
       while ((node = walker.nextNode() as Text | null)) {
-        const idx = node.textContent?.indexOf(searchText) ?? -1
-        if (idx === -1) continue
+        const raw = node.textContent ?? ''
         if (node.parentElement?.closest('[data-comment-highlight]')) continue
 
+        // Normalize whitespace in the DOM text for comparison — the stored
+        // selectedText has \s+ collapsed to single spaces (via cleanSelectionText)
+        // but DOM text nodes may contain newlines or multiple spaces.
+        const normalized = raw.replace(/\s+/g, ' ')
+        const idx = normalized.indexOf(searchText)
+        if (idx === -1) continue
+
+        // Map the normalized index back to the raw string position
+        let rawStart = 0
+        let normPos = 0
+        while (normPos < idx && rawStart < raw.length) {
+          if (/\s/.test(raw[rawStart])) {
+            // Skip all consecutive whitespace chars in raw, but only one in normalized
+            while (rawStart < raw.length && /\s/.test(raw[rawStart])) rawStart++
+            normPos++
+          } else {
+            rawStart++
+            normPos++
+          }
+        }
+        // Compute raw end position similarly
+        let rawEnd = rawStart
+        let matchPos = 0
+        while (matchPos < searchText.length && rawEnd < raw.length) {
+          if (/\s/.test(raw[rawEnd])) {
+            while (rawEnd < raw.length && /\s/.test(raw[rawEnd])) rawEnd++
+            matchPos++
+          } else {
+            rawEnd++
+            matchPos++
+          }
+        }
+
         const range = document.createRange()
-        range.setStart(node, idx)
-        range.setEnd(node, idx + searchText.length)
+        range.setStart(node, rawStart)
+        range.setEnd(node, rawEnd)
 
         const span = document.createElement('span')
         span.setAttribute('data-comment-highlight', String(comment.id))
@@ -789,24 +818,7 @@ export function Reader() {
         badge.textContent = '\uD83D\uDCAC'
         badge.title = `${comment.author}: ${comment.comment.slice(0, 60)}`
 
-        const handleClick = (e: Event) => {
-          e.stopPropagation()
-          const rect = span.getBoundingClientRect()
-          const containerRect = contentRef.current?.getBoundingClientRect()
-          setCommentPopover({
-            comment,
-            x: rect.left - (containerRect?.left ?? 0),
-            y: rect.bottom - (containerRect?.top ?? 0) + (contentRef.current?.scrollTop ?? 0),
-          })
-        }
-        span.addEventListener('click', handleClick)
-        span.addEventListener('keydown', (e) => {
-          if ((e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ') {
-            e.preventDefault()
-            handleClick(e)
-          }
-        })
-        badge.addEventListener('click', handleClick)
+        // No per-span listeners — interaction handled by delegated handler
 
         try {
           range.surroundContents(span)
@@ -839,6 +851,8 @@ export function Reader() {
 
   // ─── Inline highlights (persistent, reflect add/remove/color change) ───
   const [inlineHighlights, setInlineHighlights] = useState<Highlight[]>([])
+  const inlineHighlightsRef = useRef<Highlight[]>([])  // latest value for event delegation
+  inlineHighlightsRef.current = inlineHighlights
   const [highlightPopover, setHighlightPopover] = useState<{ highlight: Highlight; x: number; y: number } | null>(null)
   const [noteSaved, setNoteSaved] = useState(false)  // "Saved ✓" flash after note blur
   const appliedHighlightIdsRef = useRef<Set<number>>(new Set())
@@ -904,25 +918,7 @@ export function Reader() {
         span.setAttribute('aria-label', `Highlighted: ${searchText.slice(0, 40)}${searchText.length > 40 ? '…' : ''}. Press Enter to edit.`)
         span.style.cssText = `background-color: ${h.color}; border-radius: 2px; padding: 1px 0; cursor: pointer; transition: filter 120ms;`
         span.title = h.note ? `Highlight · ${h.note}` : 'Highlight — click to edit'
-        span.addEventListener('mouseenter', () => { span.style.filter = 'brightness(0.95)' })
-        span.addEventListener('mouseleave', () => { span.style.filter = '' })
-        const openPopover = (e: Event) => {
-          e.stopPropagation()
-          const rect = span.getBoundingClientRect()
-          const containerRect = contentRef.current?.getBoundingClientRect()
-          setHighlightPopover({
-            highlight: h,
-            x: rect.left - (containerRect?.left ?? 0),
-            y: rect.bottom - (containerRect?.top ?? 0) + (contentRef.current?.scrollTop ?? 0),
-          })
-        }
-        span.addEventListener('click', openPopover)
-        span.addEventListener('keydown', (e) => {
-          if ((e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ') {
-            e.preventDefault()
-            openPopover(e)
-          }
-        })
+        // No per-span listeners — interaction handled by delegated handler below
         try {
           range.surroundContents(span)
           found = true
@@ -947,6 +943,65 @@ export function Reader() {
     window.addEventListener('click', dismiss)
     return () => window.removeEventListener('click', dismiss)
   }, [highlightPopover])
+
+  // Delegated event handler for highlight + comment spans.
+  // One listener on the scroll container handles click + keydown for all
+  // inline highlights and comments, reading the latest data from refs so
+  // there are no stale-closure risks from per-span listeners.
+  const inlineCommentsRef = useRef<Comment[]>([])
+  inlineCommentsRef.current = inlineComments
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el) return
+    const openHighlight = (span: HTMLElement) => {
+      const id = Number(span.getAttribute('data-highlight-id'))
+      const h = inlineHighlightsRef.current.find((x) => x.id === id)
+      if (!h) return
+      const rect = span.getBoundingClientRect()
+      const containerRect = el.getBoundingClientRect()
+      setHighlightPopover({
+        highlight: h,
+        x: rect.left - containerRect.left,
+        y: rect.bottom - containerRect.top + el.scrollTop,
+      })
+    }
+    const openComment = (span: HTMLElement) => {
+      const id = Number(span.getAttribute('data-comment-highlight'))
+      const c = inlineCommentsRef.current.find((x) => x.id === id)
+      if (!c) return
+      const rect = span.getBoundingClientRect()
+      const containerRect = el.getBoundingClientRect()
+      setCommentPopover({
+        comment: c,
+        x: rect.left - containerRect.left,
+        y: rect.bottom - containerRect.top + el.scrollTop,
+      })
+    }
+    const handleInteraction = (e: Event) => {
+      const target = e.target as HTMLElement
+      const hlSpan = target.closest('[data-highlight-id]') as HTMLElement | null
+      const cmSpan = target.closest('[data-comment-highlight]') as HTMLElement | null
+      if (hlSpan) { e.stopPropagation(); openHighlight(hlSpan) }
+      else if (cmSpan) { e.stopPropagation(); openComment(cmSpan) }
+    }
+    const handleKeydown = (e: Event) => {
+      const ke = e as KeyboardEvent
+      if (ke.key !== 'Enter' && ke.key !== ' ') return
+      const target = ke.target as HTMLElement
+      const hlSpan = target.closest('[data-highlight-id]') as HTMLElement | null
+      const cmSpan = target.closest('[data-comment-highlight]') as HTMLElement | null
+      if (hlSpan || cmSpan) {
+        ke.preventDefault()
+        handleInteraction(e)
+      }
+    }
+    el.addEventListener('click', handleInteraction)
+    el.addEventListener('keydown', handleKeydown)
+    return () => {
+      el.removeEventListener('click', handleInteraction)
+      el.removeEventListener('keydown', handleKeydown)
+    }
+  }, []) // empty deps: single stable delegation, reads from refs
 
   // Delight #15: Footnote popover on hover
   const footnoteMap = useMemo(() => {

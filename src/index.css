@@ -89,6 +89,11 @@ article *, article *::before, article *::after { transition: none; }
 @keyframes scaleIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .animate-scale-in { animation: scaleIn 150ms ease-out; }
 
+/* Highlight span hover — CSS replaces per-span JS listeners for perf */
+[data-highlight-id]:hover { filter: brightness(0.95); }
+[data-highlight-id]:focus-visible { outline: 2px solid #f59e0b; outline-offset: 1px; }
+[data-comment-highlight]:focus-visible { outline: 2px solid #2dd4bf; outline-offset: 1px; }
+
 @keyframes fadeInOut { 0% { opacity: 0; } 20% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
 .animate-fade-in-out { animation: fadeInOut 1200ms ease-in-out; }
 

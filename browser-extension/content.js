@@ -4,6 +4,15 @@
  * Works on GitHub, GHE, GitLab, Gitea, and any page with rendered markdown.
  */
 
+// ─── Utilities ──────────────────────────────────────────────────
+
+/** Escape HTML entities to prevent XSS when interpolating into innerHTML. */
+function escapeHtml(text) {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
+}
+
 // ─── Page Detection ─────────────────────────────────────────────
 
 function isMarkdownPage() {
@@ -61,8 +70,9 @@ function extractMarkdownOutline(container) {
  */
 function stripLeadingEmoji(text) {
   try {
+    // Leading digit/symbol handles keycap sequences like 1️⃣
     const cleaned = String(text).replace(
-      /^(\p{Extended_Pictographic}|\p{Emoji_Component}|\uFE0F|\u200D)+/u,
+      /^([\d#*]?(\p{Extended_Pictographic}|\p{Emoji_Component}|\uFE0F|\u200D|\u20E3))+/u,
       ''
     )
     return cleaned.trimStart() || text
@@ -155,7 +165,7 @@ function createReaderPanel() {
         <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
         <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
       </svg>
-      <span class="mdr-title">${fileName}</span>
+      <span class="mdr-title">${escapeHtml(fileName)}</span>
       <div class="mdr-tabs">
         <button class="mdr-tab mdr-tab-active" data-view="read">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
@@ -201,8 +211,8 @@ function createReaderPanel() {
   tocSidebar.innerHTML = `
     <div class="mdr-toc-title">Contents</div>
     ${toc.map(h => `
-      <a class="mdr-toc-item mdr-toc-level-${h.level}" data-target="${h.id}">
-        ${h.text}
+      <a class="mdr-toc-item mdr-toc-level-${h.level}" data-target="${escapeHtml(h.id)}">
+        ${escapeHtml(h.text)}
       </a>
     `).join('')}
   `
@@ -246,8 +256,8 @@ function createReaderPanel() {
       <div class="mdr-summary-cards">
         ${summaryData.map(s => `
           <div class="mdr-summary-card">
-            <div class="mdr-summary-heading">${s.heading}</div>
-            <div class="mdr-summary-text">${s.summary}</div>
+            <div class="mdr-summary-heading">${escapeHtml(s.heading)}</div>
+            <div class="mdr-summary-text">${escapeHtml(s.summary)}</div>
           </div>
         `).join('')}
       </div>

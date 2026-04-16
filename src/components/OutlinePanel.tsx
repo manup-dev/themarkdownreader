@@ -28,9 +28,10 @@ const DEFAULT_MAX_LEVEL = 2
  */
 function stripLeadingEmoji(text: string): string {
   // Unicode property escapes match any "extended pictographic" char plus
-  // joiners/variation selectors. Repeat to consume full multi-codepoint
-  // emoji sequences (flags, ZWJ sequences, keycaps, …).
-  const cleaned = text.replace(/^(\p{Extended_Pictographic}|\p{Emoji_Component}|\uFE0F|\u200D)+/u, '')
+  // joiners / variation selectors / keycap combining marks. The leading
+  // `[\d#*]?` captures the base digit/symbol in keycap sequences like
+  // 1️⃣ (digit + VS16 + combining enclosing keycap).
+  const cleaned = text.replace(/^([\d#*]?(\p{Extended_Pictographic}|\p{Emoji_Component}|\uFE0F|\u200D|\u20E3))+/u, '')
   return cleaned.trimStart() || text
 }
 

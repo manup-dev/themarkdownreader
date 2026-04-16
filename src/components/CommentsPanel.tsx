@@ -28,6 +28,7 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
   const [editingName, setEditingName] = useState(false)
   const [openMenuId, setOpenMenuId] = useState<number | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const jumpTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
   const refresh = useCallback(async () => {
     if (!activeDocId) return
@@ -37,10 +38,12 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { refresh() }, [refresh])
 
-  // Re-poll every 3s for new comments (e.g., from selection menu)
+  // Refresh on CustomEvent instead of polling — the SelectionMenu and
+  // Reader dispatch 'md-reader-comment-changed' on every add/edit/delete.
   useEffect(() => {
-    const interval = setInterval(refresh, 3000)
-    return () => clearInterval(interval)
+    const onChanged = () => refresh()
+    window.addEventListener('md-reader-comment-changed', onChanged)
+    return () => window.removeEventListener('md-reader-comment-changed', onChanged)
   }, [refresh])
 
   const handleUsernameChange = useCallback((name: string) => {
@@ -72,42 +75,45 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
 
   const handleJumpTo = useCallback((comment: Comment) => {
     useStore.getState().setViewMode('read')
-    // Suppress the Reading-Complete celebration while we're programmatically
-    // scrolling the viewport. 2s covers the smooth-scroll animation and any
-    // retry attempts below.
     markProgrammaticScroll(2500)
-    // Wait for Reader to render (and for inline comment spans to be applied).
-    // Prefer the actual highlighted selection; fall back to the section heading
-    // only if the inline span can't be found (e.g., the selectedText no longer
-    // matches the document, or the comment has no selectedText).
+    // Cancel any in-flight retries from a previous jump
+    for (const t of jumpTimersRef.current) clearTimeout(t)
+    jumpTimersRef.current = []
+
     const tryJump = (attempt: number) => {
       const span = comment.id != null
         ? (document.querySelector(`[data-comment-highlight="${comment.id}"]`) as HTMLElement | null)
         : null
       if (span) {
         span.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        // Brief flash to draw the eye to the exact highlighted text
         const prev = span.style.outline
         span.style.outline = '2px solid #2dd4bf'
         span.style.outlineOffset = '2px'
-        setTimeout(() => { span.style.outline = prev }, 1600)
+        const t = setTimeout(() => { span.style.outline = prev }, 1600)
+        jumpTimersRef.current.push(t)
         return true
       }
-      // Span not in DOM yet — retry a few times while Reader mounts/applies
       if (attempt < 8) {
-        setTimeout(() => tryJump(attempt + 1), 120)
+        const t = setTimeout(() => tryJump(attempt + 1), 120)
+        jumpTimersRef.current.push(t)
         return false
       }
-      // Final fallback: scroll to the section heading
       const el = comment.sectionId ? document.getElementById(comment.sectionId) : null
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'start' })
         el.style.background = document.documentElement.classList.contains('sepia') ? '#e8d5be' : '#bfdbfe'
-        setTimeout(() => { el.style.background = '' }, 2000)
+        const t = setTimeout(() => { el.style.background = '' }, 2000)
+        jumpTimersRef.current.push(t)
       }
       return false
     }
-    setTimeout(() => tryJump(0), 50)
+    const initial = setTimeout(() => tryJump(0), 50)
+    jumpTimersRef.current.push(initial)
+  }, [])
+
+  // Clean up jump timers on unmount so stale timeouts don't fire after panel closes
+  useEffect(() => {
+    return () => { for (const t of jumpTimersRef.current) clearTimeout(t) }
   }, [])
 
   const handleExport = useCallback(() => {

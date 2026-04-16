@@ -29,30 +29,29 @@ function computeSelectionSectionId(): string | null {
   if (!sel || sel.rangeCount === 0) return null
   const range = sel.getRangeAt(0)
   const node: Node = range.startContainer
-  // Walk up to the containing element
-  let el: Element | null = node.nodeType === Node.ELEMENT_NODE
+  const el: Element | null = node.nodeType === Node.ELEMENT_NODE
     ? (node as Element)
     : node.parentElement
   const article = el?.closest('article')
   if (!article || !el) return null
-  // Walk up to a direct child of the article, then step back through
-  // previous siblings (and their descendants) looking for the most recent
-  // heading in document order.
-  while (el && el.parentElement && el.parentElement !== article) el = el.parentElement
-  let cursor: Element | null = el
-  while (cursor) {
-    if (/^H[1-6]$/.test(cursor.tagName) && cursor.id) return cursor.id
-    // If this element contains a heading, find the LAST one before the
-    // selection — but since cursor is at or before the selection, any
-    // heading inside counts.
-    const inner = cursor.querySelector?.('h1, h2, h3, h4, h5, h6')
-    if (inner && inner.id && cursor.contains(range.startContainer)) {
-      // Heading inside the same block as the selection — use it
-      return inner.id
+
+  // Strategy: collect ALL headings in the article in document order,
+  // then find the last heading that comes BEFORE the selection's start.
+  // This is robust against deeply nested wrapper <div>s, sections,
+  // and any markdown renderer that wraps content in extra containers.
+  const allHeadings = Array.from(article.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+  let lastBefore: Element | null = null
+  for (const h of allHeadings) {
+    // compareDocumentPosition bit 4 = DOCUMENT_POSITION_FOLLOWING — the
+    // heading comes before the selection's start container in document order.
+    const pos = h.compareDocumentPosition(range.startContainer)
+    if (pos & Node.DOCUMENT_POSITION_FOLLOWING) {
+      lastBefore = h
+    } else {
+      break // headings after the selection — stop
     }
-    cursor = cursor.previousElementSibling
   }
-  return null
+  return lastBefore?.id || null
 }
 
 /**
@@ -64,8 +63,14 @@ function cleanSelectionText(text: string): string {
   return text
     .replace(/\s+/g, ' ')
     .trim()
-    // Drop trailing conjunctions / articles left dangling by sloppy selection
-    .replace(/[\s,;:—–-]+(and|or|but|the|a|an|of|to|in|on|at|by|for|with|as|is|are|was|were)$/i, '')
+    // Only strip a trailing word when it follows a comma or semicolon —
+    // this is the tell-tale sign of a sloppy selection that grabbed one
+    // word too many. Legitimate text like "To be or not to be, that is"
+    // where the user intentionally ended at "is" won't match because
+    // there's no trailing comma before "is". The pattern is:
+    //   "…problems, and" → "…problems"     (comma + conjunction = sloppy)
+    //   "…that is"       → "…that is"      (no comma = intentional)
+    .replace(/[,;]\s+(and|or|but|the|a|an|of|to|in|on|at|by|for|with|as)$/i, '')
     // Drop trailing punctuation that isn't sentence-ending
     .replace(/[,;:]+$/, '')
     .trim()
