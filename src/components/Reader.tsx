@@ -774,6 +774,9 @@ export function Reader() {
 
         const span = document.createElement('span')
         span.setAttribute('data-comment-highlight', String(comment.id))
+        span.setAttribute('role', 'button')
+        span.setAttribute('tabindex', '0')
+        span.setAttribute('aria-label', `Comment by ${comment.author}: ${comment.comment.slice(0, 40)}${comment.comment.length > 40 ? '…' : ''}. Press Enter to view.`)
         const isSepia = document.documentElement.classList.contains('sepia')
         const highlightColor = isSepia ? 'rgba(180, 83, 9, 0.15)' : 'rgba(45, 212, 191, 0.15)'
         const borderColor = isSepia ? 'rgb(180, 83, 9)' : 'rgb(45, 212, 191)'
@@ -781,6 +784,7 @@ export function Reader() {
 
         const badge = document.createElement('span')
         badge.setAttribute('data-comment-badge', 'true')
+        badge.setAttribute('aria-hidden', 'true')
         badge.style.cssText = `display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; background: ${borderColor}; color: white; border-radius: 50%; font-size: 10px; margin-left: 2px; cursor: pointer; vertical-align: super; line-height: 1;`
         badge.textContent = '\uD83D\uDCAC'
         badge.title = `${comment.author}: ${comment.comment.slice(0, 60)}`
@@ -796,12 +800,25 @@ export function Reader() {
           })
         }
         span.addEventListener('click', handleClick)
+        span.addEventListener('keydown', (e) => {
+          if ((e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ') {
+            e.preventDefault()
+            handleClick(e)
+          }
+        })
         badge.addEventListener('click', handleClick)
 
-        range.surroundContents(span)
-        span.appendChild(badge)
-        found = true
-        break
+        try {
+          range.surroundContents(span)
+          span.appendChild(badge)
+          found = true
+          break
+        } catch {
+          // Selection spans multiple inline elements (e.g. <em>bold</em> and
+          // regular) — surroundContents can't wrap cross-element ranges.
+          // Skip this comment; it won't get an inline highlight but will
+          // still be accessible from the Comments panel.
+        }
       }
       if (found) appliedCommentIdsRef.current.add(comment.id!)
     }
@@ -882,11 +899,14 @@ export function Reader() {
         const span = document.createElement('span')
         span.setAttribute('data-highlight-id', String(h.id))
         span.setAttribute('data-highlight-color', h.color)
+        span.setAttribute('role', 'button')
+        span.setAttribute('tabindex', '0')
+        span.setAttribute('aria-label', `Highlighted: ${searchText.slice(0, 40)}${searchText.length > 40 ? '…' : ''}. Press Enter to edit.`)
         span.style.cssText = `background-color: ${h.color}; border-radius: 2px; padding: 1px 0; cursor: pointer; transition: filter 120ms;`
         span.title = h.note ? `Highlight · ${h.note}` : 'Highlight — click to edit'
         span.addEventListener('mouseenter', () => { span.style.filter = 'brightness(0.95)' })
         span.addEventListener('mouseleave', () => { span.style.filter = '' })
-        span.addEventListener('click', (e) => {
+        const openPopover = (e: Event) => {
           e.stopPropagation()
           const rect = span.getBoundingClientRect()
           const containerRect = contentRef.current?.getBoundingClientRect()
@@ -895,6 +915,13 @@ export function Reader() {
             x: rect.left - (containerRect?.left ?? 0),
             y: rect.bottom - (containerRect?.top ?? 0) + (contentRef.current?.scrollTop ?? 0),
           })
+        }
+        span.addEventListener('click', openPopover)
+        span.addEventListener('keydown', (e) => {
+          if ((e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ') {
+            e.preventDefault()
+            openPopover(e)
+          }
         })
         try {
           range.surroundContents(span)
@@ -1476,6 +1503,8 @@ export function Reader() {
                 // Show an undo toast
                 const toast = document.createElement('div')
                 toast.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm rounded-lg shadow-2xl flex items-center gap-3'
+                toast.setAttribute('role', 'alert')
+                toast.setAttribute('aria-live', 'assertive')
                 toast.innerHTML = '<span>Highlight removed</span>'
                 const undoBtn = document.createElement('button')
                 undoBtn.textContent = 'Undo'

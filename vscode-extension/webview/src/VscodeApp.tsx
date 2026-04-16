@@ -273,9 +273,8 @@ export function VscodeApp() {
             className="shrink-0 border-r border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white dark:bg-gray-900 sepia:bg-sepia-50 overflow-y-auto p-3"
             style={{ width: sidebarWidth }}
           >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 sepia:text-sepia-800">Contents</span>
-              <button onClick={() => setSidebarOpen(false)} className="p-0.5 text-gray-400 hover:text-gray-600">
+            <div className="flex items-center justify-between mb-1">
+              <button onClick={() => setSidebarOpen(false)} className="p-0.5 text-gray-400 hover:text-gray-600 ml-auto" title="Hide sidebar">
                 <PanelLeftClose className="h-3.5 w-3.5" />
               </button>
             </div>

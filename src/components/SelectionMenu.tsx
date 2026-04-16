@@ -236,7 +236,8 @@ export function SelectionMenu() {
   const handleSearch = useCallback(() => {
     if (!menu) return
     // Scroll to first match highlight
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+    const article = document.querySelector('article') ?? document.body
+    const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
     let found = false
     while (walker.nextNode()) {
       const node = walker.currentNode
@@ -288,6 +289,7 @@ export function SelectionMenu() {
     // Toast notification
     const toast = document.createElement('div')
     toast.className = 'toast-notify fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-green-600 text-white text-sm rounded-lg shadow-lg'
+    toast.setAttribute('role', 'alert')
     toast.textContent = 'Comment saved'
     document.body.appendChild(toast)
     setTimeout(() => toast.remove(), 2000)
