@@ -10,10 +10,20 @@ import { getComments, updateComment, removeComment, type Comment, getHighlights,
 import { markProgrammaticScroll, isProgrammaticScroll } from '../lib/scroll-guard'
 import { trackEvent } from '../lib/telemetry'
 
+/** Recursively extract plain text from React children (handles bold, italic, code, etc.) */
+function childrenToText(children: React.ReactNode): string {
+  if (typeof children === 'string') return children
+  if (typeof children === 'number') return String(children)
+  if (!children) return ''
+  if (Array.isArray(children)) return children.map(childrenToText).join('')
+  if (typeof children === 'object' && 'props' in children) return childrenToText(children.props.children)
+  return ''
+}
+
 // Delight #24: Click heading to copy anchor link
 function HeadingRenderer(level: number) {
   return function Heading({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-    const text = typeof children === 'string' ? children : String(children ?? '')
+    const text = childrenToText(children)
     const id = slugify(text)
 
     const handleClick = () => {
@@ -736,27 +746,72 @@ export function Reader() {
     const unresolvedComments = inlineComments.filter((c) => !c.resolved)
     const currentIds = new Set(unresolvedComments.map((c) => c.id!))
 
-    // Remove highlights for comments that no longer exist or are resolved
+    // Remove highlights for comments that no longer exist or are resolved.
+    // Handles stacked comments: only unwrap the span when ALL its IDs are gone.
     document.querySelectorAll('[data-comment-highlight]').forEach((el) => {
-      const id = Number(el.getAttribute('data-comment-highlight'))
-      if (!currentIds.has(id)) {
+      const idsAttr = el.getAttribute('data-comment-ids') || el.getAttribute('data-comment-highlight')!
+      const allIds = idsAttr.split(',').map(Number).filter(Boolean)
+      const remaining = allIds.filter((id) => currentIds.has(id))
+
+      if (remaining.length === 0) {
+        // No valid comments left — unwrap the span entirely
         const parent = el.parentNode
         if (parent) {
           while (el.firstChild) parent.insertBefore(el.firstChild, el)
           parent.removeChild(el)
           parent.normalize()
         }
-        appliedCommentIdsRef.current.delete(id)
+        for (const id of allIds) appliedCommentIdsRef.current.delete(id)
+      } else if (remaining.length < allIds.length) {
+        // Some comments removed — update the stacked IDs and badge
+        el.setAttribute('data-comment-ids', remaining.join(','))
+        el.setAttribute('data-comment-highlight', String(remaining[0]))
+        const badge = el.querySelector('[data-comment-badge]')
+        if (badge) {
+          badge.textContent = remaining.length > 1 ? String(remaining.length) : '\uD83D\uDCAC'
+          badge.setAttribute('title', remaining.length > 1
+            ? `${remaining.length} comments on this passage`
+            : '')
+        }
+        for (const id of allIds) {
+          if (!remaining.includes(id)) appliedCommentIdsRef.current.delete(id)
+        }
       }
     })
 
     // Only apply highlights for comments we haven't already applied
+    const isSepia = document.documentElement.classList.contains('sepia')
+    const highlightColor = isSepia ? 'rgba(180, 83, 9, 0.15)' : 'rgba(45, 212, 191, 0.15)'
+    const borderColor = isSepia ? 'rgb(180, 83, 9)' : 'rgb(45, 212, 191)'
+
     for (const comment of unresolvedComments) {
       if (appliedCommentIdsRef.current.has(comment.id!)) continue
 
       const searchText = comment.selectedText.trim()
       if (!searchText || searchText.length < 3) continue
 
+      // Check if an existing comment highlight already covers this text
+      // (same or overlapping selection). If so, stack the comment ID onto
+      // the existing span instead of creating a new one.
+      const existingSpan = Array.from(article.querySelectorAll<HTMLElement>('[data-comment-highlight]')).find((el) => {
+        const spanText = el.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+        return spanText.includes(searchText) || searchText.includes(spanText)
+      })
+      if (existingSpan) {
+        const ids = existingSpan.getAttribute('data-comment-ids') || existingSpan.getAttribute('data-comment-highlight')!
+        const idList = ids.split(',').concat(String(comment.id))
+        existingSpan.setAttribute('data-comment-ids', idList.join(','))
+        // Update badge count
+        const badge = existingSpan.querySelector('[data-comment-badge]')
+        if (badge) {
+          badge.textContent = `${idList.length}`
+          badge.setAttribute('title', `${idList.length} comments on this passage`)
+        }
+        appliedCommentIdsRef.current.add(comment.id!)
+        continue
+      }
+
+      // Search for the text across text nodes (handles whitespace normalization)
       const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
       let node: Text | null
       let found = false
@@ -764,9 +819,6 @@ export function Reader() {
         const raw = node.textContent ?? ''
         if (node.parentElement?.closest('[data-comment-highlight]')) continue
 
-        // Normalize whitespace in the DOM text for comparison — the stored
-        // selectedText has \s+ collapsed to single spaces (via cleanSelectionText)
-        // but DOM text nodes may contain newlines or multiple spaces.
         const normalized = raw.replace(/\s+/g, ' ')
         const idx = normalized.indexOf(searchText)
         if (idx === -1) continue
@@ -776,25 +828,17 @@ export function Reader() {
         let normPos = 0
         while (normPos < idx && rawStart < raw.length) {
           if (/\s/.test(raw[rawStart])) {
-            // Skip all consecutive whitespace chars in raw, but only one in normalized
             while (rawStart < raw.length && /\s/.test(raw[rawStart])) rawStart++
             normPos++
-          } else {
-            rawStart++
-            normPos++
-          }
+          } else { rawStart++; normPos++ }
         }
-        // Compute raw end position similarly
         let rawEnd = rawStart
         let matchPos = 0
         while (matchPos < searchText.length && rawEnd < raw.length) {
           if (/\s/.test(raw[rawEnd])) {
             while (rawEnd < raw.length && /\s/.test(raw[rawEnd])) rawEnd++
             matchPos++
-          } else {
-            rawEnd++
-            matchPos++
-          }
+          } else { rawEnd++; matchPos++ }
         }
 
         const range = document.createRange()
@@ -803,12 +847,10 @@ export function Reader() {
 
         const span = document.createElement('span')
         span.setAttribute('data-comment-highlight', String(comment.id))
+        span.setAttribute('data-comment-ids', String(comment.id))
         span.setAttribute('role', 'button')
         span.setAttribute('tabindex', '0')
         span.setAttribute('aria-label', `Comment by ${comment.author}: ${comment.comment.slice(0, 40)}${comment.comment.length > 40 ? '…' : ''}. Press Enter to view.`)
-        const isSepia = document.documentElement.classList.contains('sepia')
-        const highlightColor = isSepia ? 'rgba(180, 83, 9, 0.15)' : 'rgba(45, 212, 191, 0.15)'
-        const borderColor = isSepia ? 'rgb(180, 83, 9)' : 'rgb(45, 212, 191)'
         span.style.cssText = `background: ${highlightColor}; border-bottom: 2px solid ${borderColor}; cursor: pointer; position: relative; padding: 1px 0;`
 
         const badge = document.createElement('span')
@@ -818,18 +860,29 @@ export function Reader() {
         badge.textContent = '\uD83D\uDCAC'
         badge.title = `${comment.author}: ${comment.comment.slice(0, 60)}`
 
-        // No per-span listeners — interaction handled by delegated handler
-
         try {
           range.surroundContents(span)
           span.appendChild(badge)
           found = true
           break
         } catch {
-          // Selection spans multiple inline elements (e.g. <em>bold</em> and
-          // regular) — surroundContents can't wrap cross-element ranges.
-          // Skip this comment; it won't get an inline highlight but will
-          // still be accessible from the Comments panel.
+          // surroundContents fails on cross-element ranges — wrap each
+          // text node within the range individually instead.
+          try {
+            const frag = range.cloneContents()
+            // Find the first text node to anchor the badge on
+            const firstTextLen = frag.firstChild?.textContent?.length ?? 0
+            if (firstTextLen > 0) {
+              // Wrap just the first text node's portion as the primary span
+              const partialRange = document.createRange()
+              partialRange.setStart(node, rawStart)
+              partialRange.setEnd(node, Math.min(rawStart + firstTextLen, raw.length))
+              partialRange.surroundContents(span)
+              span.appendChild(badge)
+              found = true
+              break
+            }
+          } catch { /* truly unwrappable — skip */ }
         }
       }
       if (found) appliedCommentIdsRef.current.add(comment.id!)
@@ -966,8 +1019,11 @@ export function Reader() {
       })
     }
     const openComment = (span: HTMLElement) => {
-      const id = Number(span.getAttribute('data-comment-highlight'))
-      const c = inlineCommentsRef.current.find((x) => x.id === id)
+      // Support stacked comments: data-comment-ids holds comma-separated IDs
+      const idsAttr = span.getAttribute('data-comment-ids') || span.getAttribute('data-comment-highlight') || ''
+      const ids = idsAttr.split(',').map(Number).filter(Boolean)
+      // Show the first comment in the popover (user can see all in the panel)
+      const c = ids.map((id) => inlineCommentsRef.current.find((x) => x.id === id)).find(Boolean)
       if (!c) return
       const rect = span.getBoundingClientRect()
       const containerRect = el.getBoundingClientRect()
