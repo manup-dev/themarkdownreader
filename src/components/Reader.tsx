@@ -9,6 +9,7 @@ import { extractToc, wordCount, estimateDifficulty, slugify } from '../lib/markd
 import { getComments, updateComment, removeComment, type Comment, getHighlights, addHighlight, removeHighlight, updateHighlightNote, updateHighlightColor, type Highlight } from '../lib/docstore'
 import { markProgrammaticScroll, isProgrammaticScroll } from '../lib/scroll-guard'
 import { trackEvent } from '../lib/telemetry'
+import { resolveAnchor } from '../lib/anchor'
 
 /** Recursively extract plain text from React children (handles bold, italic, code, etc.) */
 function childrenToText(children: React.ReactNode): string {
@@ -787,7 +788,7 @@ export function Reader() {
     for (const comment of unresolvedComments) {
       if (appliedCommentIdsRef.current.has(comment.id!)) continue
 
-      const searchText = comment.selectedText.trim()
+      const searchText = comment.selectedText?.trim() ?? comment.anchor?.exact?.trim() ?? ''
       if (!searchText || searchText.length < 3) continue
 
       // Check if an existing comment highlight already covers this text
@@ -811,80 +812,126 @@ export function Reader() {
         continue
       }
 
-      // Search for the text across text nodes (handles whitespace normalization)
-      const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
-      let node: Text | null
       let found = false
-      while ((node = walker.nextNode() as Text | null)) {
-        const raw = node.textContent ?? ''
-        if (node.parentElement?.closest('[data-comment-highlight]')) continue
 
-        const normalized = raw.replace(/\s+/g, ' ')
-        const idx = normalized.indexOf(searchText)
-        if (idx === -1) continue
+      // Try anchor-based resolution first (precise, survives minor edits)
+      if (comment.anchor) {
+        const { markdown } = useStore.getState()
+        const resolved = resolveAnchor(article, markdown, comment.anchor)
+        if (resolved) {
+          const range = document.createRange()
+          range.setStart(resolved.startNode, resolved.startOffset)
+          range.setEnd(resolved.endNode, resolved.endOffset)
 
-        // Map the normalized index back to the raw string position
-        let rawStart = 0
-        let normPos = 0
-        while (normPos < idx && rawStart < raw.length) {
-          if (/\s/.test(raw[rawStart])) {
-            while (rawStart < raw.length && /\s/.test(raw[rawStart])) rawStart++
-            normPos++
-          } else { rawStart++; normPos++ }
-        }
-        let rawEnd = rawStart
-        let matchPos = 0
-        while (matchPos < searchText.length && rawEnd < raw.length) {
-          if (/\s/.test(raw[rawEnd])) {
-            while (rawEnd < raw.length && /\s/.test(raw[rawEnd])) rawEnd++
-            matchPos++
-          } else { rawEnd++; matchPos++ }
-        }
+          const span = document.createElement('span')
+          span.setAttribute('data-comment-highlight', String(comment.id))
+          span.setAttribute('data-comment-ids', String(comment.id))
+          span.setAttribute('role', 'button')
+          span.setAttribute('tabindex', '0')
+          span.setAttribute('aria-label', `Comment by ${comment.author}: ${comment.comment.slice(0, 40)}${comment.comment.length > 40 ? '…' : ''}. Press Enter to view.`)
+          span.style.cssText = `background: ${highlightColor}; border-bottom: 2px solid ${borderColor}; cursor: pointer; position: relative; padding: 1px 0;`
 
-        const range = document.createRange()
-        range.setStart(node, rawStart)
-        range.setEnd(node, rawEnd)
+          const badge = document.createElement('span')
+          badge.setAttribute('data-comment-badge', 'true')
+          badge.setAttribute('aria-hidden', 'true')
+          badge.style.cssText = `display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; background: ${borderColor}; color: white; border-radius: 50%; font-size: 10px; margin-left: 2px; cursor: pointer; vertical-align: super; line-height: 1;`
+          badge.textContent = '\uD83D\uDCAC'
+          badge.title = `${comment.author}: ${comment.comment.slice(0, 60)}`
 
-        const span = document.createElement('span')
-        span.setAttribute('data-comment-highlight', String(comment.id))
-        span.setAttribute('data-comment-ids', String(comment.id))
-        span.setAttribute('role', 'button')
-        span.setAttribute('tabindex', '0')
-        span.setAttribute('aria-label', `Comment by ${comment.author}: ${comment.comment.slice(0, 40)}${comment.comment.length > 40 ? '…' : ''}. Press Enter to view.`)
-        span.style.cssText = `background: ${highlightColor}; border-bottom: 2px solid ${borderColor}; cursor: pointer; position: relative; padding: 1px 0;`
-
-        const badge = document.createElement('span')
-        badge.setAttribute('data-comment-badge', 'true')
-        badge.setAttribute('aria-hidden', 'true')
-        badge.style.cssText = `display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; background: ${borderColor}; color: white; border-radius: 50%; font-size: 10px; margin-left: 2px; cursor: pointer; vertical-align: super; line-height: 1;`
-        badge.textContent = '\uD83D\uDCAC'
-        badge.title = `${comment.author}: ${comment.comment.slice(0, 60)}`
-
-        try {
-          range.surroundContents(span)
-          span.appendChild(badge)
-          found = true
-          break
-        } catch {
-          // surroundContents fails on cross-element ranges — wrap each
-          // text node within the range individually instead.
           try {
-            const frag = range.cloneContents()
-            // Find the first text node to anchor the badge on
-            const firstTextLen = frag.firstChild?.textContent?.length ?? 0
-            if (firstTextLen > 0) {
-              // Wrap just the first text node's portion as the primary span
+            range.surroundContents(span)
+            span.appendChild(badge)
+            found = true
+          } catch {
+            // Cross-element fallback: wrap just the start node
+            try {
               const partialRange = document.createRange()
-              partialRange.setStart(node, rawStart)
-              partialRange.setEnd(node, Math.min(rawStart + firstTextLen, raw.length))
+              partialRange.setStart(resolved.startNode, resolved.startOffset)
+              partialRange.setEnd(resolved.startNode, resolved.startNode.length)
               partialRange.surroundContents(span)
               span.appendChild(badge)
               found = true
-              break
-            }
-          } catch { /* truly unwrappable — skip */ }
+            } catch { /* truly unwrappable */ }
+          }
         }
       }
+
+      // Fallback: TreeWalker indexOf search (for old comments without anchor)
+      if (!found) {
+        const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
+        let node: Text | null
+        while ((node = walker.nextNode() as Text | null)) {
+          const raw = node.textContent ?? ''
+          if (node.parentElement?.closest('[data-comment-highlight]')) continue
+
+          const normalized = raw.replace(/\s+/g, ' ')
+          const idx = normalized.indexOf(searchText)
+          if (idx === -1) continue
+
+          // Map the normalized index back to the raw string position
+          let rawStart = 0
+          let normPos = 0
+          while (normPos < idx && rawStart < raw.length) {
+            if (/\s/.test(raw[rawStart])) {
+              while (rawStart < raw.length && /\s/.test(raw[rawStart])) rawStart++
+              normPos++
+            } else { rawStart++; normPos++ }
+          }
+          let rawEnd = rawStart
+          let matchPos = 0
+          while (matchPos < searchText.length && rawEnd < raw.length) {
+            if (/\s/.test(raw[rawEnd])) {
+              while (rawEnd < raw.length && /\s/.test(raw[rawEnd])) rawEnd++
+              matchPos++
+            } else { rawEnd++; matchPos++ }
+          }
+
+          const range = document.createRange()
+          range.setStart(node, rawStart)
+          range.setEnd(node, rawEnd)
+
+          const span = document.createElement('span')
+          span.setAttribute('data-comment-highlight', String(comment.id))
+          span.setAttribute('data-comment-ids', String(comment.id))
+          span.setAttribute('role', 'button')
+          span.setAttribute('tabindex', '0')
+          span.setAttribute('aria-label', `Comment by ${comment.author}: ${comment.comment.slice(0, 40)}${comment.comment.length > 40 ? '…' : ''}. Press Enter to view.`)
+          span.style.cssText = `background: ${highlightColor}; border-bottom: 2px solid ${borderColor}; cursor: pointer; position: relative; padding: 1px 0;`
+
+          const badge = document.createElement('span')
+          badge.setAttribute('data-comment-badge', 'true')
+          badge.setAttribute('aria-hidden', 'true')
+          badge.style.cssText = `display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; background: ${borderColor}; color: white; border-radius: 50%; font-size: 10px; margin-left: 2px; cursor: pointer; vertical-align: super; line-height: 1;`
+          badge.textContent = '\uD83D\uDCAC'
+          badge.title = `${comment.author}: ${comment.comment.slice(0, 60)}`
+
+          try {
+            range.surroundContents(span)
+            span.appendChild(badge)
+            found = true
+            break
+          } catch {
+            // surroundContents fails on cross-element ranges — wrap each
+            // text node within the range individually instead.
+            try {
+              const frag = range.cloneContents()
+              // Find the first text node to anchor the badge on
+              const firstTextLen = frag.firstChild?.textContent?.length ?? 0
+              if (firstTextLen > 0) {
+                // Wrap just the first text node's portion as the primary span
+                const partialRange = document.createRange()
+                partialRange.setStart(node, rawStart)
+                partialRange.setEnd(node, Math.min(rawStart + firstTextLen, raw.length))
+                partialRange.surroundContents(span)
+                span.appendChild(badge)
+                found = true
+                break
+              }
+            } catch { /* truly unwrappable — skip */ }
+          }
+        }
+      }
+
       if (found) appliedCommentIdsRef.current.add(comment.id!)
     }
   }, [inlineComments])
@@ -949,37 +996,67 @@ export function Reader() {
 
     // 2. Apply every current highlight fresh (closures capture latest `h`)
     for (const h of inlineHighlights) {
-      const searchText = h.text.trim()
+      const searchText = h.text?.trim() ?? h.anchor?.exact?.trim() ?? ''
       if (!searchText || searchText.length < 2) continue
 
-      const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
-      let node: Text | null
       let found = false
-      while ((node = walker.nextNode() as Text | null)) {
-        if (node.parentElement?.closest('[data-highlight-id]')) continue
-        const idx = node.textContent?.indexOf(searchText) ?? -1
-        if (idx === -1) continue
-        const range = document.createRange()
-        range.setStart(node, idx)
-        range.setEnd(node, idx + searchText.length)
 
-        const span = document.createElement('span')
-        span.setAttribute('data-highlight-id', String(h.id))
-        span.setAttribute('data-highlight-color', h.color)
-        span.setAttribute('role', 'button')
-        span.setAttribute('tabindex', '0')
-        span.setAttribute('aria-label', `Highlighted: ${searchText.slice(0, 40)}${searchText.length > 40 ? '…' : ''}. Press Enter to edit.`)
-        span.style.cssText = `background-color: ${h.color}; border-radius: 2px; padding: 1px 0; cursor: pointer; transition: filter 120ms;`
-        span.title = h.note ? `Highlight · ${h.note}` : 'Highlight — click to edit'
-        // No per-span listeners — interaction handled by delegated handler below
-        try {
-          range.surroundContents(span)
-          found = true
-          break
-        } catch {
-          // Range spans multiple elements — skip this occurrence
+      // Try anchor-based resolution first (precise, survives minor edits)
+      if (h.anchor) {
+        const { markdown } = useStore.getState()
+        const resolved = resolveAnchor(article, markdown, h.anchor)
+        if (resolved) {
+          const range = document.createRange()
+          range.setStart(resolved.startNode, resolved.startOffset)
+          range.setEnd(resolved.endNode, resolved.endOffset)
+
+          const span = document.createElement('span')
+          span.setAttribute('data-highlight-id', String(h.id))
+          span.setAttribute('data-highlight-color', h.color)
+          span.setAttribute('role', 'button')
+          span.setAttribute('tabindex', '0')
+          span.setAttribute('aria-label', `Highlighted: ${searchText.slice(0, 40)}${searchText.length > 40 ? '…' : ''}. Press Enter to edit.`)
+          span.style.cssText = `background-color: ${h.color}; border-radius: 2px; padding: 1px 0; cursor: pointer; transition: filter 120ms;`
+          span.title = h.note ? `Highlight · ${h.note}` : 'Highlight — click to edit'
+
+          try {
+            range.surroundContents(span)
+            found = true
+          } catch { /* cross-element — skip to fallback */ }
         }
       }
+
+      // Fallback: TreeWalker indexOf (for old highlights without anchor)
+      if (!found) {
+        const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
+        let node: Text | null
+        while ((node = walker.nextNode() as Text | null)) {
+          if (node.parentElement?.closest('[data-highlight-id]')) continue
+          const idx = node.textContent?.indexOf(searchText) ?? -1
+          if (idx === -1) continue
+          const range = document.createRange()
+          range.setStart(node, idx)
+          range.setEnd(node, idx + searchText.length)
+
+          const span = document.createElement('span')
+          span.setAttribute('data-highlight-id', String(h.id))
+          span.setAttribute('data-highlight-color', h.color)
+          span.setAttribute('role', 'button')
+          span.setAttribute('tabindex', '0')
+          span.setAttribute('aria-label', `Highlighted: ${searchText.slice(0, 40)}${searchText.length > 40 ? '…' : ''}. Press Enter to edit.`)
+          span.style.cssText = `background-color: ${h.color}; border-radius: 2px; padding: 1px 0; cursor: pointer; transition: filter 120ms;`
+          span.title = h.note ? `Highlight · ${h.note}` : 'Highlight — click to edit'
+          // No per-span listeners — interaction handled by delegated handler below
+          try {
+            range.surroundContents(span)
+            found = true
+            break
+          } catch {
+            // Range spans multiple elements — skip this occurrence
+          }
+        }
+      }
+
       if (found) appliedHighlightIdsRef.current.add(h.id!)
     }
   }, [inlineHighlights])
