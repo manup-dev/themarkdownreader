@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { captureAnchor, type TextAnchor } from '../lib/anchor'
 import { isViewModeGated } from '../lib/feature-flags'
 import { Highlighter, Search, Bot, BookOpen, Copy, X, Loader2, Check, Quote, FileText, MessageSquare, Shapes } from 'lucide-react'
 import Markdown from 'react-markdown'
@@ -88,6 +89,7 @@ interface MenuPos {
    * collapses the selection and we can't recompute it from there.
    */
   sectionId: string | null
+  anchor: TextAnchor | null
 }
 
 export function SelectionMenu() {
@@ -141,12 +143,17 @@ export function SelectionMenu() {
       const range = sel.getRangeAt(0)
       const rect = range.getBoundingClientRect()
       const sectionId = computeSelectionSectionId()
+      const { markdown } = useStore.getState()
+      const anchor = markdown
+        ? captureAnchor(markdown, sel.toString(), sectionId ?? undefined)
+        : null
 
       setMenu({
         x: rect.left + rect.width / 2,
         y: rect.top - 10,
         text,
         sectionId,
+        anchor,
       })
       setAiResponse(null)
     }
@@ -183,11 +190,12 @@ export function SelectionMenu() {
     await addHighlight({
       docId,
       text: menu.text,
-      startOffset: 0,
-      endOffset: 0,
+      startOffset: menu.anchor?.markdownStart ?? 0,
+      endOffset: menu.anchor?.markdownEnd ?? 0,
       color,
       note: '',
       createdAt: Date.now(),
+      anchor: menu.anchor ?? undefined,
     })
     // Remember this color so the next one-click highlight reuses it
     try { localStorage.setItem(LAST_COLOR_KEY, color) } catch { /* storage disabled */ }
@@ -283,6 +291,7 @@ export function SelectionMenu() {
       sectionId,
       createdAt: Date.now(),
       resolved: false,
+      anchor: menu.anchor ?? undefined,
     })
     setCommentText('')
     setShowCommentInput(false)
