@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { captureAnchor } from '../lib/anchor'
+import { captureAnchor, resolveAnchor } from '../lib/anchor'
 
 const sampleMd = `# Introduction
 
@@ -88,5 +88,80 @@ describe('captureAnchor', () => {
     const anchor = captureAnchor(noHeadingMd, 'some text')
     expect(anchor.sectionId).toBe('')
     expect(anchor.offsetInSection).toBe(0)
+  })
+})
+
+describe('resolveAnchor', () => {
+  function makeArticle(html: string): HTMLElement {
+    const el = document.createElement('article')
+    el.innerHTML = html
+    return el
+  }
+
+  it('resolves via context search when prefix+suffix match', () => {
+    const article = makeArticle('<p>This is the first paragraph.</p>')
+    const anchor = {
+      markdownStart: 0,
+      markdownEnd: 15,
+      exact: 'first paragraph',
+      prefix: 'This is the ',
+      suffix: '.',
+      sectionId: '',
+      offsetInSection: 0,
+    }
+    const result = resolveAnchor(article, '', anchor)
+    expect(result).not.toBeNull()
+    expect(result!.text).toBe('first paragraph')
+  })
+
+  it('falls back to plain text search when context does not match', () => {
+    const article = makeArticle('<p>This is the first paragraph.</p>')
+    const anchor = {
+      markdownStart: 0,
+      markdownEnd: 15,
+      exact: 'first paragraph',
+      prefix: 'WRONG PREFIX XYZ ',
+      suffix: 'WRONG SUFFIX XYZ',
+      sectionId: '',
+      offsetInSection: 0,
+    }
+    const result = resolveAnchor(article, '', anchor)
+    expect(result).not.toBeNull()
+    expect(result!.text).toBe('first paragraph')
+  })
+
+  it('returns null when text not found anywhere', () => {
+    const article = makeArticle('<p>This is the first paragraph.</p>')
+    const anchor = {
+      markdownStart: 0,
+      markdownEnd: 10,
+      exact: 'nonexistent text that is not in the article',
+      prefix: '',
+      suffix: '',
+      sectionId: '',
+      offsetInSection: 0,
+    }
+    const result = resolveAnchor(article, '', anchor)
+    expect(result).toBeNull()
+  })
+
+  it('handles text that spans formatting boundaries', () => {
+    const article = makeArticle('<p>Hello <strong>world</strong> foo</p>')
+    const anchor = {
+      markdownStart: 0,
+      markdownEnd: 11,
+      exact: 'Hello world',
+      prefix: '',
+      suffix: ' foo',
+      sectionId: '',
+      offsetInSection: 0,
+    }
+    const result = resolveAnchor(article, '', anchor)
+    expect(result).not.toBeNull()
+    expect(result!.text).toBe('Hello world')
+    // start node should be in "Hello " text node
+    expect(result!.startNode.textContent).toBe('Hello ')
+    // end node should be in "world" text node
+    expect(result!.endNode.textContent).toBe('world')
   })
 })

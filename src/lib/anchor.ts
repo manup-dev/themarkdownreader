@@ -1,5 +1,13 @@
 import { extractToc, slugify } from './markdown'
 
+export interface ResolvedRange {
+  startNode: Text
+  startOffset: number
+  endNode: Text
+  endOffset: number
+  text: string  // the matched text for verification
+}
+
 export interface TextAnchor {
   markdownStart: number    // char offset in raw markdown (primary key)
   markdownEnd: number
@@ -176,4 +184,203 @@ export function captureAnchor(
     sectionId,
     offsetInSection,
   }
+}
+
+// ---------------------------------------------------------------------------
+// resolveAnchor helpers
+// ---------------------------------------------------------------------------
+
+interface TextNodeEntry {
+  node: Text
+  /** Start position of this node's content in the concatenated normalized string */
+  normStart: number
+  /** End position (exclusive) in the normalized string */
+  normEnd: number
+  /** Mapping from each normalized-string position (relative to normStart) to
+   *  the raw offset in node.textContent */
+  normToRaw: number[]
+}
+
+/**
+ * Walk all text nodes under `root` and build a normalized index over them.
+ * Returns: { normText, entries } where normText is the whitespace-collapsed
+ * concatenation of all text nodes' contents, and entries maps positions in
+ * normText back to (node, rawOffset) pairs.
+ */
+function buildNormIndex(root: HTMLElement): { normText: string; entries: TextNodeEntry[] } {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  const entries: TextNodeEntry[] = []
+  let normText = ''
+
+  let node = walker.nextNode() as Text | null
+  while (node !== null) {
+    const raw = node.textContent ?? ''
+    // Build normToRaw: for each char position in the normalized output of this
+    // node's text, record the corresponding raw index.
+    // We collapse \s+ runs into a single space, trimming leading space only if
+    // normText already ends with a space.
+    const normToRaw: number[] = []
+    let normChunk = ''
+    let prevWasSpace = normText.length > 0 && normText[normText.length - 1] === ' '
+
+    for (let i = 0; i < raw.length; i++) {
+      if (/\s/.test(raw[i])) {
+        if (!prevWasSpace) {
+          normToRaw.push(i)
+          normChunk += ' '
+          prevWasSpace = true
+        }
+        // else skip — collapse the space run
+      } else {
+        normToRaw.push(i)
+        normChunk += raw[i]
+        prevWasSpace = false
+      }
+    }
+
+    const normStart = normText.length
+    normText += normChunk
+    entries.push({
+      node,
+      normStart,
+      normEnd: normText.length,
+      normToRaw,
+    })
+
+    node = walker.nextNode() as Text | null
+  }
+
+  return { normText, entries }
+}
+
+/**
+ * Given a position in the normalized text and the entries index, return the
+ * corresponding { node, rawOffset }.
+ *
+ * `isEnd` signals that this is an exclusive end position: prefer ending at the
+ * last char of the previous node rather than the first char of the next one.
+ */
+function normPosToNodeOffset(
+  normPos: number,
+  entries: TextNodeEntry[],
+  isEnd = false,
+): { node: Text; rawOffset: number } | null {
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]
+    if (normPos >= entry.normStart && normPos < entry.normEnd) {
+      const localNorm = normPos - entry.normStart
+      return { node: entry.node, rawOffset: entry.normToRaw[localNorm] }
+    }
+    // When isEnd and normPos is exactly at this entry's normEnd, end here
+    // rather than stepping into the next node.
+    if (isEnd && normPos === entry.normEnd && entry.normToRaw.length > 0) {
+      const raw = entry.node.textContent ?? ''
+      return { node: entry.node, rawOffset: raw.length }
+    }
+  }
+  // normPos == normText.length (end of last node)
+  const last = entries[entries.length - 1]
+  if (last && normPos === last.normEnd) {
+    const raw = last.node.textContent ?? ''
+    return { node: last.node, rawOffset: raw.length }
+  }
+  return null
+}
+
+/**
+ * Try context search: find `prefix + exact + suffix` in normText (all
+ * whitespace-normalised), then extract the exact portion.
+ * Returns a ResolvedRange or null.
+ */
+function contextSearch(
+  normText: string,
+  entries: TextNodeEntry[],
+  anchor: TextAnchor,
+): ResolvedRange | null {
+  const normPrefix = normalize(anchor.prefix)
+  const normExact = normalize(anchor.exact)
+  const normSuffix = normalize(anchor.suffix)
+
+  if (!normExact) return null
+
+  // Build a pattern that requires prefix immediately before exact and suffix after.
+  // Allow zero or one space at boundaries (the normalizer may or may not emit one).
+  const parts: string[] = []
+  if (normPrefix) parts.push(escapeRegex(normPrefix))
+  parts.push(`(${escapeRegex(normExact)})`)
+  if (normSuffix) parts.push(escapeRegex(normSuffix))
+
+  const pattern = parts.join('\\s?')
+  const regex = new RegExp(pattern)
+  const m = regex.exec(normText)
+  if (!m) return null
+
+  // Capture group 1 is the exact portion
+  const exactStart = m.index + (m[0].indexOf(m[1]))
+  const exactEnd = exactStart + m[1].length
+
+  const startResult = normPosToNodeOffset(exactStart, entries)
+  const endResult = normPosToNodeOffset(exactEnd, entries, true)
+  if (!startResult || !endResult) return null
+
+  return {
+    startNode: startResult.node,
+    startOffset: startResult.rawOffset,
+    endNode: endResult.node,
+    endOffset: endResult.rawOffset,
+    text: m[1],
+  }
+}
+
+/**
+ * Plain text fallback: find `exact` (whitespace-normalised) anywhere in
+ * normText using a simple indexOf.
+ */
+function plainTextSearch(
+  normText: string,
+  entries: TextNodeEntry[],
+  anchor: TextAnchor,
+): ResolvedRange | null {
+  const normExact = normalize(anchor.exact)
+  if (!normExact) return null
+
+  const idx = normText.indexOf(normExact)
+  if (idx === -1) return null
+
+  const exactEnd = idx + normExact.length
+  const startResult = normPosToNodeOffset(idx, entries)
+  const endResult = normPosToNodeOffset(exactEnd, entries, true)
+  if (!startResult || !endResult) return null
+
+  return {
+    startNode: startResult.node,
+    startOffset: startResult.rawOffset,
+    endNode: endResult.node,
+    endOffset: endResult.rawOffset,
+    text: normExact,
+  }
+}
+
+/**
+ * resolveAnchor: find the DOM range for a stored anchor.
+ *
+ * Tries in order:
+ *   1. Context search  — prefix + exact + suffix pattern in normalized DOM text.
+ *   2. Plain text search — simple indexOf(exact) on normalized DOM text.
+ *   3. Returns null if nothing found.
+ *
+ * The `markdown` parameter is reserved for future use.
+ */
+export function resolveAnchor(
+  article: HTMLElement,
+  _markdown: string,
+  anchor: TextAnchor,
+): ResolvedRange | null {
+  const { normText, entries } = buildNormIndex(article)
+  if (entries.length === 0) return null
+
+  return (
+    contextSearch(normText, entries, anchor) ??
+    plainTextSearch(normText, entries, anchor)
+  )
 }
