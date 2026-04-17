@@ -996,37 +996,67 @@ export function Reader() {
 
     // 2. Apply every current highlight fresh (closures capture latest `h`)
     for (const h of inlineHighlights) {
-      const searchText = h.text.trim()
+      const searchText = h.text?.trim() ?? h.anchor?.exact?.trim() ?? ''
       if (!searchText || searchText.length < 2) continue
 
-      const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
-      let node: Text | null
       let found = false
-      while ((node = walker.nextNode() as Text | null)) {
-        if (node.parentElement?.closest('[data-highlight-id]')) continue
-        const idx = node.textContent?.indexOf(searchText) ?? -1
-        if (idx === -1) continue
-        const range = document.createRange()
-        range.setStart(node, idx)
-        range.setEnd(node, idx + searchText.length)
 
-        const span = document.createElement('span')
-        span.setAttribute('data-highlight-id', String(h.id))
-        span.setAttribute('data-highlight-color', h.color)
-        span.setAttribute('role', 'button')
-        span.setAttribute('tabindex', '0')
-        span.setAttribute('aria-label', `Highlighted: ${searchText.slice(0, 40)}${searchText.length > 40 ? '…' : ''}. Press Enter to edit.`)
-        span.style.cssText = `background-color: ${h.color}; border-radius: 2px; padding: 1px 0; cursor: pointer; transition: filter 120ms;`
-        span.title = h.note ? `Highlight · ${h.note}` : 'Highlight — click to edit'
-        // No per-span listeners — interaction handled by delegated handler below
-        try {
-          range.surroundContents(span)
-          found = true
-          break
-        } catch {
-          // Range spans multiple elements — skip this occurrence
+      // Try anchor-based resolution first (precise, survives minor edits)
+      if (h.anchor) {
+        const { markdown } = useStore.getState()
+        const resolved = resolveAnchor(article, markdown, h.anchor)
+        if (resolved) {
+          const range = document.createRange()
+          range.setStart(resolved.startNode, resolved.startOffset)
+          range.setEnd(resolved.endNode, resolved.endOffset)
+
+          const span = document.createElement('span')
+          span.setAttribute('data-highlight-id', String(h.id))
+          span.setAttribute('data-highlight-color', h.color)
+          span.setAttribute('role', 'button')
+          span.setAttribute('tabindex', '0')
+          span.setAttribute('aria-label', `Highlighted: ${searchText.slice(0, 40)}${searchText.length > 40 ? '…' : ''}. Press Enter to edit.`)
+          span.style.cssText = `background-color: ${h.color}; border-radius: 2px; padding: 1px 0; cursor: pointer; transition: filter 120ms;`
+          span.title = h.note ? `Highlight · ${h.note}` : 'Highlight — click to edit'
+
+          try {
+            range.surroundContents(span)
+            found = true
+          } catch { /* cross-element — skip to fallback */ }
         }
       }
+
+      // Fallback: TreeWalker indexOf (for old highlights without anchor)
+      if (!found) {
+        const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
+        let node: Text | null
+        while ((node = walker.nextNode() as Text | null)) {
+          if (node.parentElement?.closest('[data-highlight-id]')) continue
+          const idx = node.textContent?.indexOf(searchText) ?? -1
+          if (idx === -1) continue
+          const range = document.createRange()
+          range.setStart(node, idx)
+          range.setEnd(node, idx + searchText.length)
+
+          const span = document.createElement('span')
+          span.setAttribute('data-highlight-id', String(h.id))
+          span.setAttribute('data-highlight-color', h.color)
+          span.setAttribute('role', 'button')
+          span.setAttribute('tabindex', '0')
+          span.setAttribute('aria-label', `Highlighted: ${searchText.slice(0, 40)}${searchText.length > 40 ? '…' : ''}. Press Enter to edit.`)
+          span.style.cssText = `background-color: ${h.color}; border-radius: 2px; padding: 1px 0; cursor: pointer; transition: filter 120ms;`
+          span.title = h.note ? `Highlight · ${h.note}` : 'Highlight — click to edit'
+          // No per-span listeners — interaction handled by delegated handler below
+          try {
+            range.surroundContents(span)
+            found = true
+            break
+          } catch {
+            // Range spans multiple elements — skip this occurrence
+          }
+        }
+      }
+
       if (found) appliedHighlightIdsRef.current.add(h.id!)
     }
   }, [inlineHighlights])
