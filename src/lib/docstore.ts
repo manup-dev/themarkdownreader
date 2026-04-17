@@ -3,6 +3,7 @@ import MiniSearch from 'minisearch'
 import murmur from 'murmurhash-js'
 import { chunkMarkdown, extractToc, wordCount } from './markdown'
 import type { TocEntry } from '../store/useStore'
+import type { TextAnchor } from './anchor'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -48,6 +49,7 @@ export interface Highlight {
   color: string
   note: string
   createdAt: number
+  anchor?: TextAnchor     // structured position data (absent on old records)
 }
 
 export interface Comment {
@@ -59,6 +61,7 @@ export interface Comment {
   sectionId: string       // which TOC section this is in
   createdAt: number
   resolved: boolean       // can mark comments as resolved
+  anchor?: TextAnchor     // structured position data (absent on old records)
 }
 
 export interface SearchIndexBlob {
@@ -184,6 +187,10 @@ class MdReaderDB extends Dexie {
     this.version(7).stores({
       audioCache: '++id, contentHash, [contentHash+segmentIndex], createdAt',
     })
+    // v8: TextAnchor field added to highlights and comments.
+    // No index changes — anchor is stored inline, not indexed.
+    // Old records without anchor continue to work (field is optional).
+    this.version(8).stores({})
   }
 }
 
