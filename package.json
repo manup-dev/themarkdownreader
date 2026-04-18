@@ -1,8 +1,20 @@
 {
   "name": "md-reader",
-  "private": true,
+  "private": false,
   "version": "1.0.0",
   "type": "module",
+  "main": "dist-lib/md-reader.js",
+  "types": "dist-lib/md-reader.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist-lib/md-reader.js",
+      "types": "./dist-lib/md-reader.d.ts"
+    }
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
   "license": "MIT",
   "description": "Read it. Ship it. Comprehend any spec as a podcast or mind map, then highlight a passage and ship a grounded prompt to Claude Code — without the alt-tab. Local, offline, MIT.",
   "author": "md-reader contributors",
@@ -34,7 +46,8 @@
     "e2e": "npx playwright test",
     "e2e:headed": "npx playwright test --headed",
     "analyze": "ANALYZE=true npm run build",
-    "build:cli": "npm run build && cp -r dist cli/dist"
+    "build:cli": "npm run build && cp -r dist cli/dist",
+    "build:lib": "vite build --config vite.lib.config.ts"
   },
   "dependencies": {
     "@ain1084/audio-worklet-stream": "^2.0.2",
@@ -94,6 +107,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.57.0",
     "vite": "^8.0.1",
+    "vite-plugin-dts": "^4.5.4",
     "vitest": "^4.1.0"
   }
 }
