@@ -7,7 +7,7 @@ import { unloadGemma, getModelDownloadSizeMB } from '../lib/inference/gemma-engi
 import { RefreshCw } from 'lucide-react'
 import { isTelemetryEnabled, enableTelemetry, disableTelemetry, exportTelemetry, clearTelemetry, TRACKED_EVENTS } from '../lib/telemetry'
 import { getStorageBreakdown, MAX_STORAGE_MB, runEviction } from '../lib/storage-manager'
-import { clearAnalyses } from '../lib/docstore'
+import { useAdapter } from '../provider/hooks'
 import { FEATURE_FLAGS } from '../lib/feature-flags'
 import { useStore } from '../store/useStore'
 
@@ -35,6 +35,7 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
   const [preferred, setPreferred] = useState(() => getPreferredBackend() ?? 'auto')
   const [gemmaState, setGemmaState] = useState(() => getModelState())
   const [storage, setStorage] = useState<Awaited<ReturnType<typeof getStorageBreakdown>> | null>(null)
+  const adapter = useAdapter()
 
   useEffect(() => {
     return onModelProgress(setGemmaState)
@@ -323,7 +324,7 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
                 Clear old cache
               </button>
               <button
-                onClick={async () => { await clearAnalyses(); getStorageBreakdown().then(setStorage) }}
+                onClick={async () => { await adapter.clearAnalyses(); getStorageBreakdown().then(setStorage) }}
                 className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded bg-gray-800 hover:bg-gray-700"
               >
                 Clear analyses
