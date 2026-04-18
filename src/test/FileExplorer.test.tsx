@@ -106,6 +106,58 @@ describe('<FileExplorer>', () => {
     expect(useStore.getState().folderFiles).toBeNull()
   })
 
+  describe('Sort controls', () => {
+    it('renders files in natural-alphabetical order even when handed out-of-order', () => {
+      useStore.getState().setFolderSession(null, [
+        { path: '10-advanced.md', name: '10-advanced.md', content: '' },
+        { path: '08-notes.md', name: '08-notes.md', content: '' },
+        { path: '00-intro.md', name: '00-intro.md', content: '' },
+        { path: '07-setup.md', name: '07-setup.md', content: '' },
+      ])
+      render(<FileExplorer />)
+      const names = screen
+        .getAllByRole('button')
+        .map(b => b.textContent?.trim())
+        .filter((t): t is string => !!t && /\.md$/.test(t))
+      const order = ['00-intro.md', '07-setup.md', '08-notes.md', '10-advanced.md']
+      expect(names.slice(0, 4)).toEqual(order)
+    })
+
+    it('switching sort to Name (Z → A) reverses the list', () => {
+      useStore.getState().setFolderSession(null, [
+        { path: '01-a.md', name: '01-a.md', content: '' },
+        { path: '02-b.md', name: '02-b.md', content: '' },
+        { path: '03-c.md', name: '03-c.md', content: '' },
+      ])
+      render(<FileExplorer />)
+      const sortBtn = screen.getByRole('button', { name: /sort files/i })
+      fireEvent.click(sortBtn)
+      fireEvent.click(screen.getByRole('menuitemradio', { name: /z → a/i }))
+      const names = screen
+        .getAllByRole('button')
+        .map(b => b.textContent?.trim())
+        .filter((t): t is string => !!t && /\.md$/.test(t))
+      expect(names.slice(0, 3)).toEqual(['03-c.md', '02-b.md', '01-a.md'])
+      expect(useStore.getState().folderSortMode).toBe('name-desc')
+    })
+
+    it('Modified (newest) sorts by lastModified descending', () => {
+      useStore.getState().setFolderSession(null, [
+        { path: 'old.md', name: 'old.md', content: '', lastModified: 100 },
+        { path: 'new.md', name: 'new.md', content: '', lastModified: 300 },
+        { path: 'mid.md', name: 'mid.md', content: '', lastModified: 200 },
+      ])
+      render(<FileExplorer />)
+      fireEvent.click(screen.getByRole('button', { name: /sort files/i }))
+      fireEvent.click(screen.getByRole('menuitemradio', { name: /modified \(newest\)/i }))
+      const names = screen
+        .getAllByRole('button')
+        .map(b => b.textContent?.trim())
+        .filter((t): t is string => !!t && /\.md$/.test(t))
+      expect(names.slice(0, 3)).toEqual(['new.md', 'mid.md', 'old.md'])
+    })
+  })
+
   describe('Links panel', () => {
     it('shows forward links (files this file links to)', () => {
       useStore.getState().setFolderSession(null, [

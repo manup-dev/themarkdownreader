@@ -62,8 +62,8 @@ describe('useStore — unified view state', () => {
       useStore.getState().setFolderSession(null, files)
       const s = useStore.getState()
       expect(s.folderFiles).toEqual([
-        { path: 'a.md', name: 'a.md' },
-        { path: 'b.md', name: 'b.md' },
+        { path: 'a.md', name: 'a.md', lastModified: 0 },
+        { path: 'b.md', name: 'b.md', lastModified: 0 },
       ])
       expect(s.folderFileContents?.get('a.md')).toBe('# A')
       expect(s.folderFileContents?.get('b.md')).toBe('# B')

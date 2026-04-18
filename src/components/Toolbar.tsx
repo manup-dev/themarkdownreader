@@ -388,6 +388,7 @@ export function Toolbar() {
                       path: f.path,
                       name: f.path.split('/').pop() ?? f.path,
                       content: f.content,
+                      lastModified: f.lastModified,
                     }))
                     useStore.getState().setFolderSession(result.handle ?? null, files)
                     // Override auto-select if current file is in the folder —

@@ -182,6 +182,7 @@ export function Workspace() {
       path: f.path,
       name: f.path.split('/').pop() ?? f.path,
       content: f.content,
+      lastModified: f.lastModified,
     }))
     useStore.getState().setFolderSession(result.handle ?? null, files)
     // Drop the user directly into reading the first file (not the Collection

@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react'
 import { FileText, Layers, ChevronRight, CheckCircle2, Hash, FolderOpen } from 'lucide-react'
 import { useStore } from '../store/useStore'
+import { sortFolderFiles } from '../lib/folder-sort'
 
 /**
  * Main-pane tab content for folder mode. Rendered when
@@ -18,13 +19,19 @@ export function CollectionView() {
   const folderFiles = useStore(s => s.folderFiles)
   const folderFileContents = useStore(s => s.folderFileContents)
   const folderHandle = useStore(s => s.folderHandle)
+  const folderSortMode = useStore(s => s.folderSortMode)
   const setActiveFile = useStore(s => s.setActiveFile)
   const setViewMode = useStore(s => s.setViewMode)
   const setMarkdown = useStore(s => s.setMarkdown)
 
+  const orderedFiles = useMemo(
+    () => (folderFiles ? sortFolderFiles(folderFiles, folderSortMode) : null),
+    [folderFiles, folderSortMode],
+  )
+
   // Per-file stats + unique heading count ("concepts") across the collection.
   const stats = useMemo(() => {
-    if (!folderFiles || !folderFileContents) {
+    if (!orderedFiles || !folderFileContents) {
       return {
         totalWords: 0,
         perFile: [] as Array<{ path: string; name: string; words: number; headings: number }>,
@@ -32,7 +39,7 @@ export function CollectionView() {
       }
     }
     const headingSet = new Set<string>()
-    const perFile = folderFiles.map(f => {
+    const perFile = orderedFiles.map(f => {
       const content = folderFileContents.get(f.path) ?? ''
       // Word count: strip fences/inline code/punctuation
       const plain = content
@@ -50,7 +57,7 @@ export function CollectionView() {
     })
     const totalWords = perFile.reduce((sum, f) => sum + f.words, 0)
     return { totalWords, perFile, concepts: headingSet.size }
-  }, [folderFiles, folderFileContents])
+  }, [orderedFiles, folderFileContents])
 
   // Collection completion: based on md-reader-viewed-files:<folderName>
   const viewedMap = useMemo(() => {
@@ -68,19 +75,19 @@ export function CollectionView() {
   }, [setActiveFile, setViewMode])
 
   const handleViewAllAsOne = useCallback(() => {
-    if (!folderFiles || !folderFileContents) return
+    if (!orderedFiles || !folderFileContents) return
     // Merge every file into one synthetic document. Prefix each file
     // with an H1 header carrying its name so the merged view has
     // structure for Mind Map / Treemap / Graph views.
-    const merged = folderFiles
+    const merged = orderedFiles
       .map(f => {
         const content = folderFileContents.get(f.path) ?? ''
         return `# ${f.name}\n\n${content}`
       })
       .join('\n\n---\n\n')
-    setMarkdown(merged, `${folderFiles.length} files merged`)
+    setMarkdown(merged, `${orderedFiles.length} files merged`)
     setViewMode('read')
-  }, [folderFiles, folderFileContents, setMarkdown, setViewMode])
+  }, [orderedFiles, folderFileContents, setMarkdown, setViewMode])
 
   if (!folderFiles) {
     return (

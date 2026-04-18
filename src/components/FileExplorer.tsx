@@ -1,7 +1,10 @@
-import { useCallback, useMemo, useState } from 'react'
-import { FolderOpen, X, ChevronRight, ChevronDown, Link as LinkIcon, ArrowRight, ArrowLeft, RefreshCw } from 'lucide-react'
-import { useStore } from '../store/useStore'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FolderOpen, X, ChevronRight, ChevronDown, Link as LinkIcon, ArrowRight, ArrowLeft, RefreshCw, ArrowDownUp, Check } from 'lucide-react'
+import { useStore, type FolderSortMode } from '../store/useStore'
 import { useActiveSection, type Heading } from '../hooks/useActiveSection'
+import { sortFolderFiles, folderSortLabels } from '../lib/folder-sort'
+
+const SORT_MODES: FolderSortMode[] = ['name-asc', 'name-desc', 'mtime-desc', 'mtime-asc']
 
 /**
  * Sidebar file tree for folder-browsing mode. Renders folderFiles from
@@ -62,8 +65,10 @@ export function FileExplorer() {
   const activeFilePath = useStore(s => s.activeFilePath)
   const sidebarExpandedFile = useStore(s => s.sidebarExpandedFile)
   const folderHandle = useStore(s => s.folderHandle)
+  const folderSortMode = useStore(s => s.folderSortMode)
   const setActiveFile = useStore(s => s.setActiveFile)
   const setSidebarExpandedFile = useStore(s => s.setSidebarExpandedFile)
+  const setFolderSortMode = useStore(s => s.setFolderSortMode)
   const closeFolderSession = useStore(s => s.closeFolderSession)
   const refreshFolder = useStore(s => s.refreshFolder)
   const toc = useStore(s => s.toc)
@@ -71,6 +76,24 @@ export function FileExplorer() {
   const [linksOpen, setLinksOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshToast, setRefreshToast] = useState<string | null>(null)
+  const [sortMenuOpen, setSortMenuOpen] = useState(false)
+  const sortMenuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!sortMenuOpen) return
+    const onDocClick = (e: MouseEvent) => {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
+        setSortMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [sortMenuOpen])
+
+  const sortedFiles = useMemo(
+    () => (folderFiles ? sortFolderFiles(folderFiles, folderSortMode) : null),
+    [folderFiles, folderSortMode],
+  )
 
   const handleRefresh = useCallback(async () => {
     if (refreshing) return
@@ -169,6 +192,48 @@ export function FileExplorer() {
           Folder
         </h3>
         <div className="flex items-center gap-1">
+          <div className="relative" ref={sortMenuRef}>
+            <button
+              type="button"
+              onClick={() => setSortMenuOpen(v => !v)}
+              aria-label="Sort files"
+              aria-haspopup="menu"
+              aria-expanded={sortMenuOpen}
+              title={`Sort: ${folderSortLabels[folderSortMode]}`}
+              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+            >
+              <ArrowDownUp className="h-3.5 w-3.5" />
+            </button>
+            {sortMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Sort files by"
+                className="absolute right-0 top-full mt-1 z-20 min-w-[10.5rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg py-1"
+              >
+                {SORT_MODES.map(mode => {
+                  const active = mode === folderSortMode
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={active}
+                      onClick={() => { setFolderSortMode(mode); setSortMenuOpen(false) }}
+                      className={
+                        'flex items-center gap-2 w-full px-2.5 py-1.5 text-left text-xs ' +
+                        (active
+                          ? 'text-blue-600 dark:text-blue-400 font-medium'
+                          : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800')
+                      }
+                    >
+                      <Check className={'h-3 w-3 shrink-0 ' + (active ? 'opacity-100' : 'opacity-0')} />
+                      {folderSortLabels[mode]}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
           {folderHandle && (
             <button
               type="button"
@@ -199,7 +264,7 @@ export function FileExplorer() {
       )}
 
       <ul className="flex-1 overflow-y-auto py-1 min-h-0">
-        {folderFiles.map((file) => {
+        {(sortedFiles ?? folderFiles).map((file) => {
           const isActive = activeFilePath === file.path
           const isExpanded = sidebarExpandedFile === file.path
           return (

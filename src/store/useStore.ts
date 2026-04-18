@@ -62,6 +62,7 @@ const idbStorage: StateStorage = {
 
 export type Theme = 'light' | 'dark' | 'sepia' | 'high-contrast'
 export type ViewMode = 'read' | 'mindmap' | 'summary-cards' | 'treemap' | 'knowledge-graph' | 'coach' | 'podcast' | 'diagram' | 'workspace' | 'cross-doc-graph' | 'correlation' | 'similarity-map' | 'collection'
+export type FolderSortMode = 'name-asc' | 'name-desc' | 'mtime-desc' | 'mtime-asc'
 
 export interface TocEntry {
   id: string
@@ -125,21 +126,23 @@ export interface DocumentState {
 
   // Unified view state (added 2026-04-15)
   folderHandle: FileSystemDirectoryHandle | null
-  folderFiles: Array<{ path: string; name: string }> | null
+  folderFiles: Array<{ path: string; name: string; lastModified: number }> | null
   folderFileContents: Map<string, string> | null
   activeFilePath: string | null
   sidebarCollapsed: boolean
   sidebarExpandedFile: string | null
+  folderSortMode: FolderSortMode
 
   // Unified view actions
   setFolderSession: (
     handle: FileSystemDirectoryHandle | null,
-    files: Array<{ path: string; name: string; content: string }>
+    files: Array<{ path: string; name: string; content: string; lastModified?: number }>
   ) => void
   setActiveFile: (path: string | null) => void
   closeFolderSession: () => void
   toggleSidebar: () => void
   setSidebarExpandedFile: (path: string | null) => void
+  setFolderSortMode: (mode: FolderSortMode) => void
   navigateToPath: (relOrAbsPath: string) => boolean
   hydrateFolderFromCache: () => Promise<void>
   refreshFolder: () => Promise<{ ok: true; added: number; changed: number; removed: number } | { ok: false; reason: string }>
@@ -266,9 +269,12 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   sidebarCollapsed: (typeof localStorage !== 'undefined'
     && localStorage.getItem('md-reader-sidebar-collapsed') === 'true'),
   sidebarExpandedFile: null,
+  folderSortMode: (typeof localStorage !== 'undefined'
+    && (localStorage.getItem('md-reader-folder-sort') as FolderSortMode))
+    || 'name-asc',
 
   setFolderSession: (handle, files) => {
-    const ordered = files.map(f => ({ path: f.path, name: f.name }))
+    const ordered = files.map(f => ({ path: f.path, name: f.name, lastModified: f.lastModified ?? 0 }))
     const contents = new Map<string, string>()
     files.forEach(f => contents.set(f.path, f.content))
 
@@ -358,6 +364,13 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   },
 
   setSidebarExpandedFile: (path) => set({ sidebarExpandedFile: path }),
+
+  setFolderSortMode: (mode) => {
+    if (typeof localStorage !== 'undefined') {
+      try { localStorage.setItem('md-reader-folder-sort', mode) } catch { /* quota */ }
+    }
+    set({ folderSortMode: mode })
+  },
 
   navigateToPath: (relOrAbsPath) => {
     // Resolve intra-collection markdown link. Examples:
@@ -468,6 +481,7 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
         path: f.path,
         name: f.path.split('/').pop() ?? f.path,
         content: f.content,
+        lastModified: f.lastModified,
       }))
       get().setFolderSession(handle, mapped)
       // Prefer keeping the previously active file if it still exists.
