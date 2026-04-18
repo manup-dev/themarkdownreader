@@ -114,7 +114,7 @@ export function SelectionMenu() {
   const refreshHighlights = useCallback(async () => {
     if (!activeDocId) return
     setHighlights(await adapter.getHighlights(activeDocId))
-  }, [activeDocId])
+  }, [activeDocId, adapter])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { refreshHighlights() }, [refreshHighlights])
@@ -207,7 +207,7 @@ export function SelectionMenu() {
     // Notify Reader to re-apply inline highlight spans immediately
     window.dispatchEvent(new CustomEvent('md-reader-highlight-changed'))
     trackEvent('highlight_added')
-  }, [menu, activeDocId, refreshHighlights])
+  }, [menu, activeDocId, refreshHighlights, adapter])
 
   const handleAskAI = useCallback(async (prompt: string) => {
     if (!menu) return
@@ -309,18 +309,18 @@ export function SelectionMenu() {
     toast.textContent = 'Comment saved'
     document.body.appendChild(toast)
     setTimeout(() => toast.remove(), 2000)
-  }, [menu, activeDocId, commentText])
+  }, [menu, activeDocId, commentText, adapter])
 
   const handleRemoveHighlight = useCallback(async (id: number) => {
     await adapter.removeHighlight(id)
     await refreshHighlights()
     window.dispatchEvent(new CustomEvent('md-reader-highlight-changed'))
-  }, [refreshHighlights])
+  }, [refreshHighlights, adapter])
 
   const handleUpdateNote = useCallback(async (id: number, note: string) => {
     await adapter.updateHighlightNote(id, note)
     await refreshHighlights()
-  }, [refreshHighlights])
+  }, [refreshHighlights, adapter])
 
   const exportHighlights = useCallback(() => {
     if (highlights.length === 0) return

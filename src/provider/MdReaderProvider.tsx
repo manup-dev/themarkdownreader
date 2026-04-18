@@ -1,7 +1,6 @@
-import { createContext, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import type { StorageAdapter } from '../types/storage-adapter'
-
-export const AdapterContext = createContext<StorageAdapter | null>(null)
+import { AdapterContext } from './AdapterContext'
 
 interface MdReaderProviderProps {
   adapter: StorageAdapter

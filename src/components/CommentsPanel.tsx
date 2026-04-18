@@ -35,7 +35,7 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
   const refresh = useCallback(async () => {
     if (!activeDocId) return
     setComments(await adapter.getComments(activeDocId))
-  }, [activeDocId])
+  }, [activeDocId, adapter])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { refresh() }, [refresh])
@@ -67,13 +67,13 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
   const handleResolve = useCallback(async (id: number, resolved: boolean) => {
     await adapter.updateComment(id, { resolved: !resolved })
     await refresh()
-  }, [refresh])
+  }, [refresh, adapter])
 
   const handleDelete = useCallback(async (id: number) => {
     if (!window.confirm('Delete this comment?')) return
     await adapter.removeComment(id)
     await refresh()
-  }, [refresh])
+  }, [refresh, adapter])
 
   const handleJumpTo = useCallback((comment: Comment) => {
     useStore.getState().setViewMode('read')

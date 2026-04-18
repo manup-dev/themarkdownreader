@@ -114,7 +114,7 @@ export function Workspace() {
     if (allDocs.length >= 2) trackEvent('library_multi_doc')
     const s = await adapter.getDocStats()
     setStats(s)
-  }, [])
+  }, [adapter])
 
   // Request persistent storage on mount
   useEffect(() => { adapter.requestPersistentStorage() }, [adapter])
@@ -163,7 +163,7 @@ export function Workspace() {
     }
     setIndexProgress(null)
     setLoading(false)
-  }, [refresh])
+  }, [refresh, adapter])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -187,21 +187,21 @@ export function Workspace() {
     // Drop the user directly into reading the first file (not the Collection
     // dashboard). They can click the Collection tab anytime for the dashboard.
     setViewMode('read')
-  }, [setViewMode])
+  }, [setViewMode, adapter])
 
   const handleRemove = useCallback(async (docId: number) => {
     const doc = docs.find((d) => d.id === docId)
     if (!window.confirm(`Delete "${doc?.fileName ?? 'this document'}" from library?`)) return
     await adapter.removeDocument(docId)
     await refresh()
-  }, [refresh, docs])
+  }, [refresh, docs, adapter])
 
   const handleClearAll = useCallback(async () => {
     if (!window.confirm(`Delete all ${docs.length} documents from library? This cannot be undone.`)) return
     await adapter.clearAllData()
     await refresh()
     setOverview(null)
-  }, [refresh, docs.length])
+  }, [refresh, docs.length, adapter])
 
   const handleOverview = useCallback(async () => {
     setLoadingOverview(true)

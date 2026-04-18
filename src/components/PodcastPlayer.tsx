@@ -150,7 +150,7 @@ export function PodcastPlayer() {
     } catch {
       return null
     }
-  }, [])
+  }, [adapter])
 
   /** Pre-fill audio buffer. Parallel IndexedDB reads, sequential synthesis fallback. */
   const fillBuffer = useCallback(async (segments: PodcastSegment[], from: number, to: number) => {
@@ -180,7 +180,7 @@ export function PodcastPlayer() {
       if (audioCache.current.has(i)) continue
       await getAudio(segments[i], i)
     }
-  }, [getAudio])
+  }, [getAudio, adapter])
 
   /** Background worker: continuously fills buffer ahead of playback */
   const startBufferWorker = useCallback((segments: PodcastSegment[]) => {
@@ -220,7 +220,7 @@ export function PodcastPlayer() {
 
     if (!playingRef.current) return
     await playPcm(audioData.audio, audioData.sampleRate, segment.rate * speed)
-  }, [speed])
+  }, [speed, getAudio])
 
   // ─── Browser TTS (Web Speech API) ──────────────────────────────────────────
 
@@ -362,7 +362,7 @@ export function PodcastPlayer() {
       document.body.appendChild(toast)
       setTimeout(() => toast.remove(), 6000)
     }
-  }, [markdown, fileName, activeDocId, script, setScript, duration])
+  }, [markdown, fileName, activeDocId, script, setScript, duration, adapter])
 
   const handlePlay = useCallback(() => {
     if (!script) {

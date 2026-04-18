@@ -167,7 +167,7 @@ export function CrossDocGraph() {
 
     setLoading(false)
     return () => simulation.stop()
-  }, [theme, openDocument])
+  }, [theme, openDocument, adapter])
 
   useEffect(() => {
     let cleanup: (() => void) | undefined

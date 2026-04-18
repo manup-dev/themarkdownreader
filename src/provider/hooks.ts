@@ -1,5 +1,5 @@
 import { useContext } from 'react'
-import { AdapterContext } from './MdReaderProvider'
+import { AdapterContext } from './AdapterContext'
 import { useStore } from '../store/useStore'
 import type { StorageAdapter } from '../types/storage-adapter'
 
