@@ -2,14 +2,15 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Play, Pause, Square, SkipForward, SkipBack, Mic, Loader2, ChevronDown, Sparkles, Volume2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { generatePodcast, generateDeepPodcast, buildPodcastSegments, type PodcastScript, type PodcastSegment, type PodcastDuration } from '../lib/podcast'
-import { getAnalysisByDocId, getCachedAudio, cacheAudioSegment } from '../lib/docstore'
-import type { DocumentAnalysis } from '../lib/docstore'
+import { useAdapter } from '../provider/hooks'
+import type { DocumentAnalysis } from '../types/storage-adapter'
 import { isKokoroReady, loadKokoro, synthesize, playPcm, getKokoroStatus, closeAudioContext } from '../lib/kokoro-tts'
 
 type PlaybackState = 'idle' | 'generating' | 'playing' | 'paused'
 type VoiceEngine = 'kokoro' | 'browser'
 
 export function PodcastPlayer() {
+  const adapter = useAdapter()
   const markdown = useStore(s => s.markdown)
   const fileName = useStore(s => s.fileName)
   const activeDocId = useStore(s => s.activeDocId)
@@ -127,7 +128,7 @@ export function PodcastPlayer() {
     // 2. IndexedDB cache (instant replay — no re-synthesis)
     if (contentHashRef.current) {
       try {
-        const dbCached = await getCachedAudio(contentHashRef.current, idx)
+        const dbCached = await adapter.getCachedAudio(contentHashRef.current, idx)
         if (dbCached) {
           const audio = new Float32Array(dbCached.pcm)
           const result = { audio, sampleRate: dbCached.sampleRate }
@@ -143,7 +144,7 @@ export function PodcastPlayer() {
       audioCache.current.set(idx, result)
       // Save to IndexedDB for future replay (fire and forget)
       if (contentHashRef.current) {
-        cacheAudioSegment(contentHashRef.current, idx, result.audio, result.sampleRate).catch(() => {})
+        adapter.cacheAudioSegment(contentHashRef.current, idx, result.audio, result.sampleRate).catch(() => {})
       }
       return result
     } catch {
@@ -164,7 +165,7 @@ export function PodcastPlayer() {
     if (contentHashRef.current) {
       const dbReads = needed.map(async (i) => {
         try {
-          const cached = await getCachedAudio(contentHashRef.current, i)
+          const cached = await adapter.getCachedAudio(contentHashRef.current, i)
           if (cached) {
             audioCache.current.set(i, { audio: new Float32Array(cached.pcm), sampleRate: cached.sampleRate })
           }
@@ -338,7 +339,7 @@ export function PodcastPlayer() {
       setScript(podcast)
       contentHashRef.current = podcast.contentHash
       if (activeDocId) {
-        const a = await getAnalysisByDocId(activeDocId)
+        const a = await adapter.getAnalysisByDocId(activeDocId)
         if (a && a.relatedDocIds.length > 0) {
           setAnalysis(a)
           setCanGoDeeper(true)
