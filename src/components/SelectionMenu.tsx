@@ -5,7 +5,8 @@ import { Highlighter, Search, Bot, BookOpen, Copy, X, Loader2, Check, Quote, Fil
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
-import { addHighlight, getHighlights, removeHighlight, updateHighlightNote, addComment, addDocument, type Highlight } from '../lib/docstore'
+import { useAdapter } from '../provider/hooks'
+import type { Highlight } from '../types/storage-adapter'
 import { chat } from '../lib/ai'
 import { trackEvent } from '../lib/telemetry'
 
@@ -95,6 +96,7 @@ interface MenuPos {
 export function SelectionMenu() {
   const activeDocId = useStore((s) => s.activeDocId)
   const enabledFeatures = useStore((s) => s.enabledFeatures)
+  const adapter = useAdapter()
   const [menu, setMenu] = useState<MenuPos | null>(null)
   const [aiResponse, setAiResponse] = useState<string | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
@@ -111,7 +113,7 @@ export function SelectionMenu() {
 
   const refreshHighlights = useCallback(async () => {
     if (!activeDocId) return
-    setHighlights(await getHighlights(activeDocId))
+    setHighlights(await adapter.getHighlights(activeDocId))
   }, [activeDocId])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -183,11 +185,11 @@ export function SelectionMenu() {
     if (!docId) {
       const { markdown, fileName, setActiveDocId } = useStore.getState()
       if (!markdown || !fileName) return
-      const result = await addDocument(fileName, markdown, { skipPostProcessing: true })
+      const result = await adapter.addDocument(fileName, markdown, { skipPostProcessing: true })
       docId = result.docId
       setActiveDocId(docId)
     }
-    await addHighlight({
+    await adapter.addHighlight({
       docId,
       text: menu.text,
       startOffset: menu.anchor?.markdownStart ?? 0,
@@ -275,7 +277,7 @@ export function SelectionMenu() {
     if (!docId) {
       const { markdown, fileName, setActiveDocId } = useStore.getState()
       if (!markdown || !fileName) return
-      const result = await addDocument(fileName, markdown, { skipPostProcessing: true })
+      const result = await adapter.addDocument(fileName, markdown, { skipPostProcessing: true })
       docId = result.docId
       setActiveDocId(docId)
     }
@@ -283,7 +285,7 @@ export function SelectionMenu() {
     // still live); fall back to activeSection only if that wasn't computable.
     const sectionId = menu.sectionId ?? useStore.getState().activeSection ?? ''
     const author = localStorage.getItem('md-reader-username') || 'You'
-    await addComment({
+    await adapter.addComment({
       docId,
       selectedText: menu.text,
       comment: commentText.trim(),
@@ -310,13 +312,13 @@ export function SelectionMenu() {
   }, [menu, activeDocId, commentText])
 
   const handleRemoveHighlight = useCallback(async (id: number) => {
-    await removeHighlight(id)
+    await adapter.removeHighlight(id)
     await refreshHighlights()
     window.dispatchEvent(new CustomEvent('md-reader-highlight-changed'))
   }, [refreshHighlights])
 
   const handleUpdateNote = useCallback(async (id: number, note: string) => {
-    await updateHighlightNote(id, note)
+    await adapter.updateHighlightNote(id, note)
     await refreshHighlights()
   }, [refreshHighlights])
 
