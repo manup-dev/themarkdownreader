@@ -12,6 +12,8 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { SelectionMenu } from '../components/SelectionMenu'
 import { useStore } from '../store/useStore'
+import { MdReaderProvider } from '../provider/MdReaderProvider'
+import type { StorageAdapter } from '../types/storage-adapter'
 
 // jsdom does not implement Range.getBoundingClientRect — stub it so the
 // SelectionMenu's mouseup handler (which positions the popover) can run.
@@ -41,6 +43,19 @@ vi.mock('../lib/docstore', async () => {
     addDocument: (a: unknown, b: unknown) => addDocumentMock(a, b),
   }
 })
+
+const mockAdapter = {
+  addHighlight: (arg: unknown) => addHighlightMock(arg),
+  getHighlights: (arg: unknown) => getHighlightsMock(arg),
+  removeHighlight: vi.fn(),
+  updateHighlightNote: vi.fn(),
+  addComment: (arg: unknown) => addCommentMock(arg),
+  addDocument: (a: unknown, b: unknown) => addDocumentMock(a, b),
+} as unknown as StorageAdapter
+
+function renderWithProvider(ui: React.ReactElement) {
+  return render(<MdReaderProvider adapter={mockAdapter}>{ui}</MdReaderProvider>)
+}
 
 // Helper: fake a non-collapsed text selection inside the document
 function fakeSelection(text: string) {
@@ -76,7 +91,7 @@ describe('<SelectionMenu> — simplified primary actions', () => {
   })
 
   it('shows exactly four primary actions (Highlight, Comment, Copy, Chat)', async () => {
-    render(<SelectionMenu />)
+    renderWithProvider(<SelectionMenu />)
     const host = fakeSelection('some selected text')
 
     fireEvent.mouseUp(document, { target: host })
@@ -99,7 +114,7 @@ describe('<SelectionMenu> — simplified primary actions', () => {
     // Seed last-used color = green so we can prove it's honored
     localStorage.setItem('md-reader-last-highlight-color', '#bbf7d0')
 
-    render(<SelectionMenu />)
+    renderWithProvider(<SelectionMenu />)
     const host = fakeSelection('phrase to highlight')
     fireEvent.mouseUp(document, { target: host })
 
@@ -120,7 +135,7 @@ describe('<SelectionMenu> — simplified primary actions', () => {
   })
 
   it('strips trailing punctuation and dangling conjunctions from the captured selection text', async () => {
-    render(<SelectionMenu />)
+    renderWithProvider(<SelectionMenu />)
     // Dirty selection: trailing comma, space, and "and"
     const host = fakeSelection('shipping are two distinct problems, and')
     fireEvent.mouseUp(document, { target: host })
@@ -158,7 +173,7 @@ describe('<SelectionMenu> — simplified primary actions', () => {
     sel.removeAllRanges()
     sel.addRange(range)
 
-    render(<SelectionMenu />)
+    renderWithProvider(<SelectionMenu />)
     fireEvent.mouseUp(document, { target: para })
     await waitFor(() => screen.getByRole('button', { name: /^comment$/i }))
     fireEvent.click(screen.getByRole('button', { name: /^comment$/i }))
@@ -175,7 +190,7 @@ describe('<SelectionMenu> — simplified primary actions', () => {
   })
 
   it('right-clicking Highlight opens the color swatch row (for explicit color choice)', async () => {
-    render(<SelectionMenu />)
+    renderWithProvider(<SelectionMenu />)
     const host = fakeSelection('phrase to highlight')
     fireEvent.mouseUp(document, { target: host })
 
@@ -192,7 +207,7 @@ describe('<SelectionMenu> — simplified primary actions', () => {
   })
 
   it('clicking Comment reveals an inline composer', async () => {
-    render(<SelectionMenu />)
+    renderWithProvider(<SelectionMenu />)
     const host = fakeSelection('passage needing a note')
     fireEvent.mouseUp(document, { target: host })
 
@@ -207,7 +222,7 @@ describe('<SelectionMenu> — simplified primary actions', () => {
   })
 
   it('secondary actions appear under the More (⋯) menu, not the primary row', async () => {
-    render(<SelectionMenu />)
+    renderWithProvider(<SelectionMenu />)
     const host = fakeSelection('selected')
     fireEvent.mouseUp(document, { target: host })
 

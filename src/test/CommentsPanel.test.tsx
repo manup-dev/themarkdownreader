@@ -13,6 +13,8 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/re
 import { CommentsPanel } from '../components/CommentsPanel'
 import { useStore } from '../store/useStore'
 import type { Comment } from '../lib/docstore'
+import { MdReaderProvider } from '../provider/MdReaderProvider'
+import type { StorageAdapter } from '../types/storage-adapter'
 
 const sampleComment: Comment = {
   id: 7,
@@ -26,14 +28,26 @@ const sampleComment: Comment = {
 }
 
 const getCommentsMock = vi.fn<(docId: number) => Promise<Comment[]>>(async () => [sampleComment])
+const updateCommentMock = vi.fn()
+const removeCommentMock = vi.fn()
+
+const mockAdapter = {
+  getComments: (docId: number) => getCommentsMock(docId),
+  updateComment: updateCommentMock,
+  removeComment: removeCommentMock,
+} as unknown as StorageAdapter
+
+function renderWithProvider(ui: React.ReactElement) {
+  return render(<MdReaderProvider adapter={mockAdapter}>{ui}</MdReaderProvider>)
+}
 
 vi.mock('../lib/docstore', async () => {
   const actual = await vi.importActual<typeof import('../lib/docstore')>('../lib/docstore')
   return {
     ...actual,
     getComments: (docId: number) => getCommentsMock(docId),
-    updateComment: vi.fn(),
-    removeComment: vi.fn(),
+    updateComment: updateCommentMock,
+    removeComment: removeCommentMock,
   }
 })
 
@@ -81,7 +95,7 @@ describe('<CommentsPanel> — Jump to lands on the highlighted text', () => {
 
   it('scrolls to the inline [data-comment-highlight] span, not the section heading', async () => {
     const { spanScrollSpy, headingScrollSpy } = buildArticle()
-    render(<CommentsPanel onClose={() => {}} />)
+    renderWithProvider(<CommentsPanel onClose={() => {}} />)
 
     // Wait for the async getComments to populate and the Jump button to render
     const jumpBtn = await waitFor(() => screen.getByTitle(/jump to highlighted text|jump to section/i))
@@ -96,7 +110,7 @@ describe('<CommentsPanel> — Jump to lands on the highlighted text', () => {
 
   it('applies a teal outline flash to the highlighted span', async () => {
     const { highlightSpan } = buildArticle()
-    render(<CommentsPanel onClose={() => {}} />)
+    renderWithProvider(<CommentsPanel onClose={() => {}} />)
 
     const jumpBtn = await waitFor(() => screen.getByTitle(/jump to highlighted text/i))
     fireEvent.click(jumpBtn)
@@ -107,7 +121,7 @@ describe('<CommentsPanel> — Jump to lands on the highlighted text', () => {
 
   it('clicking the quoted-text block also jumps to the highlight', async () => {
     const { spanScrollSpy, headingScrollSpy } = buildArticle()
-    render(<CommentsPanel onClose={() => {}} />)
+    renderWithProvider(<CommentsPanel onClose={() => {}} />)
 
     const quoteBtn = await waitFor(() => screen.getByTestId('comment-quote-jump'))
     fireEvent.click(quoteBtn)
@@ -119,7 +133,7 @@ describe('<CommentsPanel> — Jump to lands on the highlighted text', () => {
   it('collapses the Your-name field to an avatar chip and expands to an input on click', async () => {
     buildArticle()
     localStorage.setItem('md-reader-username', 'Ada Lovelace')
-    render(<CommentsPanel onClose={() => {}} />)
+    renderWithProvider(<CommentsPanel onClose={() => {}} />)
 
     // Chip is visible, input is not
     const chip = await waitFor(() => screen.getByTestId('username-chip'))
@@ -141,7 +155,7 @@ describe('<CommentsPanel> — Jump to lands on the highlighted text', () => {
 
   it('renders comment actions as icon-only buttons with tooltips, and hides Delete behind the overflow menu', async () => {
     buildArticle()
-    render(<CommentsPanel onClose={() => {}} />)
+    renderWithProvider(<CommentsPanel onClose={() => {}} />)
 
     // Jump + Resolve are visible as icon-only buttons; Delete is not visible yet
     await waitFor(() => screen.getByTitle(/jump to highlighted text/i))
@@ -165,7 +179,7 @@ describe('<CommentsPanel> — Jump to lands on the highlighted text', () => {
     // Remove the highlight span before the click to simulate missing/stale text
     document.querySelector('[data-comment-highlight="7"]')?.remove()
 
-    render(<CommentsPanel onClose={() => {}} />)
+    renderWithProvider(<CommentsPanel onClose={() => {}} />)
     const jumpBtn = await waitFor(() => screen.getByTitle(/jump to highlighted text|jump to section/i))
     fireEvent.click(jumpBtn)
 
