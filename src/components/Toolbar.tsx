@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap, GitBranch, Library, ArrowLeft, Save, Check, Settings, Contrast, Type, Maximize, Printer, Palette, SlidersHorizontal, ChevronDown, Download, Mic, Shapes, PanelLeft, FolderOpen } from 'lucide-react'
+import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap, GitBranch, Library, ArrowLeft, Save, Check, Settings, Contrast, Type, Maximize, Printer, Palette, SlidersHorizontal, ChevronDown, Download, Mic, Shapes, PanelLeft, FolderOpen, Home } from 'lucide-react'
 import { AiSettings } from './AiSettings'
 import { AiLoadingIndicator } from './AiLoadingIndicator'
 import { useStore, type Theme, type ViewMode } from '../store/useStore'
@@ -48,6 +48,8 @@ export function Toolbar() {
   const [showAppearance, setShowAppearance] = useState(false)
   const [showMode, setShowMode] = useState(false)
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
+  const [showFolderCloseConfirm, setShowFolderCloseConfirm] = useState(false)
+  const [skipFolderConfirmChecked, setSkipFolderConfirmChecked] = useState(false)
 
   const appearanceRef = useRef<HTMLDivElement>(null)
   const modeRef = useRef<HTMLDivElement>(null)
@@ -121,12 +123,6 @@ export function Toolbar() {
 
   const doClose = useCallback(() => {
     setShowCloseConfirm(false)
-    // Folder mode: clear the active file but KEEP the folder session.
-    // This returns the user to the folder dashboard / empty reader, not the upload screen.
-    if (useStore.getState().folderFiles !== null) {
-      useStore.getState().setActiveFile(null)
-      return
-    }
     if (workspaceMode) { backToWorkspace() } else {
       const state = useStore.getState()
       const wordsRead = Math.round(state.markdown.split(/\s+/).length * (state.readingProgress / 100))
@@ -145,13 +141,45 @@ export function Toolbar() {
     }
   }, [workspaceMode, backToWorkspace, reset])
 
+  const doCloseFolder = useCallback(() => {
+    setShowFolderCloseConfirm(false)
+    if (skipFolderConfirmChecked) {
+      try { localStorage.setItem('md-reader-skip-folder-close-confirm', 'true') } catch { /* quota */ }
+    }
+    useStore.getState().closeFolderSession()
+    window.location.hash = ''
+  }, [skipFolderConfirmChecked])
+
   const handleClose = useCallback(() => {
+    // Folder mode: closing the toolbar X returns to the upload screen
+    // (previously it only cleared the active file, leaving users stuck in a
+    // dead-end state with the sidebar still open). Confirm first unless the
+    // user has opted out via "Don't ask again".
+    if (useStore.getState().folderFiles !== null) {
+      const skip = typeof localStorage !== 'undefined'
+        && localStorage.getItem('md-reader-skip-folder-close-confirm') === 'true'
+      if (skip) {
+        useStore.getState().closeFolderSession()
+        window.location.hash = ''
+        return
+      }
+      setSkipFolderConfirmChecked(false)
+      setShowFolderCloseConfirm(true)
+      return
+    }
     if (!workspaceMode && !activeDocId && markdown) {
       setShowCloseConfirm(true)
       return
     }
     doClose()
   }, [workspaceMode, activeDocId, markdown, doClose])
+
+  const goHome = useCallback(() => {
+    const store = useStore.getState()
+    if (store.folderFiles !== null) store.closeFolderSession()
+    store.reset()
+    window.location.hash = ''
+  }, [])
 
   const handleSaveAndClose = useCallback(async () => {
     if (!markdown || !fileName) return
@@ -164,8 +192,16 @@ export function Toolbar() {
     <div className="border-b border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white/80 dark:bg-gray-900/80 sepia:bg-sepia-50/80 backdrop-blur-sm sticky top-0 z-40">
       {/* Top row */}
       <div className="flex items-center justify-between px-4 py-2">
-        {/* Left: back + filename + progress + save */}
+        {/* Left: home + back + filename + progress + save */}
         <div className="flex items-center gap-2 min-w-0">
+          <button
+            onClick={goHome}
+            aria-label="Go to upload screen"
+            title="Home — back to upload screen"
+            className="p-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            <Home className="h-4 w-4" />
+          </button>
           {(workspaceMode || fromCollection) && markdown && (
             <button
               onClick={() => {
@@ -440,7 +476,13 @@ export function Toolbar() {
             <button
               onClick={handleClose}
               className="p-1.5 text-gray-500 hover:text-red-500 transition-colors"
-              title={workspaceMode ? 'Back to library' : 'Close document'}
+              title={
+                workspaceMode
+                  ? 'Back to library'
+                  : folderFiles !== null
+                    ? 'Close folder'
+                    : 'Close document'
+              }
             >
               {workspaceMode ? <Library className="h-4 w-4" /> : <X className="h-4 w-4" />}
             </button>
@@ -455,6 +497,39 @@ export function Toolbar() {
             </div>
           )}
           </div>
+
+      {/* Folder Close Confirm Modal */}
+      {showFolderCloseConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setShowFolderCloseConfirm(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4">
+            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">Close folder and return to home?</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">You'll leave the folder view and go back to the upload screen. Your highlights and comments stay saved.</p>
+            <label className="flex items-center gap-2 mb-5 text-xs text-gray-600 dark:text-gray-400 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={skipFolderConfirmChecked}
+                onChange={(e) => setSkipFolderConfirmChecked(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-600"
+              />
+              Don't ask me again
+            </label>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={doCloseFolder}
+                className="w-full px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+              >
+                Close folder
+              </button>
+              <button
+                onClick={() => setShowFolderCloseConfirm(false)}
+                className="w-full px-4 py-1.5 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Close Confirm Modal */}
       {showCloseConfirm && (
