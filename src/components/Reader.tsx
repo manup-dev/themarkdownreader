@@ -6,7 +6,8 @@ import remarkMath from 'remark-math'
 import { useStore } from '../store/useStore'
 import ScrollMinimap from './ScrollMinimap'
 import { extractToc, wordCount, estimateDifficulty, slugify } from '../lib/markdown'
-import { getComments, updateComment, removeComment, type Comment, getHighlights, addHighlight, removeHighlight, updateHighlightNote, updateHighlightColor, type Highlight } from '../lib/docstore'
+import { useAdapter } from '../provider/hooks'
+import type { Comment, Highlight } from '../types/storage-adapter'
 import { markProgrammaticScroll, isProgrammaticScroll } from '../lib/scroll-guard'
 import { trackEvent } from '../lib/telemetry'
 import { resolveAnchor } from '../lib/anchor'
@@ -213,6 +214,7 @@ export function Reader() {
   const toc = useStore((s) => s.toc)
   const readingProgress = useStore((s) => s.readingProgress)
   const fileName = useStore((s) => s.fileName)
+  const adapter = useAdapter()
   const contentRef = useRef<HTMLDivElement>(null)
   const sectionsReadCache = useRef(new Set<string>())
   const [prevDocId, setPrevDocId] = useState<number | null>(null)
@@ -729,7 +731,7 @@ export function Reader() {
   // Fetch comments when doc changes or when a comment is added/modified
   useEffect(() => {
     if (!activeDocId) { setInlineComments([]); appliedCommentIdsRef.current.clear(); return }
-    const refresh = () => getComments(activeDocId).then(setInlineComments)
+    const refresh = () => adapter.getComments(activeDocId).then(setInlineComments)
     refresh()
     // Listen for immediate refresh after comment save/edit/delete
     const onCommentChanged = () => refresh()
@@ -971,7 +973,7 @@ export function Reader() {
       })
       return
     }
-    const refresh = () => getHighlights(activeDocId).then(setInlineHighlights)
+    const refresh = () => adapter.getHighlights(activeDocId).then(setInlineHighlights)
     refresh()
     const onHighlightChanged = () => refresh()
     window.addEventListener('md-reader-highlight-changed', onHighlightChanged)
@@ -1535,8 +1537,8 @@ export function Reader() {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
                     if (!editingCommentText.trim()) return
-                    updateComment(commentPopover.comment.id!, { comment: editingCommentText.trim() }).then(() => {
-                      if (activeDocId) getComments(activeDocId).then(setInlineComments)
+                    adapter.updateComment(commentPopover.comment.id!, { comment: editingCommentText.trim() }).then(() => {
+                      if (activeDocId) adapter.getComments(activeDocId).then(setInlineComments)
                       setCommentPopover({ ...commentPopover, comment: { ...commentPopover.comment, comment: editingCommentText.trim() } })
                       setEditingCommentText(null)
                     })
@@ -1550,8 +1552,8 @@ export function Reader() {
                 <button
                   onClick={() => {
                     if (!editingCommentText.trim()) return
-                    updateComment(commentPopover.comment.id!, { comment: editingCommentText.trim() }).then(() => {
-                      if (activeDocId) getComments(activeDocId).then(setInlineComments)
+                    adapter.updateComment(commentPopover.comment.id!, { comment: editingCommentText.trim() }).then(() => {
+                      if (activeDocId) adapter.getComments(activeDocId).then(setInlineComments)
                       setCommentPopover({ ...commentPopover, comment: { ...commentPopover.comment, comment: editingCommentText.trim() } })
                       setEditingCommentText(null)
                     })
@@ -1578,8 +1580,8 @@ export function Reader() {
               </button>
               <button
                 onClick={() => {
-                  updateComment(commentPopover.comment.id!, { resolved: !commentPopover.comment.resolved }).then(() => {
-                    if (activeDocId) getComments(activeDocId).then(setInlineComments)
+                  adapter.updateComment(commentPopover.comment.id!, { resolved: !commentPopover.comment.resolved }).then(() => {
+                    if (activeDocId) adapter.getComments(activeDocId).then(setInlineComments)
                     appliedCommentIdsRef.current.delete(commentPopover.comment.id!)
                     setCommentPopover(null)
                     setEditingCommentText(null)
@@ -1593,8 +1595,8 @@ export function Reader() {
               <button
                 onClick={() => {
                   if (!window.confirm('Delete this comment?')) return
-                  removeComment(commentPopover.comment.id!).then(() => {
-                    if (activeDocId) getComments(activeDocId).then(setInlineComments)
+                  adapter.removeComment(commentPopover.comment.id!).then(() => {
+                    if (activeDocId) adapter.getComments(activeDocId).then(setInlineComments)
                     appliedCommentIdsRef.current.delete(commentPopover.comment.id!)
                     setCommentPopover(null)
                     setEditingCommentText(null)
@@ -1636,10 +1638,10 @@ export function Reader() {
                   // In-place color update — preserves id, createdAt and note
                   const h = highlightPopover.highlight
                   if (h.color === c) return
-                  await updateHighlightColor(h.id!, c)
+                  await adapter.updateHighlightColor(h.id!, c)
                   const updated = { ...h, color: c }
                   setHighlightPopover({ ...highlightPopover, highlight: updated })
-                  if (activeDocId) setInlineHighlights(await getHighlights(activeDocId))
+                  if (activeDocId) setInlineHighlights(await adapter.getHighlights(activeDocId))
                   window.dispatchEvent(new CustomEvent('md-reader-highlight-changed'))
                 }}
                 className={`w-6 h-6 rounded-full border-2 transition-all hover:scale-110 ${highlightPopover.highlight.color === c ? 'border-gray-700 dark:border-gray-200 ring-2 ring-offset-1 ring-gray-400' : 'border-gray-300 dark:border-gray-600'}`}
@@ -1657,8 +1659,8 @@ export function Reader() {
               onBlur={async (e) => {
                 const newNote = e.target.value.trim()
                 if (newNote === (highlightPopover.highlight.note ?? '')) return
-                await updateHighlightNote(highlightPopover.highlight.id!, newNote)
-                if (activeDocId) setInlineHighlights(await getHighlights(activeDocId))
+                await adapter.updateHighlightNote(highlightPopover.highlight.id!, newNote)
+                if (activeDocId) setInlineHighlights(await adapter.getHighlights(activeDocId))
                 window.dispatchEvent(new CustomEvent('md-reader-highlight-changed'))
                 setNoteSaved(true)
                 setTimeout(() => setNoteSaved(false), 1200)
@@ -1683,8 +1685,8 @@ export function Reader() {
                   endOffset: h.endOffset, color: h.color, note: h.note,
                   createdAt: h.createdAt,
                 }
-                await removeHighlight(h.id!)
-                if (activeDocId) setInlineHighlights(await getHighlights(activeDocId))
+                await adapter.removeHighlight(h.id!)
+                if (activeDocId) setInlineHighlights(await adapter.getHighlights(activeDocId))
                 setHighlightPopover(null)
                 window.dispatchEvent(new CustomEvent('md-reader-highlight-changed'))
 
@@ -1704,8 +1706,8 @@ export function Reader() {
                 undoBtn.onclick = async () => {
                   clearTimeout(undoTimer)
                   cleanup()
-                  await addHighlight(snapshot)
-                  if (activeDocId) setInlineHighlights(await getHighlights(activeDocId))
+                  await adapter.addHighlight(snapshot)
+                  if (activeDocId) setInlineHighlights(await adapter.getHighlights(activeDocId))
                   window.dispatchEvent(new CustomEvent('md-reader-highlight-changed'))
                 }
               }}

@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState, useEffect } from 'react'
 import { Upload as UploadIcon, Link, FileText, Library, PenLine, ArrowRight, Clock, FolderOpen, Chrome, Code2, Shield, Mic, Network, GraduationCap } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { getAllDocuments, type StoredDocument } from '../lib/docstore'
+import { useAdapter } from '../provider/hooks'
+import type { StoredDocument } from '../types/storage-adapter'
 import { SAMPLE_MARKDOWN } from '../lib/sample-doc'
 
 type Mode = 'home' | 'editor'
@@ -11,6 +12,7 @@ export function Upload() {
   const setWorkspaceMode = useStore((s) => s.setWorkspaceMode)
   const setViewMode = useStore((s) => s.setViewMode)
   const openDocument = useStore((s) => s.openDocument)
+  const adapter = useAdapter()
   const [mode, setMode] = useState<Mode>('home')
   const [url, setUrl] = useState('')
   const [fetching, setFetching] = useState(false)
@@ -18,7 +20,7 @@ export function Upload() {
 
   // Delight #35: Load recent documents from IndexedDB
   useEffect(() => {
-    getAllDocuments().then((docs) => setRecentDocs(docs.slice(0, 3))).catch(() => {})
+    adapter.getAllDocuments().then((docs) => setRecentDocs(docs.slice(0, 3))).catch(() => {})
   }, [])
 
   // Browser extension support: handle #url= hash and postMessage from extension
@@ -155,11 +157,10 @@ export function Upload() {
   }
 
   const handleMultipleFiles = useCallback(async (files: FileList) => {
-    const { addDocument } = await import('../lib/docstore')
     for (const file of Array.from(files)) {
       if (!file.name.match(/\.(md|markdown|txt)$/)) continue
       const text = await file.text()
-      await addDocument(file.name, text)
+      await adapter.addDocument(file.name, text)
     }
     setWorkspaceMode(true)
     setViewMode('workspace')

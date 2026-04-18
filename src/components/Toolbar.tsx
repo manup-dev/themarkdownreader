@@ -3,7 +3,7 @@ import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap,
 import { AiSettings } from './AiSettings'
 import { AiLoadingIndicator } from './AiLoadingIndicator'
 import { useStore, type Theme, type ViewMode } from '../store/useStore'
-import { addDocument } from '../lib/docstore'
+import { useAdapter } from '../provider/hooks'
 import { getActiveBackend } from '../lib/ai'
 import { trackEvent } from '../lib/telemetry'
 import { isViewModeGated } from '../lib/feature-flags'
@@ -38,6 +38,7 @@ export function Toolbar() {
   const backToWorkspace = useStore((s) => s.backToWorkspace)
   const backToCollection = useStore((s) => s.backToCollection)
   const fromCollection = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('md-reader-from-collection') === '1'
+  const adapter = useAdapter()
 
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState('')
@@ -112,7 +113,7 @@ export function Toolbar() {
 
   const handleSave = useCallback(async () => {
     if (!markdown || !fileName) return
-    const result = await addDocument(fileName, markdown)
+    const result = await adapter.addDocument(fileName, markdown)
     setActiveDocId(result.docId)
     setSaved(true)
     setTimeout(() => setSaved(false), 3500)
@@ -154,7 +155,7 @@ export function Toolbar() {
 
   const handleSaveAndClose = useCallback(async () => {
     if (!markdown || !fileName) return
-    await addDocument(fileName, markdown)
+    await adapter.addDocument(fileName, markdown)
     setShowCloseConfirm(false)
     doClose()
   }, [markdown, fileName, doClose])

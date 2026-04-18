@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { X, Check, Trash2, Download, ExternalLink, Eye, EyeOff, Wand2, MoreHorizontal, Pencil } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { getComments, updateComment, removeComment, type Comment } from '../lib/docstore'
+import { useAdapter } from '../provider/hooks'
+import type { Comment } from '../types/storage-adapter'
 import { trackEvent } from '../lib/telemetry'
 import { markProgrammaticScroll } from '../lib/scroll-guard'
 import { PromptBuilder } from './PromptBuilder'
@@ -29,10 +30,11 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
   const [openMenuId, setOpenMenuId] = useState<number | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const jumpTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  const adapter = useAdapter()
 
   const refresh = useCallback(async () => {
     if (!activeDocId) return
-    setComments(await getComments(activeDocId))
+    setComments(await adapter.getComments(activeDocId))
   }, [activeDocId])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -63,13 +65,13 @@ export function CommentsPanel({ onClose }: { onClose: () => void }) {
   }, [openMenuId])
 
   const handleResolve = useCallback(async (id: number, resolved: boolean) => {
-    await updateComment(id, { resolved: !resolved })
+    await adapter.updateComment(id, { resolved: !resolved })
     await refresh()
   }, [refresh])
 
   const handleDelete = useCallback(async (id: number) => {
     if (!window.confirm('Delete this comment?')) return
-    await removeComment(id)
+    await adapter.removeComment(id)
     await refresh()
   }, [refresh])
 

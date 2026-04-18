@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Trash2, Upload as UploadIcon, FolderOpen, Database, Search, Loader2, Sparkles, Network, BarChart3, Download, UploadCloud, Map, AlertTriangle, ArrowUpDown, Bookmark } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { addDocument, removeDocument, getAllDocuments, getDocStats, clearAllData, exportLibrary, importLibrary, requestPersistentStorage, finalizeImport, saveCollectionCache, type StoredDocument } from '../lib/docstore'
+import { useAdapter } from '../provider/hooks'
+import type { StoredDocument } from '../types/storage-adapter'
 import { openDirectory, hasDirectoryAccess } from '../lib/fs-access'
 import { generateCollectionOverview, askAcrossDocuments } from '../lib/correlate'
 import { estimateDifficulty } from '../lib/markdown'
@@ -78,6 +79,7 @@ function IndexProgressDisplay({ progress }: { progress: { current: number; total
 }
 
 export function Workspace() {
+  const adapter = useAdapter()
   const setViewMode = useStore((s) => s.setViewMode)
   const openDocument = useStore((s) => s.openDocument)
   const [docs, setDocs] = useState<StoredDocument[]>([])
@@ -107,15 +109,15 @@ export function Workspace() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   const refresh = useCallback(async () => {
-    const allDocs = await getAllDocuments()
+    const allDocs = await adapter.getAllDocuments()
     setDocs(allDocs)
     if (allDocs.length >= 2) trackEvent('library_multi_doc')
-    const s = await getDocStats()
+    const s = await adapter.getDocStats()
     setStats(s)
   }, [])
 
   // Request persistent storage on mount
-  useEffect(() => { requestPersistentStorage() }, [])
+  useEffect(() => { adapter.requestPersistentStorage() }, [adapter])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { refresh() }, [refresh])
@@ -139,7 +141,7 @@ export function Workspace() {
       setIndexProgress({ current: i + 1, total, fileName: file.name, startedAt, errors })
       try {
         const text = await file.text()
-        const result = await addDocument(file.name, text, isBatch ? { skipPostProcessing: true } : undefined)
+        const result = await adapter.addDocument(file.name, text, isBatch ? { skipPostProcessing: true } : undefined)
         if (result.isExactDuplicate) {
           dupNames.push(`${file.name} (exact duplicate, skipped)`)
         } else if (result.nearDuplicates.length > 0) {
@@ -151,7 +153,7 @@ export function Workspace() {
     }
     if (isBatch) {
       setIndexProgress({ current: total, total, fileName: 'Building search index...', startedAt, errors })
-      await finalizeImport()
+      await adapter.finalizeImport()
     }
     if (dupNames.length > 0) setDupWarning(dupNames.join('\n'))
     await refresh()
@@ -173,7 +175,7 @@ export function Workspace() {
     if (!result || result.files.length === 0) return
     // Save as a collection project and switch to collection view
     const rawFiles = result.files.map((f) => ({ path: f.path, content: f.content }))
-    await saveCollectionCache(result.name, rawFiles, 0)
+    await adapter.saveCollectionCache(result.name, rawFiles, 0)
     // Populate Zustand folder session — auto-selects first file (or README.md).
     // The unified shell renders sidebar + tabs automatically.
     const files = result.files.map((f) => ({
@@ -190,13 +192,13 @@ export function Workspace() {
   const handleRemove = useCallback(async (docId: number) => {
     const doc = docs.find((d) => d.id === docId)
     if (!window.confirm(`Delete "${doc?.fileName ?? 'this document'}" from library?`)) return
-    await removeDocument(docId)
+    await adapter.removeDocument(docId)
     await refresh()
   }, [refresh, docs])
 
   const handleClearAll = useCallback(async () => {
     if (!window.confirm(`Delete all ${docs.length} documents from library? This cannot be undone.`)) return
-    await clearAllData()
+    await adapter.clearAllData()
     await refresh()
     setOverview(null)
   }, [refresh, docs.length])
@@ -539,7 +541,7 @@ export function Workspace() {
           <div className="flex items-center justify-center gap-4 pt-4">
             <button
               onClick={async () => {
-                const json = await exportLibrary()
+                const json = await adapter.exportLibrary()
                 const blob = new Blob([json], { type: 'application/json' })
                 const url = URL.createObjectURL(blob)
                 const a = document.createElement('a')
@@ -561,7 +563,7 @@ export function Workspace() {
                   if (!file) return
                   try {
                     const text = await file.text()
-                    await importLibrary(text)
+                    await adapter.importLibrary(text)
                     await refresh()
                   } catch { /* ignore */ }
                 }}

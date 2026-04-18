@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as d3 from 'd3'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { getAllDocuments, getDocLinks } from '../lib/docstore'
+import { useAdapter } from '../provider/hooks'
 
 interface DocNode extends d3.SimulationNodeDatum {
   id: number
@@ -20,6 +20,7 @@ interface DocEdge {
 }
 
 export function CrossDocGraph() {
+  const adapter = useAdapter()
   const theme = useStore((s) => s.theme)
   const openDocument = useStore((s) => s.openDocument)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -31,13 +32,13 @@ export function CrossDocGraph() {
     if (!svgRef.current) return
     setLoading(true)
 
-    const docs = await getAllDocuments()
+    const docs = await adapter.getAllDocuments()
     setDocCount(docs.length)
     if (docs.length < 2) {
       setLoading(false)
       return
     }
-    const links = await getDocLinks()
+    const links = await adapter.getDocLinks()
 
     const svg = d3.select(svgRef.current)
     const width = svgRef.current.clientWidth

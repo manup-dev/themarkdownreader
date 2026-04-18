@@ -2,11 +2,12 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as d3 from 'd3'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { computeUmapProjection, computeCommunities } from '../lib/docstore'
+import { useAdapter } from '../provider/hooks'
 
 const COMMUNITY_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#f97316', '#6366f1', '#ef4444', '#84cc16']
 
 export function SimilarityMap() {
+  const adapter = useAdapter()
   const theme = useStore((s) => s.theme)
   const openDocument = useStore((s) => s.openDocument)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -21,8 +22,8 @@ export function SimilarityMap() {
 
     try {
       // Compute communities first, then UMAP
-      await computeCommunities()
-      const points = await computeUmapProjection()
+      await adapter.computeCommunities()
+      const points = await adapter.computeUmapProjection()
 
       if (points.length < 3) {
         setError('Need at least 3 documents for a similarity map.')
