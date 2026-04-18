@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
 import { MessageSquare, MessageSquareText, PanelLeftOpen, Loader2, Menu, Volume2, X } from 'lucide-react'
 import { useStore, type ViewMode } from './store/useStore'
-import { getCommentCount } from './lib/docstore'
+import { useAdapter } from './provider/hooks'
 import { SAMPLE_MARKDOWN } from './lib/sample-doc'
 import { extractToc } from './lib/markdown'
 import { Upload } from './components/Upload'
@@ -47,7 +47,8 @@ function LazyFallback() {
   )
 }
 
-function App() {
+function AppContent() {
+  const adapter = useAdapter()
   // Track whether a state change came from popstate (back/forward) to avoid re-pushing
   const isPopStateRef = useRef(false)
   const markdown = useStore((s) => s.markdown)
@@ -348,7 +349,7 @@ function App() {
     let cancelled = false
     const fetchCount = () => {
       if (cancelled) return
-      getCommentCount(activeDocId).then((c) => { if (!cancelled) setCommentCount(c) })
+      adapter.getCommentCount(activeDocId).then((c) => { if (!cancelled) setCommentCount(c) })
     }
     fetchCount()
     const interval = setInterval(fetchCount, 3000)
@@ -447,7 +448,6 @@ function App() {
   const showTts = !!markdown && !isWorkspaceView
 
   return (
-    <MdReaderProvider adapter={dexieAdapter}>
     <div className={`flex h-screen ${themeClasses[theme]} ${focusMode ? 'focus-mode' : ''} ${dyslexicFont ? 'font-dyslexic' : ''}`}>
       <a href="#main-content" className="skip-to-content">Skip to content</a>
       <KeyboardShortcuts />
@@ -653,8 +653,13 @@ function App() {
       {/* Telemetry opt-in banner (shows once) */}
       <TelemetryBanner />
     </div>
-    </MdReaderProvider>
   )
 }
 
-export default App
+export default function App() {
+  return (
+    <MdReaderProvider adapter={dexieAdapter}>
+      <AppContent />
+    </MdReaderProvider>
+  )
+}
