@@ -45,7 +45,7 @@ export interface DocumentAnalysis {
   contentHash: string
   themes: Array<{ title: string; description: string; relevanceScore: number; chunkIds: number[] }>
   entities: Array<{ name: string; type: 'concept' | 'technology' | 'person' | 'process'; mentions: number }>
-  chunks: Array<{ chunkId: number; contentType: string; weight: number; summary?: string }>
+  chunks: Array<{ chunkId: number; contentType: 'prose' | 'code' | 'table' | 'list' | 'diagram' | 'heading' | 'mixed'; weight: number; summary?: string }>
   difficulty: 'beginner' | 'intermediate' | 'advanced' | 'expert'
   structure: 'tutorial' | 'reference' | 'narrative' | 'mixed'
   relatedDocIds: number[]

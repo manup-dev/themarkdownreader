@@ -138,7 +138,7 @@ describe('DexieAdapter', () => {
     })
 
     it('updateHighlightNote delegates to ds.updateHighlightNote', async () => {
-      vi.mocked(ds.updateHighlightNote).mockResolvedValue(undefined)
+      vi.mocked(ds.updateHighlightNote).mockResolvedValue(1)
 
       await adapter.updateHighlightNote(7, 'my note')
 
@@ -146,7 +146,7 @@ describe('DexieAdapter', () => {
     })
 
     it('updateHighlightColor delegates to ds.updateHighlightColor', async () => {
-      vi.mocked(ds.updateHighlightColor).mockResolvedValue(undefined)
+      vi.mocked(ds.updateHighlightColor).mockResolvedValue(1)
 
       await adapter.updateHighlightColor(7, 'red')
 
@@ -376,7 +376,7 @@ describe('DexieAdapter', () => {
     })
 
     it('requestPersistentStorage delegates to ds.requestPersistentStorage', async () => {
-      vi.mocked(ds.requestPersistentStorage).mockResolvedValue(undefined)
+      vi.mocked(ds.requestPersistentStorage).mockResolvedValue(false)
 
       await adapter.requestPersistentStorage()
 
