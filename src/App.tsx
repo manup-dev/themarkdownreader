@@ -18,6 +18,10 @@ import { OnboardingOverlay } from './components/OnboardingOverlay'
 import { TelemetryBanner } from './components/TelemetryBanner'
 import { Sidebar } from './components/Sidebar'
 import { FEATURE_FLAGS, resolveEnabledFeatures, enableFeature as enableFeatureFlag, disableFeature as disableFeatureFlag, resetFeatures } from './lib/feature-flags'
+import { MdReaderProvider } from './provider'
+import { DexieAdapter } from './adapters/dexie-adapter'
+
+const dexieAdapter = new DexieAdapter()
 
 // Lazy load heavy/optional components
 const Chat = lazy(() => import('./components/Chat').then((m) => ({ default: m.Chat })))
@@ -443,6 +447,7 @@ function App() {
   const showTts = !!markdown && !isWorkspaceView
 
   return (
+    <MdReaderProvider adapter={dexieAdapter}>
     <div className={`flex h-screen ${themeClasses[theme]} ${focusMode ? 'focus-mode' : ''} ${dyslexicFont ? 'font-dyslexic' : ''}`}>
       <a href="#main-content" className="skip-to-content">Skip to content</a>
       <KeyboardShortcuts />
@@ -648,6 +653,7 @@ function App() {
       {/* Telemetry opt-in banner (shows once) */}
       <TelemetryBanner />
     </div>
+    </MdReaderProvider>
   )
 }
 
