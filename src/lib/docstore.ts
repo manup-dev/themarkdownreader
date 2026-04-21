@@ -4,6 +4,8 @@ import murmur from 'murmurhash-js'
 import { chunkMarkdown, extractToc, wordCount } from './markdown'
 import type { TocEntry } from '../store/useStore'
 import type { TextAnchor } from './anchor'
+import type { AnnotationEvent, CheckpointEvent } from './annotation-events'
+import type { AnnotationSink, StoredEvent } from './annotation-log'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -145,6 +147,21 @@ export interface CollectionCache {
   savedAt: number
 }
 
+export interface StoredAnnotationEvent {
+  seq?: number
+  docKey: string
+  ts: number
+  op: string
+  event: AnnotationEvent
+}
+
+export interface StoredAnnotationCheckpoint {
+  docKey: string
+  ts: number
+  version: number
+  event: CheckpointEvent
+}
+
 class MdReaderDB extends Dexie {
   documents!: Table<StoredDocument>
   chunks!: Table<StoredChunk>
@@ -157,6 +174,8 @@ class MdReaderDB extends Dexie {
   trainingData!: Table<TrainingDatapoint>
   documentAnalyses!: Table<DocumentAnalysis>
   audioCache!: Table<CachedAudio>
+  annotationLog!: Table<StoredAnnotationEvent>
+  annotationCheckpoint!: Table<StoredAnnotationCheckpoint>
 
   constructor() {
     super('md-reader')
@@ -191,6 +210,14 @@ class MdReaderDB extends Dexie {
     // No index changes — anchor is stored inline, not indexed.
     // Old records without anchor continue to work (field is optional).
     this.version(8).stores({})
+    // v9: annotation WAL. Source-of-truth log + checkpoint table for
+    // compaction. Pre-v9 highlights/comments tables remain populated and
+    // drive the UI today; the log is populated only when shareable
+    // annotations land in a later phase. Existing users see no change.
+    this.version(9).stores({
+      annotationLog: '++seq, docKey, ts, op, [docKey+seq]',
+      annotationCheckpoint: 'docKey, ts',
+    })
   }
 }
 
@@ -733,6 +760,95 @@ export async function removeComment(id: number): Promise<void> {
 
 export async function getCommentCount(docId: number): Promise<number> {
   return db.comments.where('docId').equals(docId).count()
+}
+
+// ─── Annotation WAL (v9) ───────────────────────────────────────────────────
+
+/**
+ * DexieSink wires AnnotationLog to the v9 tables. One instance is shared
+ * across documents; docKey is how logs are partitioned. The sink is
+ * append-only from the log's perspective; compaction writes a checkpoint
+ * then asks the sink to truncate events before the current head.
+ */
+export class DexieAnnotationSink implements AnnotationSink {
+  async append(docKey: string, events: AnnotationEvent[]): Promise<void> {
+    if (!events.length) return
+    const rows = events.map((event) => ({
+      docKey,
+      ts: event.ts,
+      op: event.op,
+      event,
+    }))
+    await db.annotationLog.bulkAdd(rows)
+  }
+
+  async listEvents(docKey: string, sinceSeq?: number): Promise<StoredEvent[]> {
+    const collection = sinceSeq === undefined
+      ? db.annotationLog.where('docKey').equals(docKey)
+      : db.annotationLog.where('[docKey+seq]').between([docKey, sinceSeq], [docKey, Dexie.maxKey])
+    const rows = await collection.toArray()
+    // Sort client-side by seq; the [docKey+seq] index above handles the
+    // bounded case but the plain `docKey` query returns in index order
+    // which is still per-seq but cheap to sort defensively.
+    rows.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+    return rows.map((r) => ({ seq: r.seq ?? 0, docKey: r.docKey, event: r.event }))
+  }
+
+  async readCheckpoint(docKey: string): Promise<CheckpointEvent | null> {
+    const row = await db.annotationCheckpoint.get(docKey)
+    return row?.event ?? null
+  }
+
+  async writeCheckpoint(docKey: string, cp: CheckpointEvent): Promise<void> {
+    await db.annotationCheckpoint.put({
+      docKey,
+      ts: cp.ts,
+      version: cp.v,
+      event: cp,
+    })
+  }
+
+  async truncateBefore(docKey: string, seq: number): Promise<number> {
+    let removed = 0
+    await db.transaction('rw', db.annotationLog, async () => {
+      const toDelete = await db.annotationLog
+        .where('docKey')
+        .equals(docKey)
+        .and((r) => (r.seq ?? 0) < seq)
+        .primaryKeys()
+      removed = toDelete.length
+      if (removed) await db.annotationLog.bulkDelete(toDelete)
+    })
+    return removed
+  }
+}
+
+export const dexieSink = new DexieAnnotationSink()
+
+/**
+ * Derive the docKey used to partition a document's annotation log. We
+ * prefer contentHash (stable across rename + cross-browser) and fall back
+ * to fileName when a hash isn't available. Pre-v9 docs always have a
+ * contentHash because addDocument() computes it.
+ */
+export function deriveDocKey(doc: Pick<StoredDocument, 'contentHash' | 'fileName'>): string {
+  return doc.contentHash || `name:${doc.fileName}`
+}
+
+/**
+ * Back-compat projection: read pre-v9 highlight/comment rows for a doc and
+ * return them as synthetic WAL events. Callers pre-seed these into an
+ * AnnotationLog during hydrate; they're never persisted to the log table,
+ * so switching to the share flow later is a pure additive move with no
+ * migration-in-place.
+ */
+export async function legacyEventsForDoc(docId: number, docKey: string): Promise<AnnotationEvent[]> {
+  const [highlights, comments] = await Promise.all([
+    db.highlights.where('docId').equals(docId).toArray(),
+    db.comments.where('docId').equals(docId).toArray(),
+  ])
+  const { legacyToEvents } = await import('./annotation-events')
+  return legacyToEvents(highlights, comments, docKey)
 }
 
 // ─── Louvain community detection ───────────────────────────────────────────
