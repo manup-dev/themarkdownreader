@@ -69,7 +69,7 @@ describe('reduce / materialize', () => {
   })
 
   it('highlight.edit patches color and note', () => {
-    const s = materialize<AnnotationEvent>([
+    const s = materialize([
       hAdd('h1', ts(1), 'yellow'),
       { v: SCHEMA_VERSION, ts: ts(2), id: 'h1', op: 'highlight.edit', docKey: DOC, color: 'red', note: 'important' },
     ])
@@ -78,7 +78,7 @@ describe('reduce / materialize', () => {
   })
 
   it('comment.add then comment.resolve toggles the flag', () => {
-    const s = materialize<AnnotationEvent>([
+    const s = materialize([
       cAdd('c1', ts(1)),
       { v: SCHEMA_VERSION, ts: ts(2), id: 'c1', op: 'comment.resolve', docKey: DOC, resolved: true },
     ])
@@ -86,7 +86,7 @@ describe('reduce / materialize', () => {
   })
 
   it('comment.edit updates body but preserves author/created', () => {
-    const s = materialize<AnnotationEvent>([
+    const s = materialize([
       cAdd('c1', ts(1), 'first'),
       { v: SCHEMA_VERSION, ts: ts(2), id: 'c1', op: 'comment.edit', docKey: DOC, body: 'second' },
     ])
@@ -135,7 +135,7 @@ describe('checkpoint', () => {
         comments: [],
       },
     }
-    const s = materialize<AnnotationEvent>([hAdd('h1', ts(1)), cp])
+    const s = materialize([hAdd('h1', ts(1)), cp])
     expect(s.highlights.size).toBe(1)
     expect(s.highlights.has('h1')).toBe(false)
     expect(s.highlights.has('h9')).toBe(true)

@@ -44,14 +44,17 @@ export interface CompactResult {
  * about; reducers and codecs are implementation details.
  */
 export class AnnotationLog {
+  public readonly docKey: string
+  private readonly sink: AnnotationSink
+  private readonly clientId: string
   private state: DocState = emptyState()
   private hydrated = false
 
-  constructor(
-    public readonly docKey: string,
-    private readonly sink: AnnotationSink,
-    private clientId: string,
-  ) {}
+  constructor(docKey: string, sink: AnnotationSink, clientId: string) {
+    this.docKey = docKey
+    this.sink = sink
+    this.clientId = clientId
+  }
 
   /**
    * Lazy hydration. Loads checkpoint (if any) then replays events since
