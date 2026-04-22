@@ -169,6 +169,10 @@ function AppContent() {
       // shape here to skip share-loader's null-return for folders.
       const isFolderShare = /[#&?]repo=/.test(hash) && !/path=[^&]*\.md(?:&|$)/.test(hash)
       if (isFolderShare) {
+        // Clear any persisted doc so the browser pane (gated on !markdown)
+        // actually renders. Also clear remoteShare since this isn't a doc.
+        useStore.getState().setMarkdown('')
+        useStore.getState().setRemoteShare(null)
         setRepoBrowserHref(capturedHref)
         return
       }
@@ -458,10 +462,11 @@ function AppContent() {
     setChatWidth(Math.max(250, Math.min(600, cur - delta)))
   }, [setChatWidth])
 
-  // Repo browser takes precedence over Upload — when a folder share URL
-  // landed, we want the user to see the folder listing instead of being
-  // pushed to the empty-state Upload screen.
-  if (repoBrowserHref && !markdown) {
+  // Repo browser takes precedence — when a folder share URL landed, the
+  // user should see the folder listing regardless of any persisted doc
+  // state (Zustand persist hydrates asynchronously and would otherwise
+  // restore a previous markdown after we clear it).
+  if (repoBrowserHref) {
     return (
       <Suspense fallback={<LazyFallback />}>
         <RepoBrowser
