@@ -16,6 +16,62 @@ export interface TextAnchor {
   suffix: string           // up to 30 chars after selection in markdown
   sectionId: string        // nearest heading ID (slug)
   offsetInSection: number  // char offset from section heading start
+  // Diff-friendly coordinates added 2026-04 for the share/WAL system. All
+  // optional so old anchors (and consumers that don't compute them) keep
+  // working. line:word survives whitespace edits; len lets us cross-check
+  // a recovered range without re-running the heavy fuzzy match.
+  line?: number            // 0-indexed line in raw markdown
+  word?: number            // 0-indexed word index within the line
+  len?: number             // word count of the selection (1+)
+}
+
+/**
+ * Compute (line, word, len) coordinates from a markdown char offset. Used
+ * by captureAnchor and exposed for tests + the WAL legacy projection. A
+ * "word" is a maximal run of non-whitespace characters; this matches the
+ * design choice in 02-anchoring-model.md.
+ */
+export function lineWordFromOffset(
+  markdown: string,
+  start: number,
+  end: number,
+): { line: number; word: number; len: number } {
+  const safeStart = Math.max(0, Math.min(start, markdown.length))
+  const safeEnd = Math.max(safeStart, Math.min(end, markdown.length))
+
+  // Line index: count newlines before start
+  let line = 0
+  let lineStart = 0
+  for (let i = 0; i < safeStart; i++) {
+    if (markdown.charCodeAt(i) === 10 /* \n */) {
+      line++
+      lineStart = i + 1
+    }
+  }
+
+  // Word index within the line: index of the word containing safeStart.
+  // A word starts at a non-whitespace char that's at lineStart or preceded
+  // by whitespace. We count word starts at positions ≤ safeStart and
+  // return that count − 1 (so the first word on the line is index 0).
+  let word = -1
+  for (let i = lineStart; i <= safeStart && i < markdown.length; i++) {
+    const ch = markdown.charCodeAt(i)
+    if (ch === 10 /* \n */) break
+    const isWs = ch === 32 || ch === 9 /* space or tab */
+    if (!isWs) {
+      const prevCh = i > lineStart ? markdown.charCodeAt(i - 1) : 0
+      const prevIsWs = prevCh === 32 || prevCh === 9
+      if (i === lineStart || prevIsWs) word++
+    }
+  }
+  if (word < 0) word = 0
+
+  // Length: number of words in the selection
+  const selection = markdown.slice(safeStart, safeEnd)
+  const trimmed = selection.trim()
+  const len = trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length
+
+  return { line, word, len }
 }
 
 function escapeRegex(text: string): string {
@@ -175,6 +231,9 @@ export function captureAnchor(
   // --- Compute section info ---
   const { sectionId, offsetInSection } = resolveSection(start, sections)
 
+  // --- Compute diff-friendly line/word coords ---
+  const { line, word, len } = lineWordFromOffset(markdown, start, end)
+
   return {
     markdownStart: start,
     markdownEnd: end,
@@ -183,6 +242,9 @@ export function captureAnchor(
     suffix,
     sectionId,
     offsetInSection,
+    line,
+    word,
+    len,
   }
 }
 
