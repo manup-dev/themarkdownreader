@@ -44,18 +44,16 @@ export type {
   DocStats,
 } from './types/storage-adapter'
 
-// Annotation WAL — events, log abstraction, persistence sink, save scheduler
+// Annotation WAL — public surface kept intentionally narrow. Low-level
+// reducer primitives (`reduce`, `dedupeEvents`, `emptyState`), the legacy
+// projection helpers, and the in-memory test sink live with the source
+// and are reachable via deep imports for internal tooling only.
 export {
   SCHEMA_VERSION as ANNOTATION_SCHEMA_VERSION,
   SCHEMA_ID as ANNOTATION_SCHEMA_ID,
   encodeWal,
   decodeWal,
   materialize,
-  reduce as reduceAnnotation,
-  emptyState as emptyAnnotationState,
-  highlightToEvent,
-  commentsToEvents,
-  legacyToEvents,
   KNOWN_OPS as KNOWN_ANNOTATION_OPS,
 } from './lib/annotation-events'
 export type {
@@ -76,11 +74,11 @@ export type {
   AnchorCoords,
 } from './lib/annotation-events'
 
-export { AnnotationLog, InMemorySink, makeHeader } from './lib/annotation-log'
+export { AnnotationLog, makeHeader } from './lib/annotation-log'
 export type { AnnotationSink, StoredEvent, CompactResult } from './lib/annotation-log'
 
-export { SaveScheduler, IMMEDIATE_OPS, DEBOUNCED_OPS, createFakeTimer } from './lib/save-scheduler'
-export type { SchedulerOptions, TimerLike, FakeTimer } from './lib/save-scheduler'
+export { SaveScheduler, IMMEDIATE_OPS, DEBOUNCED_OPS } from './lib/save-scheduler'
+export type { SchedulerOptions, TimerLike } from './lib/save-scheduler'
 
 // Sharing — URL grammar, remote fetch, share builder, share intake
 export {
@@ -112,7 +110,7 @@ export {
 export type { ShareInputs, BuiltShare } from './lib/share-builder'
 
 export { loadShareFromHash } from './lib/share-loader'
-export type { LoadShareResult, LoadShareOptions } from './lib/share-loader'
+export type { LoadShareResult, FolderShareResult, ShareIntakeResult, LoadShareOptions } from './lib/share-loader'
 
 export { loadRepoFolderFromHash } from './lib/repo-browser'
 export type { RepoFolderResult, LoadRepoFolderOptions } from './lib/repo-browser'

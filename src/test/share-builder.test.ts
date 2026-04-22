@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import 'fake-indexeddb/auto'
 import { buildShareForDocument, sidecarBasename, importRemoteEventsToLocal } from '../lib/share-builder'
 import { db, dexieSink } from '../lib/docstore'
-import { decodeWal, SCHEMA_VERSION, type AnnotationEvent } from '../lib/annotation-events'
+import { decodeWal, SCHEMA_VERSION, highlightToEvent, type AnnotationEvent } from '../lib/annotation-events'
+import type { Highlight } from '../lib/docstore'
 
 const ts = Date.parse('2026-04-22T00:00:00Z')
 
@@ -132,9 +133,11 @@ describe('buildShareForDocument', () => {
   it('dedupes when both legacy and persisted log have the same id', async () => {
     const docId = await db.documents.add(sampleDoc) as number
     const doc = (await db.documents.get(docId))!
-    // Insert legacy highlight (would project to id `h_<rowId>`) and a persisted
-    // event with the SAME id — should appear once in the WAL.
-    const hRowId = await db.highlights.add({
+    // Synthetic ids from the legacy projection are derived from docKey +
+    // anchor coords (see highlightToEvent). Insert the row first, then
+    // project it to get the id the persisted event should reuse to trigger
+    // the dedup path.
+    const legacyRow: Highlight = {
       docId,
       text: 'First',
       startOffset: 9,
@@ -142,11 +145,13 @@ describe('buildShareForDocument', () => {
       color: 'yellow',
       note: '',
       createdAt: ts,
-    }) as number
+    }
+    const hRowId = await db.highlights.add(legacyRow) as number
+    const legacyEvent = highlightToEvent({ ...legacyRow, id: hRowId }, 'abc123')
     await dexieSink.append('abc123', [{
       v: SCHEMA_VERSION,
       ts: ts + 100,
-      id: `h_${hRowId}`,
+      id: legacyEvent.id,
       op: 'highlight.add',
       docKey: 'abc123',
       anchor: { byteOffset: 9, text: 'First' },

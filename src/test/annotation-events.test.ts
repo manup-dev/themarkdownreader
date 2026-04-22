@@ -157,9 +157,11 @@ describe('JSONL codec', () => {
     expect(parsed.length).toBe(2)
   })
 
-  it('drops events from a future schema version', () => {
+  it('preserves events from a future schema version as forward-compat', () => {
     const future = JSON.stringify({ ...hAdd('h1', ts(1)), v: 99 })
-    expect(decodeWal(future).length).toBe(0)
+    const parsed = decodeWal(future)
+    expect(parsed.length).toBe(1)
+    expect((parsed[0] as unknown as { forwardCompat?: boolean }).forwardCompat).toBe(true)
   })
 
   it('ignores malformed records without id/op/ts', () => {
@@ -208,7 +210,12 @@ describe('legacy projection', () => {
       createdAt: ts(1),
     }
     const e = highlightToEvent(h, DOC)
-    expect(e.id).toBe('h_7')
+    // Synthetic ids are content-derived (djb2 over docKey + offsets +
+    // text) so two clients projecting the same legacy row converge.
+    // Shape-check rather than pinning the literal hex.
+    expect(e.id).toMatch(/^h_[0-9a-f]{8}$/)
+    // Determinism: projecting again yields the same id.
+    expect(highlightToEvent(h, DOC).id).toBe(e.id)
     expect(e.op).toBe('highlight.add')
     expect(e.anchor.byteOffset).toBe(10)
     expect(e.color).toBe('pink')
@@ -256,9 +263,12 @@ describe('legacy projection', () => {
   it('materializing legacy projection recovers rows shape', () => {
     const h: Highlight = { id: 1, docId: 1, text: 'hi', startOffset: 0, endOffset: 2, color: 'y', note: '', createdAt: ts(1) }
     const c: Comment = { id: 2, docId: 1, selectedText: 'hi', comment: 'body', author: 'a', sectionId: 's', createdAt: ts(2), resolved: true }
-    const s = materialize(legacyToEvents([h], [c], DOC))
-    expect(s.highlights.get('h_1')?.color).toBe('y')
-    expect(s.comments.get('c_2')?.resolved).toBe(true)
-    expect(s.comments.get('c_2')?.body).toBe('body')
+    const projected = legacyToEvents([h], [c], DOC)
+    const s = materialize(projected)
+    const hEvent = projected.find((e) => e.op === 'highlight.add')!
+    const cEvent = projected.find((e) => e.op === 'comment.add')!
+    expect(s.highlights.get(hEvent.id)?.color).toBe('y')
+    expect(s.comments.get(cEvent.id)?.resolved).toBe(true)
+    expect(s.comments.get(cEvent.id)?.body).toBe('body')
   })
 })

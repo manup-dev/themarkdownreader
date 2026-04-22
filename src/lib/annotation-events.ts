@@ -310,45 +310,129 @@ export function encodeWal(events: AnnotationEvent[]): string {
   return events.map(encodeEvent).join('\n') + (events.length ? '\n' : '')
 }
 
+/** Defensive caps for decoding untrusted WAL input. A malicious share
+ *  URL can paste an arbitrarily large JSONL blob; we bound the work
+ *  rather than rely on the browser's hash size limit. */
+export const MAX_WAL_BYTES = 8 * 1024 * 1024
+export const MAX_WAL_EVENTS = 50_000
+
 /**
  * Parse a JSONL string. Corrupt lines are silently skipped so a partially-
  * truncated file still yields all readable events (R3 from the spec).
- * Events from a future schema version are also dropped here; upgrading to a
- * newer version is future work.
+ *
+ * Forward-compat: events from a future schema version are preserved as
+ * opaque `UnknownEvent`s so a newer writer's output survives round-trips
+ * through older readers (reducer's default branch keeps them in
+ * `state.unknown`, checkpoint serializes them back out). The reducer
+ * never *acts* on them — only preserves.
  */
 export function decodeWal(text: string): AnnotationEvent[] {
+  if (text.length > MAX_WAL_BYTES) {
+    // Truncate rather than reject outright — matches R3 "corrupt lines
+    // shouldn't block the render" philosophy. The oversized tail is lost
+    // but the head is still usable.
+    text = text.slice(0, MAX_WAL_BYTES)
+  }
   const out: AnnotationEvent[] = []
-  for (const rawLine of text.split('\n')) {
+  const lines = text.split('\n')
+  for (const rawLine of lines) {
+    if (out.length >= MAX_WAL_EVENTS) break
     const line = rawLine.trim()
     if (!line) continue
-    try {
-      const evt = JSON.parse(line) as AnnotationEvent
-      if (!evt || typeof evt !== 'object') continue
-      if (typeof evt.op !== 'string' || typeof evt.ts !== 'number' || typeof evt.id !== 'string') continue
-      if (typeof evt.v !== 'number' || evt.v > SCHEMA_VERSION) continue
-      out.push(evt)
-    } catch {
-      // R3: skip and keep going
+    let parsed: unknown
+    try { parsed = JSON.parse(line) } catch { continue }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue
+    const evt = parsed as Record<string, unknown>
+    if (typeof evt.op !== 'string' || typeof evt.ts !== 'number' || typeof evt.id !== 'string') continue
+    if (typeof evt.v !== 'number') continue
+    // Per-op minimum-shape validation so malformed events from a hostile
+    // share can't surface missing fields into the UI.
+    if (!validateOpShape(evt)) continue
+    if (evt.v > SCHEMA_VERSION) {
+      // Forward-version event — preserve verbatim on the unknown branch.
+      out.push({ ...(evt as UnknownEvent), forwardCompat: true } as UnknownEvent)
+      continue
     }
+    out.push(evt as unknown as AnnotationEvent)
   }
   return out
 }
 
+/** Minimum-shape validator per op. Keeps bad payloads out of the reducer
+ *  so the UI never sees (say) a `comment.add` without an author. */
+function validateOpShape(evt: Record<string, unknown>): boolean {
+  const op = evt.op as string
+  // Unknown ops are preserved verbatim — no per-op requirements.
+  if (!KNOWN_OPS.has(op)) return true
+  switch (op) {
+    case 'header':
+      return typeof evt.schema === 'string' && !!evt.doc && typeof evt.doc === 'object'
+    case 'highlight.add':
+      return typeof evt.color === 'string' && !!evt.anchor && typeof evt.anchor === 'object' && typeof evt.docKey === 'string'
+    case 'highlight.edit':
+      return typeof evt.docKey === 'string'
+    case 'highlight.del':
+      return typeof evt.docKey === 'string'
+    case 'comment.add':
+      return typeof evt.selectedText === 'string'
+        && typeof evt.body === 'string'
+        && typeof evt.author === 'string'
+        && typeof evt.sectionId === 'string'
+        && typeof evt.docKey === 'string'
+        && !!evt.anchor && typeof evt.anchor === 'object'
+    case 'comment.edit':
+      return typeof evt.body === 'string' && typeof evt.docKey === 'string'
+    case 'comment.resolve':
+      return typeof evt.resolved === 'boolean' && typeof evt.docKey === 'string'
+    case 'comment.del':
+      return typeof evt.docKey === 'string'
+    case 'checkpoint':
+      return !!evt.state && typeof evt.state === 'object'
+    default:
+      return true
+  }
+}
+
 // ─── Legacy projection (Dexie rows → synthetic events) ──────────────────────
+
+/**
+ * Synchronous, fast non-crypto hash used to derive content-stable ids for
+ * legacy-row projections. djb2 is deterministic across browsers and has
+ * no async/WebCrypto dependency. IDs only need to be stable within this
+ * schema, not globally collision-free — a 32-bit hex string is ample.
+ */
+function contentId(prefix: string, parts: string[]): string {
+  let h = 5381
+  const s = parts.join('\x1f')
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) | 0
+  }
+  const hex = (h >>> 0).toString(16).padStart(8, '0')
+  return `${prefix}${hex}`
+}
 
 /**
  * Map a legacy Highlight row to a synthetic `highlight.add` event. Used
  * when an older doc (pre-v9) is opened and we need to present the full
  * annotation history through the event-log lens.
  *
- * Stable id generation: the Dexie auto-increment id is deterministic within
- * a browser, so `h_<id>` produces the same synthetic event on every load.
+ * Id is derived from content (docKey + offsets + text) rather than from
+ * the Dexie auto-increment id. This way two clients that both project
+ * the same legacy rows converge on the same synthetic event id, so
+ * diff-by-id downstream is stable across clients. The Dexie id is local
+ * and would drift on re-import.
  */
 export function highlightToEvent(h: Highlight, docKey: string): HighlightAddEvent {
+  const id = contentId('h_', [
+    docKey,
+    String(h.startOffset ?? 0),
+    String(h.endOffset ?? 0),
+    h.text ?? '',
+  ])
   return {
     v: SCHEMA_VERSION,
     ts: h.createdAt,
-    id: `h_${h.id}`,
+    id,
     op: 'highlight.add',
     docKey,
     anchor: {
@@ -362,10 +446,16 @@ export function highlightToEvent(h: Highlight, docKey: string): HighlightAddEven
 }
 
 export function commentToEvent(c: Comment, docKey: string): CommentAddEvent {
+  const id = contentId('c_', [
+    docKey,
+    c.sectionId ?? '',
+    c.selectedText ?? '',
+    c.comment ?? '',
+  ])
   return {
     v: SCHEMA_VERSION,
     ts: c.createdAt,
-    id: `c_${c.id}`,
+    id,
     op: 'comment.add',
     docKey,
     anchor: {
@@ -383,18 +473,19 @@ export function commentToEvent(c: Comment, docKey: string): CommentAddEvent {
 
 /**
  * Project legacy rows to a trailing `comment.resolve` event so materialize
- * reflects the resolved flag. Returned array is flat (add followed by
- * optional resolve).
+ * reflects the resolved flag. The resolve event reuses the comment's
+ * content-derived id so `dedupeEvents({id|op})` keys them together.
  */
 export function commentsToEvents(comments: Comment[], docKey: string): AnnotationEvent[] {
   const out: AnnotationEvent[] = []
   for (const c of comments) {
-    out.push(commentToEvent(c, docKey))
+    const addEvent = commentToEvent(c, docKey)
+    out.push(addEvent)
     if (c.resolved) {
       out.push({
         v: SCHEMA_VERSION,
         ts: c.createdAt + 1,
-        id: `c_${c.id}`,
+        id: addEvent.id,
         op: 'comment.resolve',
         docKey,
         resolved: true,

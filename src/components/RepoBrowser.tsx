@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Folder, FileText, ChevronRight, RefreshCw, AlertCircle, ExternalLink } from 'lucide-react'
 import { loadRepoFolderFromHash, type RepoFolderResult } from '../lib/repo-browser'
+import { safeHref } from '../lib/share-url'
+import { GithubRateLimitError } from '../lib/remote-document'
 
 interface RepoBrowserProps {
   /** Captured share URL — caller passes window.location.href at the moment
@@ -25,9 +27,10 @@ interface RepoBrowserProps {
  */
 export function RepoBrowser({ href, onOpenFile, onOpenFolder }: RepoBrowserProps) {
   const [state, setState] = useState<{
-    status: 'loading' | 'ready' | 'error' | 'empty'
+    status: 'loading' | 'ready' | 'error' | 'empty' | 'rate-limited'
     result?: RepoFolderResult
     error?: string
+    resetAt?: number | null
   }>({ status: 'loading' })
 
   // Reload key bumps to trigger a refetch from the same href. Inlining
@@ -52,6 +55,10 @@ export function RepoBrowser({ href, onOpenFile, onOpenFolder }: RepoBrowserProps
         setState({ status: 'ready', result })
       } catch (e) {
         if (cancelled) return
+        if (e instanceof GithubRateLimitError) {
+          setState({ status: 'rate-limited', resetAt: e.resetAt, error: e.message })
+          return
+        }
         setState({ status: 'error', error: (e as Error).message || 'Failed to load folder' })
       }
     })()
@@ -101,6 +108,18 @@ export function RepoBrowser({ href, onOpenFile, onOpenFolder }: RepoBrowserProps
           </div>
         )}
 
+        {state.status === 'rate-limited' && (
+          <div className="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950 p-3 rounded">
+            <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <span>
+              GitHub rate limit reached.{' '}
+              {state.resetAt
+                ? <>Try again after <strong>{new Date(state.resetAt).toLocaleTimeString()}</strong>.</>
+                : 'Try again in an hour.'}
+            </span>
+          </div>
+        )}
+
         {state.status === 'empty' && state.result && (
           <p className="text-sm text-gray-500">
             No <code className="text-xs">.md</code> files or sub-directories in this folder.
@@ -127,9 +146,9 @@ export function RepoBrowser({ href, onOpenFile, onOpenFolder }: RepoBrowserProps
                       {e.name}
                     </span>
                     {isDir && <ChevronRight className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />}
-                    {!isDir && (
+                    {!isDir && safeHref(e.url) && (
                       <a
-                        href={e.url}
+                        href={safeHref(e.url)!}
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(ev) => ev.stopPropagation()}

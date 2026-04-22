@@ -8,7 +8,7 @@
  * the ShareDialog and the MCP `create_share_url` tool both call.
  */
 
-import { encodeWal, type AnnotationEvent } from './annotation-events'
+import { encodeWal, materialize, type AnnotationEvent } from './annotation-events'
 import { AnnotationLog, makeHeader } from './annotation-log'
 import {
   buildInlineShare,
@@ -107,15 +107,14 @@ export async function buildShareForDocument(input: ShareInputs): Promise<BuiltSh
     }
   }
 
-  // Materialize for UI counts. Cheap; replays in-memory only.
-  const log = new AnnotationLog(docKey, dexieSink, 'share-builder')
-  await log.hydrate(events)
+  // Materialize for UI counts — pure in-memory replay, no Dexie I/O.
+  const state = materialize([header, ...events])
   return {
     wal,
     sidecarFileName,
     eventCount: events.length,
-    highlightCount: log.highlights.length,
-    commentCount: log.comments.length,
+    highlightCount: state.highlights.size,
+    commentCount: state.comments.size,
     url,
     urlKind,
     inlineOverflowed,

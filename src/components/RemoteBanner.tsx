@@ -1,6 +1,7 @@
 import { useCallback, useState, lazy, Suspense } from 'react'
 import { ExternalLink, GitFork, AlertTriangle, X, GitPullRequest } from 'lucide-react'
 import { useStore } from '../store/useStore'
+import { safeHref } from '../lib/share-url'
 
 const ProposeChangesDialog = lazy(() => import('./ProposeChangesDialog').then((m) => ({ default: m.ProposeChangesDialog })))
 
@@ -47,14 +48,16 @@ export function RemoteBanner() {
           document changed since share was created
         </span>
       )}
-      <a
-        href={remoteShare.sourceUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 underline hover:no-underline"
-      >
-        <ExternalLink className="h-3 w-3" /> source
-      </a>
+      {safeHref(remoteShare.sourceUrl) && (
+        <a
+          href={safeHref(remoteShare.sourceUrl)!}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 underline hover:no-underline"
+        >
+          <ExternalLink className="h-3 w-3" /> source
+        </a>
+      )}
       <div className="ml-auto flex items-center gap-2">
         <button
           onClick={() => setProposeOpen(true)}

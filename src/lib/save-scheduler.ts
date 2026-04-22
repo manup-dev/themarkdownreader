@@ -52,6 +52,7 @@ export class SaveScheduler {
   private debounceHandle: number | null = null
   private periodicHandle: number | null = null
   private inFlight = false
+  private inFlightPromise: Promise<void> | null = null
   private destroyed = false
 
   private readonly debounceMs: number
@@ -98,33 +99,49 @@ export class SaveScheduler {
   }
 
   /**
-   * Fires the flush callback with the currently-pending batch. If the batch
-   * is empty, returns early. Reentrant calls while one flush is in flight
-   * are serialized so callers don't see torn writes.
+   * Fires the flush callback with the currently-pending batch.
+   *
+   * Serialization: if a flush is already in flight, we await it rather
+   * than returning early, then re-enter to pick up any events appended
+   * during that flush. Without this, a caller awaiting `flushNow()` to
+   * "confirm the queue is empty" could get a resolved promise while
+   * newly-appended events still sit in `pending` — exactly the race
+   * that hit flushOnHide under load.
    */
   async flushNow(): Promise<void> {
     if (this.destroyed) return
     this.cancelDebounce()
-    if (this.inFlight) return
+    if (this.inFlight && this.inFlightPromise) {
+      await this.inFlightPromise
+      // After the in-flight settles, try once more for anything that
+      // queued up meanwhile. Recursion is bounded: each re-entry drains
+      // whatever was added, and `append` only adds finite events.
+      return this.flushNow()
+    }
     if (!this.pending.length) {
       this.cancelPeriodic()
       return
     }
     const batch = this.pending.splice(0)
     this.inFlight = true
-    try {
-      await this.flushFn(batch)
-    } catch (err) {
-      this.onError?.(err, batch)
-      // Re-queue the failed batch at the head; next trigger retries.
-      // We don't re-throw: callers of flushNow() use pendingCount and
-      // onError to detect failure, and fire-and-forget triggers would
-      // otherwise leak unhandled rejections.
-      this.pending.unshift(...batch)
-    } finally {
-      this.inFlight = false
-      if (!this.pending.length) this.cancelPeriodic()
-    }
+    const run = (async () => {
+      try {
+        await this.flushFn(batch)
+      } catch (err) {
+        this.onError?.(err, batch)
+        // Re-queue the failed batch at the head; next trigger retries.
+        // We don't re-throw: callers of flushNow() use pendingCount and
+        // onError to detect failure, and fire-and-forget triggers would
+        // otherwise leak unhandled rejections.
+        this.pending.unshift(...batch)
+      } finally {
+        this.inFlight = false
+        this.inFlightPromise = null
+        if (!this.pending.length) this.cancelPeriodic()
+      }
+    })()
+    this.inFlightPromise = run
+    await run
   }
 
   /** Call on `visibilitychange` (hidden) and `pagehide` / `beforeunload`. */

@@ -3,7 +3,7 @@ import { X, Loader2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { useAdapter } from '../provider/hooks'
 import { AnnotationDiffView } from './AnnotationDiffView'
-import { decodeWal, type AnnotationEvent } from '../lib/annotation-events'
+import { type AnnotationEvent } from '../lib/annotation-events'
 import { legacyEventsForDoc, deriveDocKey } from '../lib/docstore'
 
 interface ProposeChangesDialogProps {
@@ -55,7 +55,7 @@ export function ProposeChangesDialog({ open, onClose }: ProposeChangesDialogProp
 
   if (!open) return null
 
-  const baseEvents = remoteShare ? decodeWal(remoteShare.originalEventsJsonl) : []
+  const baseEvents: AnnotationEvent[] = remoteShare?.originalEvents ?? []
 
   return (
     <div

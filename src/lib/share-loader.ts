@@ -12,10 +12,11 @@ import {
 import { parseShareUrl, type ShareHandle } from './share-url'
 import { addDocument, getDocument, deriveDocKey } from './docstore'
 import { importRemoteEventsToLocal } from './share-builder'
-import { encodeWal, type AnnotationEvent, type HeaderEvent } from './annotation-events'
+import { materialize, type HeaderEvent } from './annotation-events'
 import type { RemoteShareState } from '../store/useStore'
 
 export interface LoadShareResult {
+  kind: 'doc'
   /** The handle that was parsed and acted on. */
   handle: ShareHandle
   /** Local Dexie id for the (possibly newly imported) document. */
@@ -31,6 +32,17 @@ export interface LoadShareResult {
   banner: RemoteShareState
 }
 
+/** Emitted when the share URL is a folder (repo + non-.md path). The
+ *  caller routes these into the RepoBrowser UI — no doc load happens. */
+export interface FolderShareResult {
+  kind: 'folder'
+  handle: ShareHandle
+  /** The original href with share params intact, to seed RepoBrowser. */
+  href: string
+}
+
+export type ShareIntakeResult = LoadShareResult | FolderShareResult
+
 export interface LoadShareOptions {
   href?: string
   adapter?: RemoteDocumentAdapter
@@ -43,16 +55,17 @@ export interface LoadShareOptions {
  * Returns null when the current URL has no share params — caller should
  * fall through to its existing intake (Upload, library list, …).
  */
-export async function loadShareFromHash(opts: LoadShareOptions = {}): Promise<LoadShareResult | null> {
+export async function loadShareFromHash(opts: LoadShareOptions = {}): Promise<ShareIntakeResult | null> {
   const adapter = opts.adapter ?? defaultRemoteAdapter()
   const href = opts.href ?? (typeof window !== 'undefined' ? window.location.href : '')
   const handle = parseShareUrl({ href })
   if (!handle) return null
 
-  // Folder shares (github-repo with no `path` to a .md) are out of scope
-  // for v1 — caller routes those through the collection UI later.
+  // Folder shares (github-repo with no `path` to a .md) return a tagged
+  // result rather than null, so the caller can route them directly to
+  // the RepoBrowser without duplicating the kind-sniff regex.
   if (handle.kind === 'github-repo' && !handle.repo?.path?.endsWith('.md')) {
-    return null
+    return { kind: 'folder', handle, href }
   }
 
   const remoteDoc = await adapter.fetchDocument(handle)
@@ -75,23 +88,49 @@ export async function loadShareFromHash(opts: LoadShareOptions = {}): Promise<Lo
 
   // Pull header info if present so the banner can show "by Manu".
   const header = events.find((e) => e.op === 'header') as HeaderEvent | undefined
-  const counts = countMaterialized(events)
+  // Full replay so a WAL starting with a checkpoint op contributes the
+  // checkpointed highlights/comments to the banner count, not just the
+  // tail add/del ops.
+  const state = materialize(events)
 
   const banner: RemoteShareState = {
     sourceUrl: remoteDoc.sourceUrl,
     shareUrl: href,
     createdBy: header?.createdBy ?? null,
-    highlightCount: counts.highlights,
-    commentCount: counts.comments,
+    highlightCount: state.highlights.size,
+    commentCount: state.comments.size,
     forked: false,
     driftWarning,
-    originalEventsJsonl: encodeWal(events),
+    originalEvents: events,
     docId,
   }
 
   if (opts.consumeHash !== false && typeof window !== 'undefined') {
     try {
-      window.history.replaceState(null, '', window.location.pathname + window.location.search)
+      const url = new URL(window.location.href)
+      const SHARE_KEYS = new Set(['url', 'annot', 'repo', 'path', 'ref', 'hash'])
+      // Strip *only* share params from the fragment; preserve any
+      // app-level routing (e.g. `#read/section=intro`) the user arrived
+      // with. Replacing the whole hash would nuke deep-linking state.
+      const rawHash = url.hash.startsWith('#') ? url.hash.slice(1) : url.hash
+      const qIdx = rawHash.indexOf('?')
+      let head = rawHash
+      let tail = ''
+      if (qIdx >= 0) { head = rawHash.slice(0, qIdx); tail = rawHash.slice(qIdx + 1) }
+      // If there's no `?`, the whole hash might be a param string.
+      const isParamOnly = /^(url|annot|repo|path|ref|hash)=/.test(rawHash)
+      const params = new URLSearchParams(isParamOnly ? rawHash : tail)
+      for (const k of [...params.keys()]) if (SHARE_KEYS.has(k)) params.delete(k)
+      const remaining = params.toString()
+      let newHash = ''
+      if (isParamOnly) {
+        newHash = remaining ? `#${remaining}` : ''
+      } else {
+        newHash = head
+          ? (remaining ? `#${head}?${remaining}` : `#${head}`)
+          : (remaining ? `#${remaining}` : '')
+      }
+      window.history.replaceState(null, '', url.pathname + url.search + newHash)
     } catch {
       // best-effort
     }
@@ -101,6 +140,7 @@ export async function loadShareFromHash(opts: LoadShareOptions = {}): Promise<Lo
   void docKey
 
   return {
+    kind: 'doc',
     handle,
     docId,
     markdown: remoteDoc.markdown,
@@ -110,23 +150,4 @@ export async function loadShareFromHash(opts: LoadShareOptions = {}): Promise<Lo
     commentsAdded: importResult.commentsAdded,
     banner,
   }
-}
-
-function countMaterialized(events: AnnotationEvent[]): { highlights: number; comments: number } {
-  let highlights = 0
-  let comments = 0
-  // Cheap counter: tally adds minus dels. Replay would be safer but we
-  // already replayed via importRemoteEventsToLocal — this is just for the
-  // banner display.
-  const hAlive = new Set<string>()
-  const cAlive = new Set<string>()
-  for (const e of events) {
-    if (e.op === 'highlight.add') hAlive.add(e.id)
-    else if (e.op === 'highlight.del') hAlive.delete(e.id)
-    else if (e.op === 'comment.add') cAlive.add(e.id)
-    else if (e.op === 'comment.del') cAlive.delete(e.id)
-  }
-  highlights = hAlive.size
-  comments = cAlive.size
-  return { highlights, comments }
 }

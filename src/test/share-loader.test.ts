@@ -67,14 +67,17 @@ describe('loadShareFromHash', () => {
 
     const result = await loadShareFromHash({ href: url, adapter, consumeHash: false })
     expect(result).not.toBeNull()
-    expect(result!.docId).toBeGreaterThan(0)
-    expect(result!.eventsImported).toBe(2) // header + highlight
-    expect(result!.highlightsAdded).toBe(1)
-    expect(result!.banner.createdBy).toBe('manu')
-    expect(result!.banner.highlightCount).toBe(1)
-    expect(result!.banner.driftWarning).toBe(false)
-    expect(result!.banner.originalEventsJsonl).toContain('"op":"highlight.add"')
-    expect(result!.banner.docId).toBe(result!.docId)
+    expect(result?.kind).toBe('doc')
+    if (result?.kind !== 'doc') return
+    expect(result.docId).toBeGreaterThan(0)
+    expect(result.eventsImported).toBe(2) // header + highlight
+    expect(result.highlightsAdded).toBe(1)
+    expect(result.banner.createdBy).toBe('manu')
+    expect(result.banner.highlightCount).toBe(1)
+    expect(result.banner.driftWarning).toBe(false)
+    // originalEvents is now a typed array, not a JSONL string
+    expect(result.banner.originalEvents.some((e) => e.op === 'highlight.add')).toBe(true)
+    expect(result.banner.docId).toBe(result.docId)
     expect(await db.highlights.count()).toBe(1)
   })
 
@@ -87,7 +90,9 @@ describe('loadShareFromHash', () => {
       sourceUrl: 'https://example.com/shared.md',
     })
     const result = await loadShareFromHash({ href: handleUrl, adapter, consumeHash: false })
-    expect(result!.banner.driftWarning).toBe(true)
+    expect(result?.kind).toBe('doc')
+    if (result?.kind !== 'doc') return
+    expect(result.banner.driftWarning).toBe(true)
   })
 
   it('reuses an existing local doc instead of duplicating (contentHash dedup)', async () => {
@@ -100,7 +105,10 @@ describe('loadShareFromHash', () => {
     const handleUrl = `${ORIGIN}/#url=https%3A%2F%2Fexample.com%2Fshared.md`
     const first = await loadShareFromHash({ href: handleUrl, adapter, consumeHash: false })
     const second = await loadShareFromHash({ href: handleUrl, adapter, consumeHash: false })
-    expect(second!.docId).toBe(first!.docId)
+    expect(first?.kind).toBe('doc')
+    expect(second?.kind).toBe('doc')
+    if (first?.kind !== 'doc' || second?.kind !== 'doc') return
+    expect(second.docId).toBe(first.docId)
     expect(await db.documents.count()).toBe(1)
   })
 
@@ -113,9 +121,11 @@ describe('loadShareFromHash', () => {
     })
     const handleUrl = `${ORIGIN}/#url=https%3A%2F%2Fexample.com%2Fshared.md`
     const result = await loadShareFromHash({ href: handleUrl, adapter, consumeHash: false })
-    expect(result!.eventsImported).toBe(0)
-    expect(result!.banner.highlightCount).toBe(0)
-    expect(result!.banner.commentCount).toBe(0)
+    expect(result?.kind).toBe('doc')
+    if (result?.kind !== 'doc') return
+    expect(result.eventsImported).toBe(0)
+    expect(result.banner.highlightCount).toBe(0)
+    expect(result.banner.commentCount).toBe(0)
   })
 
   it('honors highlight.del when counting for the banner', async () => {
@@ -131,6 +141,8 @@ describe('loadShareFromHash', () => {
     })
     const handleUrl = `${ORIGIN}/#url=https%3A%2F%2Fexample.com%2Fshared.md`
     const result = await loadShareFromHash({ href: handleUrl, adapter, consumeHash: false })
-    expect(result!.banner.highlightCount).toBe(0)
+    expect(result?.kind).toBe('doc')
+    if (result?.kind !== 'doc') return
+    expect(result.banner.highlightCount).toBe(0)
   })
 })

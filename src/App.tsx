@@ -163,23 +163,19 @@ function AppContent() {
       // import resolves, so the loader needs the URL up-front rather than
       // reading window.location.href at call time.
       const capturedHref = window.location.href
-      // Folder shares (github-repo with non-.md path) render a browser
-      // pane; single-doc shares (url-pair, inline, or repo+single .md)
-      // hand off to the share-loader for fetch + import. Detect the folder
-      // shape here to skip share-loader's null-return for folders.
-      const isFolderShare = /[#&?]repo=/.test(hash) && !/path=[^&]*\.md(?:&|$)/.test(hash)
-      if (isFolderShare) {
-        // Clear any persisted doc so the browser pane (gated on !markdown)
-        // actually renders. Also clear remoteShare since this isn't a doc.
-        useStore.getState().setMarkdown('')
-        useStore.getState().setRemoteShare(null)
-        setRepoBrowserHref(capturedHref)
-        return
-      }
       import('./lib/share-loader').then(async ({ loadShareFromHash }) => {
         try {
           const result = await loadShareFromHash({ href: capturedHref })
           if (!result) return
+          if (result.kind === 'folder') {
+            // Folder share — clear any persisted doc so the RepoBrowser
+            // (gated on !markdown) actually renders, and clear remoteShare
+            // since this isn't a single-doc read.
+            useStore.getState().setMarkdown('')
+            useStore.getState().setRemoteShare(null)
+            setRepoBrowserHref(result.href)
+            return
+          }
           // setActiveDocId so downstream consumers (CommentsPanel, highlight
           // rendering, analysis lookups) query the right Dexie row. Must
           // fire before setMarkdown — setMarkdown resets viewMode to 'read'

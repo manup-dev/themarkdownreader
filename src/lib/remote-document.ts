@@ -14,6 +14,19 @@ import {
   type ShareHandle,
 } from './share-url'
 
+/** Error surfaced when GitHub rate-limits the Contents API. Banner/UI
+ *  callers read `.resetAt` so they can tell the user when to retry. */
+export class GithubRateLimitError extends Error {
+  readonly resetAt: number | null
+  constructor(resetAt: number | null) {
+    super(resetAt
+      ? `GitHub rate limit exceeded. Retry after ${new Date(resetAt).toLocaleTimeString()}.`
+      : 'GitHub rate limit exceeded.')
+    this.name = 'GithubRateLimitError'
+    this.resetAt = resetAt
+  }
+}
+
 export interface RemoteDocument {
   markdown: string
   fileName: string
@@ -151,7 +164,7 @@ export class GithubRemoteAdapter implements RemoteDocumentAdapter {
       return this.http.fetchDocument(handle)
     }
     const { owner, name, ref, path } = handle.repo
-    const url = `https://raw.githubusercontent.com/${owner}/${name}/${ref}/${path}`
+    const url = `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${encodeURIComponent(ref)}/${encodePath(path)}`
     return this.http.fetchDocument({ ...handle, kind: 'url-pair', docUrl: url })
   }
 
@@ -160,7 +173,7 @@ export class GithubRemoteAdapter implements RemoteDocumentAdapter {
       return this.http.fetchAnnotations(handle)
     }
     const { owner, name, ref, path } = handle.repo
-    const docUrl = `https://raw.githubusercontent.com/${owner}/${name}/${ref}/${path}`
+    const docUrl = `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${encodeURIComponent(ref)}/${encodePath(path)}`
     return this.http.fetchAnnotations({ ...handle, kind: 'url-pair', docUrl })
   }
 
@@ -168,26 +181,50 @@ export class GithubRemoteAdapter implements RemoteDocumentAdapter {
     if (handle.kind !== 'github-repo' || !handle.repo) return []
     const { owner, name, ref, path } = handle.repo
     // GitHub Contents API. Returns an array for directories, an object for files.
-    const url = `https://api.github.com/repos/${owner}/${name}/contents/${path}?ref=${encodeURIComponent(ref)}`
+    const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${encodePath(path)}?ref=${encodeURIComponent(ref)}`
     const safe = ensureSafeFetchUrl(url)
     if (!safe.ok) return []
-    try {
-      const res = await fetch(safe.url!, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
-      if (!res.ok) return []
-      const data = await res.json() as Array<{ name: string; path: string; type: string; download_url?: string }>
-      if (!Array.isArray(data)) return []
-      return data
-        .filter((e) => e.type === 'file' && e.name.endsWith('.md') || e.type === 'dir')
-        .map((e) => ({
+    const res = await fetch(safe.url!, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+    if (res.status === 403 || res.status === 429) {
+      // GitHub signals rate-limiting with X-RateLimit-Remaining: 0.
+      const remaining = res.headers.get('x-ratelimit-remaining')
+      if (remaining === '0' || res.status === 429) {
+        const reset = res.headers.get('x-ratelimit-reset')
+        const resetAt = reset ? parseInt(reset, 10) * 1000 : null
+        throw new GithubRateLimitError(Number.isFinite(resetAt) ? resetAt : null)
+      }
+    }
+    if (!res.ok) return []
+    let data: unknown
+    try { data = await res.json() } catch { return [] }
+    if (!Array.isArray(data)) return []
+    const entries = data as Array<{ name: string; path: string; type: string; download_url?: string }>
+    return entries
+      .filter((e) => (e.type === 'file' && typeof e.name === 'string' && e.name.endsWith('.md')) || e.type === 'dir')
+      .map((e) => {
+        const fallback = `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${encodeURIComponent(ref)}/${encodePath(e.path)}`
+        // B1: GitHub's download_url is remote-controlled — scheme-check
+        // before we ever render it as a link or fetch it. An exotic
+        // scheme in the API response (proxy misconfig, rogue fork) must
+        // not flow through to an <a href={…}>.
+        const safeDownload = e.download_url ? ensureSafeFetchUrl(e.download_url) : null
+        return {
           path: e.path,
           name: e.name,
           type: e.type === 'dir' ? 'dir' : 'file',
-          url: e.download_url ?? `https://raw.githubusercontent.com/${owner}/${name}/${ref}/${e.path}`,
-        }))
-    } catch {
-      return []
-    }
+          url: safeDownload?.ok && safeDownload.url ? safeDownload.url : fallback,
+        }
+      })
   }
+}
+
+/**
+ * Percent-encode each segment of a path while preserving slashes.
+ * Needed because GitHub paths can contain `?`, `#`, spaces, or `+`,
+ * all of which break raw interpolation.
+ */
+function encodePath(path: string): string {
+  return path.split('/').map(encodeURIComponent).join('/')
 }
 
 /**

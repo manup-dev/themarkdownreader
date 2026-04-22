@@ -25,6 +25,14 @@ export interface AnnotationSink {
   readCheckpoint(docKey: string): Promise<CheckpointEvent | null>
   writeCheckpoint(docKey: string, cp: CheckpointEvent): Promise<void>
   truncateBefore(docKey: string, seq: number): Promise<number>
+  /**
+   * Optional atomic compaction: write checkpoint + truncate log in a
+   * single transaction. When present, callers should prefer it over the
+   * two-step path so a crash between steps can't leave a stale
+   * checkpoint paired with unmerged tail events. Returns the number of
+   * rows removed from the log.
+   */
+  compactAtomic?(docKey: string, cp: CheckpointEvent): Promise<number>
 }
 
 export interface StoredEvent {
@@ -130,9 +138,19 @@ export class AnnotationLog {
       },
       clientId: this.clientId,
     }
-    await this.sink.writeCheckpoint(this.docKey, checkpoint)
-    const highestSeq = stored.length ? stored[stored.length - 1].seq + 1 : 0
-    const removed = await this.sink.truncateBefore(this.docKey, highestSeq)
+    // Prefer atomic compaction when the sink supports it — a crash
+    // between writeCheckpoint and truncateBefore could otherwise leave
+    // a stale checkpoint while the log still carries pre-checkpoint
+    // events, leading to double-apply on next hydrate.
+    let removed: number
+    if (this.sink.compactAtomic) {
+      removed = await this.sink.compactAtomic(this.docKey, checkpoint)
+    } else {
+      await this.sink.writeCheckpoint(this.docKey, checkpoint)
+      // Defensive max: don't trust array ordering — use the actual max seq.
+      const highestSeq = stored.length ? Math.max(...stored.map((s) => s.seq)) + 1 : 0
+      removed = await this.sink.truncateBefore(this.docKey, highestSeq)
+    }
     return {
       removedEvents: removed,
       checkpointBytes: JSON.stringify(checkpoint).length,

@@ -83,6 +83,10 @@ export function parseShareUrl(opts: ParseShareUrlOptions = {}): ShareHandle | nu
   if (repo) {
     const m = repo.match(/^([^/]+)\/([^/]+)$/)
     if (!m) return null
+    // Reject `..` in path segments to prevent path traversal when the
+    // segment is interpolated into a GitHub URL or a filesystem-style
+    // proxy. Empty segments (`a//b`) are also suspicious.
+    if (path.split('/').some((seg) => seg === '..' || seg === '.')) return null
     return {
       kind: 'github-repo',
       repo: { owner: m[1], name: m[2], ref, path },
@@ -97,10 +101,18 @@ export function parseShareUrl(opts: ParseShareUrlOptions = {}): ShareHandle | nu
     return { kind: 'url-pair', docUrl, annotUrl: annot, docHash }
   }
   if (annot) {
+    // Cap inline base64 payload to keep decode work bounded. 64 KB of
+    // base64url ≈ 48 KB of JSONL — plenty for a shared reading session
+    // and well below any pathological-page DoS risk.
+    if (annot.length > MAX_INLINE_ANNOT_BYTES) return null
     return { kind: 'inline', docUrl, inlineAnnot: annot, docHash }
   }
   return { kind: 'url-pair', docUrl, docHash }
 }
+
+/** Max base64url size for the Tier-1 `annot=` param before we reject
+ *  the share as malformed. Defensive cap against hash-flooding DoS. */
+export const MAX_INLINE_ANNOT_BYTES = 64 * 1024
 
 /**
  * Build a Tier 2 (URL-pair) share URL. Annot is optional; if absent,
@@ -121,15 +133,17 @@ export function buildUrlPairShare(args: {
 
 /**
  * Build a Tier 1 (inline) share URL. Caller passes the JSONL WAL as a
- * raw string; we base64url-encode it. Bytes-aware to avoid surprising
- * inflation on multibyte characters.
+ * raw string; we base64url-encode it. Overflow is measured against the
+ * encoded `annot=` payload alone — Slack wraps URLs around 4 KB, and
+ * measuring the full URL would falsely overflow every share on long
+ * deploy-origins (e.g. `https://long.example.com/subpath/…`).
  */
 export function buildInlineShare(args: {
   origin: string
   docUrl: string
   walJsonl: string
   docHash?: string
-  /** Soft cap on the encoded URL; default 8 KB to stay messenger-safe. */
+  /** Soft cap on the encoded annot payload; default 4 KB (messenger-safe). */
   maxBytes?: number
 }): { url: string; bytes: number; overflow: boolean } {
   const encoded = base64urlEncode(args.walJsonl)
@@ -138,8 +152,10 @@ export function buildInlineShare(args: {
   params.set('annot', encoded)
   if (args.docHash) params.set('hash', args.docHash)
   const url = `${args.origin}/#${params.toString()}`
-  const bytes = url.length
-  const cap = args.maxBytes ?? 8192
+  // Measure the payload, not the full URL — only the annot grows with
+  // per-doc data; the origin/doc-URL portion is fixed overhead.
+  const bytes = encoded.length
+  const cap = args.maxBytes ?? 4096
   return { url, bytes, overflow: bytes > cap }
 }
 
@@ -191,11 +207,15 @@ export function normalizeGithubUrl(url: string): string {
 
 const PRIVATE_HOSTNAME_PATTERNS: RegExp[] = [
   /^localhost$/,
-  /^127\.0\.0\.1$/,
-  /^0\.0\.0\.0$/,
+  /^127\./,
+  /^0\./,
   /^192\.168\./,
   /^10\./,
   /^172\.(1[6-9]|2\d|3[01])\./,
+  // Cloud metadata + link-local (IMDS at 169.254.169.254 is the high-value target).
+  /^169\.254\./,
+  // CGNAT (100.64.0.0/10 → 100.64…100.127).
+  /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./,
   /\.local$/,
   /^::1$/,
   /^::$/,
@@ -203,6 +223,7 @@ const PRIVATE_HOSTNAME_PATTERNS: RegExp[] = [
   /^::ffff:10\./,
   /^::ffff:192\.168\./,
   /^::ffff:172\.(1[6-9]|2\d|3[01])\./,
+  /^::ffff:169\.254\./,
   /^fe80:/,
   /^fc00:/,
   /^fd/,
@@ -247,6 +268,20 @@ export function ensureSafeFetchUrl(input: string): SafeUrlResult {
     return { ok: false, reason: 'private/local hosts not allowed' }
   }
   return { ok: true, url: parsed.toString() }
+}
+
+/**
+ * Conservative href sanitizer for rendering user-controllable URLs into
+ * anchor tags. Returns null when the URL isn't http(s), so callers can
+ * render the raw text without a link. Use this at every `<a href={…}>`
+ * that takes a remote string.
+ */
+export function safeHref(input: string | undefined | null): string | null {
+  if (!input) return null
+  const trimmed = input.trim()
+  if (!/^https?:\/\//i.test(trimmed)) return null
+  const safe = ensureSafeFetchUrl(trimmed)
+  return safe.ok && safe.url ? safe.url : null
 }
 
 // ─── base64url ──────────────────────────────────────────────────────────────

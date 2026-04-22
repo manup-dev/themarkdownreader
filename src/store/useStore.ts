@@ -4,6 +4,7 @@ import { trackEvent, type TelemetryEvent } from '../lib/telemetry'
 import { resolveEnabledFeatures, enableFeature, disableFeature, isViewModeGated } from '../lib/feature-flags'
 import type { PodcastScript } from '../lib/podcast'
 import type { DiagramDSL } from '../lib/excalidraw-converter'
+import type { AnnotationEvent } from '../lib/annotation-events'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -171,10 +172,11 @@ export interface RemoteShareState {
   /**
    * The remote events as fetched. Stashed so the "Propose changes" diff
    * view can compute the delta against the user's current local state
-   * without re-fetching the share. Stored as JSONL string to keep the
-   * Zustand store value JSON-serializable for persist().
+   * without re-fetching the share. Not persisted (partialize excludes
+   * remoteShare), so keeping this as a typed array avoids a round-trip
+   * through JSONL on every dialog open.
    */
-  originalEventsJsonl: string
+  originalEvents: AnnotationEvent[]
   /** Local Dexie id of the document — needed to read current state for the diff. */
   docId: number | null
 }

@@ -821,6 +821,42 @@ export class DexieAnnotationSink implements AnnotationSink {
     })
     return removed
   }
+
+  /**
+   * Write a checkpoint and delete superseded log rows in a single Dexie
+   * transaction spanning both tables. Without this, a crash between the
+   * two ops could leave a stale checkpoint paired with a still-full log,
+   * and concurrent appends could race the seq boundary.
+   *
+   * The seq ceiling is recomputed *inside* the transaction from the log
+   * table itself rather than trusted from the caller — defensive against
+   * a caller that computed max-seq from a stale read.
+   */
+  async compactAtomic(docKey: string, cp: CheckpointEvent): Promise<number> {
+    let removed = 0
+    await db.transaction('rw', db.annotationLog, db.annotationCheckpoint, async () => {
+      const rows = await db.annotationLog.where('docKey').equals(docKey).primaryKeys()
+      // Fetch just the seqs — the `primaryKeys()` call already returned them.
+      const seqs = rows.map((k) => Number(k)).filter((n) => Number.isFinite(n))
+      const ceiling = seqs.length ? Math.max(...seqs) + 1 : 0
+      await db.annotationCheckpoint.put({
+        docKey,
+        ts: cp.ts,
+        version: cp.v,
+        event: cp,
+      })
+      if (ceiling > 0) {
+        const toDelete = await db.annotationLog
+          .where('docKey')
+          .equals(docKey)
+          .and((r) => (r.seq ?? 0) < ceiling)
+          .primaryKeys()
+        removed = toDelete.length
+        if (removed) await db.annotationLog.bulkDelete(toDelete)
+      }
+    })
+    return removed
+  }
 }
 
 export const dexieSink = new DexieAnnotationSink()
