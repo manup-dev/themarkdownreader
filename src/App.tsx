@@ -180,6 +180,11 @@ function AppContent() {
         try {
           const result = await loadShareFromHash({ href: capturedHref })
           if (!result) return
+          // setActiveDocId so downstream consumers (CommentsPanel, highlight
+          // rendering, analysis lookups) query the right Dexie row. Must
+          // fire before setMarkdown — setMarkdown resets viewMode to 'read'
+          // which some effects key off, and those effects read activeDocId.
+          useStore.getState().setActiveDocId(result.docId)
           setMarkdown(result.markdown, result.fileName)
           useStore.getState().setRemoteShare(result.banner)
         } catch (err) {
