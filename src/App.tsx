@@ -77,6 +77,10 @@ function AppContent() {
   const [fabMenuOpen, setFabMenuOpen] = useState(false)
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [repoBrowserHref, setRepoBrowserHref] = useState<string | null>(null)
+  // Surfaces share-loader failures as a banner so CORS/404/bad-hash cases
+  // don't leave the user staring at a blank Upload screen with an error
+  // only visible in DevTools.
+  const [shareLoadError, setShareLoadError] = useState<string | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [mobileTocOpen, setMobileTocOpen] = useState(false)
   const [isOffline, setIsOffline] = useState(!navigator.onLine)
@@ -185,6 +189,7 @@ function AppContent() {
           useStore.getState().setRemoteShare(result.banner)
         } catch (err) {
           console.error('md-reader: Failed to load share URL:', err)
+          setShareLoadError((err as Error)?.message || 'Could not load the shared document.')
         }
       })
       return
@@ -705,6 +710,26 @@ function AppContent() {
 
       {/* Telemetry opt-in banner (shows once) */}
       <TelemetryBanner />
+
+      {/* Share-load failure banner — fixed top, dismissible. Appears when
+          the share-loader rejects (CORS, 404 on the doc URL, bad hash
+          param). Falls back to Upload screen behind it. */}
+      {shareLoadError && (
+        <div
+          role="alert"
+          className="fixed top-0 inset-x-0 z-40 px-4 py-2 bg-red-600 text-white text-sm flex items-center gap-3 shadow-md"
+        >
+          <span className="font-medium">Couldn't load the shared document:</span>
+          <span className="opacity-90">{shareLoadError}</span>
+          <button
+            onClick={() => setShareLoadError(null)}
+            className="ml-auto px-2 py-0.5 rounded hover:bg-red-700 text-xs font-medium"
+            aria-label="Dismiss share load error"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Share dialog — opened via Ctrl+Shift+S keyboard shortcut. Lazy-
           mounted so the first open pays the cost; keeps first paint lean. */}

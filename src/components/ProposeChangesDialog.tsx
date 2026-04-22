@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X, Loader2 } from 'lucide-react'
+import { X } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { useAdapter } from '../provider/hooks'
 import { AnnotationDiffView } from './AnnotationDiffView'
@@ -86,9 +86,32 @@ export function ProposeChangesDialog({ open, onClose }: ProposeChangesDialogProp
         )}
 
         {!error && !headEvents && (
-          <div className="bg-white dark:bg-gray-900 rounded-lg p-8 flex flex-col items-center gap-2 text-sm text-gray-500">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            Computing diff…
+          // Skeleton loader shaped like the final diff — feels faster than
+          // a centered spinner because the layout is already committed.
+          // Only the empty bar widths are animated (pulse).
+          <div className="bg-white dark:bg-gray-900 sepia:bg-sepia-50 rounded-lg shadow-md p-4 max-w-3xl mx-auto animate-pulse">
+            <div className="flex items-center justify-between mb-4">
+              <div className="h-4 w-64 bg-gray-200 dark:bg-gray-800 rounded" />
+              <div className="h-3 w-20 bg-gray-200 dark:bg-gray-800 rounded" />
+            </div>
+            <div className="space-y-3">
+              <div>
+                <div className="h-3 w-32 bg-gray-200 dark:bg-gray-800 rounded mb-2" />
+                <div className="space-y-1.5">
+                  <div className="h-8 bg-gray-100 dark:bg-gray-800/60 rounded" />
+                  <div className="h-8 bg-gray-100 dark:bg-gray-800/60 rounded" />
+                </div>
+              </div>
+              <div>
+                <div className="h-3 w-40 bg-gray-200 dark:bg-gray-800 rounded mb-2" />
+                <div className="h-8 bg-gray-100 dark:bg-gray-800/60 rounded" />
+              </div>
+            </div>
+            <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800 space-y-2">
+              <div className="h-7 bg-gray-100 dark:bg-gray-800/60 rounded" />
+              <div className="h-7 bg-gray-100 dark:bg-gray-800/60 rounded" />
+            </div>
+            <span className="sr-only">Computing diff…</span>
           </div>
         )}
 

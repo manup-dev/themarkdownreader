@@ -4,6 +4,28 @@ import { loadRepoFolderFromHash, type RepoFolderResult } from '../lib/repo-brows
 import { safeHref } from '../lib/share-url'
 import { GithubRateLimitError } from '../lib/remote-document'
 
+/** Live-updating "Try again in 2m 14s" — more useful than an absolute
+ *  clock time the user has to mentally subtract. Auto-triggers reload
+ *  when the window expires so users don't have to click. */
+function RateLimitCountdown({ resetAt, onExpire }: { resetAt: number; onExpire: () => void }) {
+  const [remaining, setRemaining] = useState(() => Math.max(0, resetAt - Date.now()))
+  useEffect(() => {
+    if (remaining <= 0) { onExpire(); return }
+    const t = setInterval(() => {
+      const next = Math.max(0, resetAt - Date.now())
+      setRemaining(next)
+      if (next <= 0) onExpire()
+    }, 1000)
+    return () => clearInterval(t)
+  }, [resetAt, onExpire, remaining])
+
+  const secs = Math.ceil(remaining / 1000)
+  const mm = Math.floor(secs / 60)
+  const ss = secs % 60
+  const label = mm > 0 ? `${mm}m ${ss}s` : `${ss}s`
+  return <>Try again in <strong>{label}</strong>.</>
+}
+
 interface RepoBrowserProps {
   /** Captured share URL — caller passes window.location.href at the moment
    *  the share was detected, since the history-syncing effect rewrites the
@@ -114,7 +136,7 @@ export function RepoBrowser({ href, onOpenFile, onOpenFolder }: RepoBrowserProps
             <span>
               GitHub rate limit reached.{' '}
               {state.resetAt
-                ? <>Try again after <strong>{new Date(state.resetAt).toLocaleTimeString()}</strong>.</>
+                ? <RateLimitCountdown resetAt={state.resetAt} onExpire={reload} />
                 : 'Try again in an hour.'}
             </span>
           </div>

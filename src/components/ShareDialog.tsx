@@ -1,9 +1,14 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Copy, Download, Link as LinkIcon, X, Check, AlertTriangle } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { useAdapter } from '../provider/hooks'
 import { buildShareForDocument, downloadSidecar, type BuiltShare } from '../lib/share-builder'
+import { showToast } from '../lib/toast'
 import type { StoredDocument } from '../types/storage-adapter'
+
+// Localize numbers so "1,234 highlights" reads better than "1234 highlights"
+// once a doc has been heavily annotated. Uses the browser locale.
+const fmt = (n: number): string => n.toLocaleString()
 
 interface ShareDialogProps {
   open: boolean
@@ -76,6 +81,7 @@ export function ShareDialog({ open, onClose, publicDocUrl }: ShareDialogProps) {
     try {
       await navigator.clipboard.writeText(built.url)
       setCopied(true)
+      showToast('Share link copied to clipboard')
     } catch {
       setError('Clipboard write blocked — select the URL manually.')
     }
@@ -84,6 +90,7 @@ export function ShareDialog({ open, onClose, publicDocUrl }: ShareDialogProps) {
   const handleDownload = useCallback(() => {
     if (!built) return
     downloadSidecar(built.sidecarFileName, built.wal)
+    showToast(`Downloaded ${built.sidecarFileName}`)
   }, [built])
 
   // Close on ESC
@@ -93,6 +100,16 @@ export function ShareDialog({ open, onClose, publicDocUrl }: ShareDialogProps) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
+
+  // Autofocus the primary Copy action when the dialog opens with a URL
+  // ready. Keyboard-first users can Enter immediately; mouse users are
+  // unaffected (they'll click). We delay one tick so the ref is attached.
+  const copyBtnRef = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (!open || !built?.url) return
+    const t = setTimeout(() => copyBtnRef.current?.focus(), 0)
+    return () => clearTimeout(t)
+  }, [open, built?.url])
 
   if (!open) return null
 
@@ -134,8 +151,8 @@ export function ShareDialog({ open, onClose, publicDocUrl }: ShareDialogProps) {
               <div className="text-xs text-gray-500 dark:text-gray-400">
                 <span className="font-medium">{fileName || 'document.md'}</span>
                 {' · '}
-                {built.highlightCount} highlight{built.highlightCount === 1 ? '' : 's'}
-                {', '}{built.commentCount} comment{built.commentCount === 1 ? '' : 's'}
+                {fmt(built.highlightCount)} highlight{built.highlightCount === 1 ? '' : 's'}
+                {', '}{fmt(built.commentCount)} comment{built.commentCount === 1 ? '' : 's'}
                 {' · '}
                 {formatBytes(built.bytes)} WAL
               </div>
@@ -162,6 +179,7 @@ export function ShareDialog({ open, onClose, publicDocUrl }: ShareDialogProps) {
                     aria-label="Share URL"
                   />
                   <button
+                    ref={copyBtnRef}
                     onClick={handleCopy}
                     disabled={!built.url}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-medium hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -185,6 +203,13 @@ export function ShareDialog({ open, onClose, publicDocUrl }: ShareDialogProps) {
               </div>
             </>
           )}
+        </div>
+
+        {/* Keyboard hint: surfaces existing shortcuts that would otherwise
+            be invisible (ESC to close is already wired above). */}
+        <div className="px-5 py-2 border-t border-gray-100 dark:border-gray-800 sepia:border-sepia-200 text-[10px] text-gray-400 dark:text-gray-500 flex items-center justify-end gap-3">
+          <span><kbd className="font-mono">Esc</kbd> to close</span>
+          {built?.url && <span><kbd className="font-mono">Enter</kbd> to copy</span>}
         </div>
       </div>
     </div>

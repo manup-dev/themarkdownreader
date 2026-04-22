@@ -12,6 +12,7 @@ import {
   type AnnotationEvent,
 } from '../lib/annotation-events'
 import { downloadSidecar, sidecarBasename } from '../lib/share-builder'
+import { showToast } from '../lib/toast'
 
 interface AnnotationDiffViewProps {
   /** Base events (e.g. the upstream WAL the recipient pulled). */
@@ -50,13 +51,16 @@ export function AnnotationDiffView({ baseEvents, headEvents, fileName, sourceUrl
     try {
       await navigator.clipboard.writeText(text)
       setCopied(which)
+      showToast(which === 'body' ? 'PR body copied — paste into your GitHub PR' : 'PR title copied')
     } catch {
       /* clipboard blocked — user can select manually */
     }
   }, [])
 
   const downloadHead = useCallback(() => {
-    downloadSidecar(sidecarBasename(fileName), encodeWal(headEvents))
+    const name = sidecarBasename(fileName)
+    downloadSidecar(name, encodeWal(headEvents))
+    showToast(`Downloaded ${name}`)
   }, [fileName, headEvents])
 
   return (
@@ -69,9 +73,9 @@ export function AnnotationDiffView({ baseEvents, headEvents, fileName, sourceUrl
       </div>
 
       {empty && (
-        <div className="flex items-start gap-2 text-sm text-gray-500 bg-gray-50 dark:bg-gray-800 p-3 rounded">
+        <div className="flex items-start gap-2 text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950 p-3 rounded">
           <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-          <span>No changes between the two states.</span>
+          <span>Your annotations match the share — you're in sync.</span>
         </div>
       )}
 
