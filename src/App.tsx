@@ -38,6 +38,8 @@ const CrossDocGraph = lazy(() => import('./components/CrossDocGraph').then((m) =
 const CorrelationView = lazy(() => import('./components/CorrelationView').then((m) => ({ default: m.CorrelationView })))
 const SimilarityMap = lazy(() => import('./components/SimilarityMap').then((m) => ({ default: m.SimilarityMap })))
 const CollectionView = lazy(() => import('./components/CollectionView').then((m) => ({ default: m.CollectionView })))
+const ShareDialog = lazy(() => import('./components/ShareDialog').then((m) => ({ default: m.ShareDialog })))
+const RemoteBanner = lazy(() => import('./components/RemoteBanner').then((m) => ({ default: m.RemoteBanner })))
 
 function LazyFallback() {
   return (
@@ -72,6 +74,7 @@ function AppContent() {
   const [commentCount, setCommentCount] = useState(0)
   const [focusMode, setFocusMode] = useState(false)
   const [fabMenuOpen, setFabMenuOpen] = useState(false)
+  const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [mobileTocOpen, setMobileTocOpen] = useState(false)
   const [isOffline, setIsOffline] = useState(!navigator.onLine)
@@ -146,19 +149,23 @@ function AppContent() {
       return
     }
 
-    // Handle #url=<encoded-url> — fetch raw content (public repos only)
-    if (hash.startsWith('#url=')) {
-      const encodedUrl = hash.slice(5)
-      window.history.replaceState(null, '', window.location.pathname)
-      try {
-        const targetUrl = decodeURIComponent(encodedUrl)
-        if (!targetUrl.startsWith('https://') && !targetUrl.startsWith('http://')) return
-        const fileName = targetUrl.split('/').pop() || 'document.md'
-        fetch(targetUrl)
-          .then((res) => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.text() })
-          .then((md) => setMarkdown(md, fileName))
-          .catch((err) => console.error('md-reader: Failed to fetch from extension URL:', err))
-      } catch { /* invalid URL encoding */ }
+    // Handle share URLs: #url=<doc>[&annot=<url|base64>][&hash=…] or
+    // #repo=<owner/name>&path=…. The share-loader does SSRF-guarded fetch
+    // for both doc and annotation sidecar, imports the events as local
+    // Dexie rows (so the existing UI renders them), and returns banner
+    // data for the RemoteBanner component.
+    const hasShareParams = /[#&?](url|repo)=/.test(hash)
+    if (hasShareParams) {
+      import('./lib/share-loader').then(async ({ loadShareFromHash }) => {
+        try {
+          const result = await loadShareFromHash()
+          if (!result) return
+          setMarkdown(result.markdown, result.fileName)
+          useStore.getState().setRemoteShare(result.banner)
+        } catch (err) {
+          console.error('md-reader: Failed to load share URL:', err)
+        }
+      })
       return
     }
 
@@ -362,6 +369,12 @@ function AppContent() {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { setChatOpen(false); setCommentsOpen(false); setFocusMode(false); setFabMenuOpen(false) }
       if (e.ctrlKey && e.shiftKey && e.key === 'F') { e.preventDefault(); setFocusMode((f) => !f) }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'S' || e.key === 's')) {
+        const target = e.target as HTMLElement | null
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+        e.preventDefault()
+        setShareDialogOpen((o) => !o)
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
         const target = e.target as HTMLElement | null
         if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
@@ -460,6 +473,9 @@ function AppContent() {
       {/* Main content */}
       <div id="main-content" className="flex-1 flex flex-col min-w-0" role="main">
         <Toolbar />
+        <Suspense fallback={null}>
+          <RemoteBanner />
+        </Suspense>
         <div className="flex-1 flex min-h-0">
           {/* Sidebar toggle — visible in any unified-shell view so users
               can re-open the sidebar regardless of which reading tab they
@@ -652,6 +668,17 @@ function AppContent() {
 
       {/* Telemetry opt-in banner (shows once) */}
       <TelemetryBanner />
+
+      {/* Share dialog — opened via Ctrl+Shift+S keyboard shortcut. Lazy-
+          mounted so the first open pays the cost; keeps first paint lean. */}
+      <Suspense fallback={null}>
+        {shareDialogOpen && (
+          <ShareDialog
+            open={shareDialogOpen}
+            onClose={() => setShareDialogOpen(false)}
+          />
+        )}
+      </Suspense>
     </div>
   )
 }

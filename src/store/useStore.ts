@@ -146,6 +146,28 @@ export interface DocumentState {
   navigateToPath: (relOrAbsPath: string) => boolean
   hydrateFolderFromCache: () => Promise<void>
   refreshFolder: () => Promise<{ ok: true; added: number; changed: number; removed: number } | { ok: false; reason: string }>
+
+  // Remote-share state — set when the app loads a #url=… share. Drives
+  // the RemoteBanner and the Fork action. Null when the open document
+  // is local only.
+  remoteShare: RemoteShareState | null
+  setRemoteShare: (value: RemoteShareState | null) => void
+}
+
+export interface RemoteShareState {
+  /** The source URL the doc was fetched from (the share's `#url=`). */
+  sourceUrl: string
+  /** Display string for the share URL itself, for the "open original" link. */
+  shareUrl: string
+  /** Author identifier from the WAL header, if known. */
+  createdBy: string | null
+  /** Materialized counts for the banner. */
+  highlightCount: number
+  commentCount: number
+  /** Whether the user has forked yet — disables the Fork button when true. */
+  forked: boolean
+  /** True when the local doc's hash differs from the share's expected hash. */
+  driftWarning: boolean
 }
 
 // Persist theme/fontSize to localStorage — auto-detect system dark mode on first visit
@@ -493,6 +515,9 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       return { ok: false as const, reason: (e as Error).message || 'Failed to re-read folder' }
     }
   },
+
+  remoteShare: null,
+  setRemoteShare: (value) => set({ remoteShare: value }),
 }), {
   name: 'md-reader-session',
   storage: {
