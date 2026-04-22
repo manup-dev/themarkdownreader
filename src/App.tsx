@@ -156,9 +156,14 @@ function AppContent() {
     // data for the RemoteBanner component.
     const hasShareParams = /[#&?](url|repo)=/.test(hash)
     if (hasShareParams) {
+      // Snapshot the full URL NOW. The history-syncing effect lower in this
+      // file will rewrite the hash to `#<viewMode>` before the dynamic
+      // import resolves, so the loader needs the URL up-front rather than
+      // reading window.location.href at call time.
+      const capturedHref = window.location.href
       import('./lib/share-loader').then(async ({ loadShareFromHash }) => {
         try {
-          const result = await loadShareFromHash()
+          const result = await loadShareFromHash({ href: capturedHref })
           if (!result) return
           setMarkdown(result.markdown, result.fileName)
           useStore.getState().setRemoteShare(result.banner)
