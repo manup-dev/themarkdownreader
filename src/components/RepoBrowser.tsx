@@ -30,25 +30,38 @@ export function RepoBrowser({ href, onOpenFile, onOpenFolder }: RepoBrowserProps
     error?: string
   }>({ status: 'loading' })
 
-  const load = useCallback(async () => {
-    setState({ status: 'loading' })
-    try {
-      const result = await loadRepoFolderFromHash({ href })
-      if (!result) {
-        setState({ status: 'error', error: 'Not a github-repo folder share' })
-        return
+  // Reload key bumps to trigger a refetch from the same href. Inlining
+  // the async logic in the effect avoids the react-compiler "no sync
+  // setState from inside an effect" warning that fires when an effect
+  // calls a useCallback that includes setState.
+  const [reloadKey, setReloadKey] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const result = await loadRepoFolderFromHash({ href })
+        if (cancelled) return
+        if (!result) {
+          setState({ status: 'error', error: 'Not a github-repo folder share' })
+          return
+        }
+        if (!result.entries.length) {
+          setState({ status: 'empty', result })
+          return
+        }
+        setState({ status: 'ready', result })
+      } catch (e) {
+        if (cancelled) return
+        setState({ status: 'error', error: (e as Error).message || 'Failed to load folder' })
       }
-      if (!result.entries.length) {
-        setState({ status: 'empty', result })
-        return
-      }
-      setState({ status: 'ready', result })
-    } catch (e) {
-      setState({ status: 'error', error: (e as Error).message || 'Failed to load folder' })
-    }
-  }, [href])
+    })()
+    return () => { cancelled = true }
+  }, [href, reloadKey])
 
-  useEffect(() => { void load() }, [load])
+  const reload = useCallback(() => {
+    setState({ status: 'loading' })
+    setReloadKey((k) => k + 1)
+  }, [])
 
   const repoLabel = state.result?.repo
     ? `${state.result.repo.owner}/${state.result.repo.name}` + (state.result.repo.path ? `:${state.result.repo.path}` : '')
@@ -68,7 +81,7 @@ export function RepoBrowser({ href, onOpenFile, onOpenFolder }: RepoBrowserProps
             )}
           </div>
           <button
-            onClick={load}
+            onClick={reload}
             className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
             aria-label="Reload"
             title="Reload"
