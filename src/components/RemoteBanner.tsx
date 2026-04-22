@@ -1,6 +1,8 @@
-import { useCallback } from 'react'
-import { ExternalLink, GitFork, AlertTriangle, X } from 'lucide-react'
+import { useCallback, useState, lazy, Suspense } from 'react'
+import { ExternalLink, GitFork, AlertTriangle, X, GitPullRequest } from 'lucide-react'
 import { useStore } from '../store/useStore'
+
+const ProposeChangesDialog = lazy(() => import('./ProposeChangesDialog').then((m) => ({ default: m.ProposeChangesDialog })))
 
 /**
  * Banner shown at the top of the reader when the current doc was loaded
@@ -14,6 +16,7 @@ import { useStore } from '../store/useStore'
 export function RemoteBanner() {
   const remoteShare = useStore((s) => s.remoteShare)
   const setRemoteShare = useStore((s) => s.setRemoteShare)
+  const [proposeOpen, setProposeOpen] = useState(false)
 
   const handleFork = useCallback(() => {
     if (!remoteShare) return
@@ -53,6 +56,13 @@ export function RemoteBanner() {
         <ExternalLink className="h-3 w-3" /> source
       </a>
       <div className="ml-auto flex items-center gap-2">
+        <button
+          onClick={() => setProposeOpen(true)}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-blue-300 dark:border-blue-800 bg-white dark:bg-blue-900 hover:bg-blue-100 dark:hover:bg-blue-800"
+          title="Diff your changes against the share and copy a PR body"
+        >
+          <GitPullRequest className="h-3 w-3" /> Propose
+        </button>
         {!remoteShare.forked && (
           <button
             onClick={handleFork}
@@ -70,6 +80,14 @@ export function RemoteBanner() {
           <X className="h-3 w-3" />
         </button>
       </div>
+      <Suspense fallback={null}>
+        {proposeOpen && (
+          <ProposeChangesDialog
+            open={proposeOpen}
+            onClose={() => setProposeOpen(false)}
+          />
+        )}
+      </Suspense>
     </div>
   )
 }

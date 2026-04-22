@@ -73,6 +73,8 @@ describe('loadShareFromHash', () => {
     expect(result!.banner.createdBy).toBe('manu')
     expect(result!.banner.highlightCount).toBe(1)
     expect(result!.banner.driftWarning).toBe(false)
+    expect(result!.banner.originalEventsJsonl).toContain('"op":"highlight.add"')
+    expect(result!.banner.docId).toBe(result!.docId)
     expect(await db.highlights.count()).toBe(1)
   })
 

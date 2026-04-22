@@ -40,6 +40,7 @@ const SimilarityMap = lazy(() => import('./components/SimilarityMap').then((m) =
 const CollectionView = lazy(() => import('./components/CollectionView').then((m) => ({ default: m.CollectionView })))
 const ShareDialog = lazy(() => import('./components/ShareDialog').then((m) => ({ default: m.ShareDialog })))
 const RemoteBanner = lazy(() => import('./components/RemoteBanner').then((m) => ({ default: m.RemoteBanner })))
+const RepoBrowser = lazy(() => import('./components/RepoBrowser').then((m) => ({ default: m.RepoBrowser })))
 
 function LazyFallback() {
   return (
@@ -75,6 +76,7 @@ function AppContent() {
   const [focusMode, setFocusMode] = useState(false)
   const [fabMenuOpen, setFabMenuOpen] = useState(false)
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
+  const [repoBrowserHref, setRepoBrowserHref] = useState<string | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [mobileTocOpen, setMobileTocOpen] = useState(false)
   const [isOffline, setIsOffline] = useState(!navigator.onLine)
@@ -161,6 +163,15 @@ function AppContent() {
       // import resolves, so the loader needs the URL up-front rather than
       // reading window.location.href at call time.
       const capturedHref = window.location.href
+      // Folder shares (github-repo with non-.md path) render a browser
+      // pane; single-doc shares (url-pair, inline, or repo+single .md)
+      // hand off to the share-loader for fetch + import. Detect the folder
+      // shape here to skip share-loader's null-return for folders.
+      const isFolderShare = /[#&?]repo=/.test(hash) && !/path=[^&]*\.md(?:&|$)/.test(hash)
+      if (isFolderShare) {
+        setRepoBrowserHref(capturedHref)
+        return
+      }
       import('./lib/share-loader').then(async ({ loadShareFromHash }) => {
         try {
           const result = await loadShareFromHash({ href: capturedHref })
@@ -446,6 +457,21 @@ function AppContent() {
     const cur = useStore.getState().chatWidth
     setChatWidth(Math.max(250, Math.min(600, cur - delta)))
   }, [setChatWidth])
+
+  // Repo browser takes precedence over Upload — when a folder share URL
+  // landed, we want the user to see the folder listing instead of being
+  // pushed to the empty-state Upload screen.
+  if (repoBrowserHref && !markdown) {
+    return (
+      <Suspense fallback={<LazyFallback />}>
+        <RepoBrowser
+          href={repoBrowserHref}
+          onOpenFile={(url) => { setRepoBrowserHref(null); window.location.href = url }}
+          onOpenFolder={(url) => { setRepoBrowserHref(url) }}
+        />
+      </Suspense>
+    )
+  }
 
   if (!markdown && !workspaceMode && !folderFiles) {
     return <Upload />

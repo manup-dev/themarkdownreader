@@ -114,5 +114,28 @@ export type { ShareInputs, BuiltShare } from './lib/share-builder'
 export { loadShareFromHash } from './lib/share-loader'
 export type { LoadShareResult, LoadShareOptions } from './lib/share-loader'
 
+export { loadRepoFolderFromHash } from './lib/repo-browser'
+export type { RepoFolderResult, LoadRepoFolderOptions } from './lib/repo-browser'
+
+export { fetchWorkspaceConfig, githubWorkspaceRootUrl } from './lib/workspace-config'
+export type { WorkspaceConfig } from './lib/workspace-config'
+
+export {
+  diffEvents,
+  diffStates,
+  isEmpty as isDiffEmpty,
+  buildPrTitle,
+  buildPrBody,
+} from './lib/annotation-diff'
+export type {
+  AnnotationDiff,
+  HighlightChange,
+  CommentChange,
+  PrTextOptions,
+} from './lib/annotation-diff'
+
 export { ShareDialog } from './components/ShareDialog'
 export { RemoteBanner } from './components/RemoteBanner'
+export { RepoBrowser } from './components/RepoBrowser'
+export { AnnotationDiffView } from './components/AnnotationDiffView'
+export { ProposeChangesDialog } from './components/ProposeChangesDialog'

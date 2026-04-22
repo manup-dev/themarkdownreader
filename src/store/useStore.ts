@@ -168,6 +168,15 @@ export interface RemoteShareState {
   forked: boolean
   /** True when the local doc's hash differs from the share's expected hash. */
   driftWarning: boolean
+  /**
+   * The remote events as fetched. Stashed so the "Propose changes" diff
+   * view can compute the delta against the user's current local state
+   * without re-fetching the share. Stored as JSONL string to keep the
+   * Zustand store value JSON-serializable for persist().
+   */
+  originalEventsJsonl: string
+  /** Local Dexie id of the document — needed to read current state for the diff. */
+  docId: number | null
 }
 
 // Persist theme/fontSize to localStorage — auto-detect system dark mode on first visit

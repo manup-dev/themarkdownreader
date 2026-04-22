@@ -12,7 +12,7 @@ import {
 import { parseShareUrl, type ShareHandle } from './share-url'
 import { addDocument, getDocument, deriveDocKey } from './docstore'
 import { importRemoteEventsToLocal } from './share-builder'
-import type { AnnotationEvent, HeaderEvent } from './annotation-events'
+import { encodeWal, type AnnotationEvent, type HeaderEvent } from './annotation-events'
 import type { RemoteShareState } from '../store/useStore'
 
 export interface LoadShareResult {
@@ -85,6 +85,8 @@ export async function loadShareFromHash(opts: LoadShareOptions = {}): Promise<Lo
     commentCount: counts.comments,
     forked: false,
     driftWarning,
+    originalEventsJsonl: encodeWal(events),
+    docId,
   }
 
   if (opts.consumeHash !== false && typeof window !== 'undefined') {
