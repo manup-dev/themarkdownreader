@@ -204,6 +204,116 @@ server.tool(
   }
 )
 
+// ─── Tool 8: create_share_url ───────────────────────────────────────────────
+
+server.tool(
+  'create_share_url',
+  'Build a portable share URL for a markdown file plus its sidecar annotations (if a .foo.md.annot file exists alongside). Returns a self-contained link that opens the doc + annotations in any md-reader instance.',
+  {
+    path: z.string().describe('Relative path to the .md file'),
+    publicDocUrl: z.string().optional().describe('Public URL where this .md is reachable (e.g. raw.githubusercontent.com URL). Required for the share link to actually be openable elsewhere.'),
+    maxInlineBytes: z.number().optional().describe('Soft cap for inline-encoded annotations. Default 8192. If exceeded, falls back to URL-pair tier (recipient sibling-resolves the .annot).'),
+  },
+  async ({ path: inputPath, publicDocUrl, maxInlineBytes }) => {
+    const absPath = validateMdPath(inputPath)
+    const md = fs.readFileSync(absPath, 'utf-8')
+    const fileName = path.basename(absPath)
+    const sidecarPath = path.join(path.dirname(absPath), `.${fileName}.annot`)
+    const sidecarExists = fs.existsSync(sidecarPath)
+    const walExisting = sidecarExists ? fs.readFileSync(sidecarPath, 'utf-8') : ''
+
+    const contentHash = await sha256Hex(md)
+    const docKey = contentHash
+    const headerLine = JSON.stringify({
+      v: 1,
+      ts: Date.now(),
+      id: `hdr_${Date.now().toString(36)}`,
+      op: 'header',
+      doc: { docKey, title: fileName, contentHash, source: publicDocUrl },
+      schema: 'mdreader.annot/1',
+      createdAt: Date.now(),
+      createdBy: 'claude-code-mcp',
+    })
+
+    // Strip any existing header in the sidecar; we replace it with our own.
+    const tailLines = walExisting.split('\n').filter((line) => {
+      const trimmed = line.trim()
+      if (!trimmed) return false
+      try {
+        const parsed = JSON.parse(trimmed) as { op?: string }
+        return parsed.op !== 'header'
+      } catch {
+        return false
+      }
+    })
+    const wal = [headerLine, ...tailLines].join('\n') + '\n'
+
+    if (!publicDocUrl) {
+      return {
+        content: [{
+          type: 'text',
+          text: `Built WAL for ${inputPath} (${tailLines.length} event${tailLines.length === 1 ? '' : 's'}, ${wal.length} bytes), but no publicDocUrl was provided so a share URL cannot be assembled. Pass a public raw URL to get a copy-pasteable share link.`,
+        }],
+      }
+    }
+
+    const cap = maxInlineBytes ?? 8192
+    const origin = MD_READER_URL
+    const encoded = base64UrlEncode(wal)
+    const inlineUrl = `${origin}/#url=${encodeURIComponent(publicDocUrl)}&annot=${encoded}&hash=sha256:${contentHash}`
+    const fitsInline = inlineUrl.length <= cap
+
+    const shareUrl = fitsInline
+      ? inlineUrl
+      : `${origin}/#url=${encodeURIComponent(publicDocUrl)}&hash=sha256:${contentHash}`
+
+    const tier = fitsInline ? 'inline' : 'url-pair'
+    const note = fitsInline
+      ? `${tailLines.length} event${tailLines.length === 1 ? '' : 's'} fit inline.`
+      : `${tailLines.length} event${tailLines.length === 1 ? '' : 's'} too large for inline; using URL-pair. Recipient will sibling-resolve .${fileName}.annot from the same host.`
+
+    return {
+      content: [{
+        type: 'text',
+        text: `Share URL for ${inputPath} (${tier}):\n${shareUrl}\n\n${note}\nWAL size: ${wal.length} bytes. Sidecar: ${sidecarExists ? sidecarPath : '(none — would only carry header)'}`,
+      }],
+    }
+  }
+)
+
+// ─── Tool 9: open_share_url ─────────────────────────────────────────────────
+
+server.tool(
+  'open_share_url',
+  'Open a md-reader share URL in the user\'s default browser. Use to hand off to a teammate or to preview a share you just created.',
+  {
+    url: z.string().describe('A share URL produced by create_share_url, or any URL whose hash carries #url= or #repo= share params.'),
+  },
+  async ({ url }) => {
+    if (!/^https?:\/\//.test(url)) {
+      throw new Error('URL must start with http:// or https://')
+    }
+    const { default: open } = await import('open')
+    await open(url)
+    return { content: [{ type: 'text', text: `Opened share URL in browser:\n${url}` }] }
+  }
+)
+
+// ─── Helpers (share-specific) ──────────────────────────────────────────────
+
+async function sha256Hex(text: string): Promise<string> {
+  const { createHash } = await import('crypto')
+  return createHash('sha256').update(text, 'utf-8').digest('hex')
+}
+
+function base64UrlEncode(text: string): string {
+  return Buffer.from(text, 'utf-8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+}
+
 // ─── Start ──────────────────────────────────────────────────────────────────
 
 async function main() {
