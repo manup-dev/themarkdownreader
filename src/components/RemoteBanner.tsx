@@ -78,10 +78,13 @@ export function RemoteBanner() {
           <ExternalLink className="h-3 w-3" /> source
         </a>
       )}
+      {/* Action group — vertical padding bumped from py-0.5 to py-1.5 so
+          buttons clear the 32px touch-target threshold on phones without
+          looking out of place on desktop. Dismiss bumps to p-2 (≥32px). */}
       <div className="ml-auto flex items-center gap-2">
         <button
           onClick={() => setProposeOpen(true)}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-blue-300 dark:border-blue-800 bg-white dark:bg-blue-900 hover:bg-blue-100 dark:hover:bg-blue-800 transition-colors hover:border-blue-400 group"
+          className="inline-flex items-center gap-1 px-2 py-1.5 rounded border border-blue-300 dark:border-blue-800 bg-white dark:bg-blue-900 hover:bg-blue-100 dark:hover:bg-blue-800 transition-colors hover:border-blue-400 group"
           title="Diff your changes against the share and copy a PR body"
         >
           <GitPullRequest className="h-3 w-3 transition-transform group-hover:-rotate-12" /> Propose
@@ -89,7 +92,7 @@ export function RemoteBanner() {
         {!remoteShare.forked && (
           <button
             onClick={handleFork}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-blue-300 dark:border-blue-800 bg-white dark:bg-blue-900 hover:bg-blue-100 dark:hover:bg-blue-800 transition-colors"
+            className="inline-flex items-center gap-1 px-2 py-1.5 rounded border border-blue-300 dark:border-blue-800 bg-white dark:bg-blue-900 hover:bg-blue-100 dark:hover:bg-blue-800 transition-colors"
             title="Fork: your edits stay local"
           >
             <GitFork className="h-3 w-3" /> Fork
@@ -97,7 +100,7 @@ export function RemoteBanner() {
         )}
         <button
           onClick={handleDismiss}
-          className="p-0.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900"
+          className="p-2 rounded hover:bg-blue-100 dark:hover:bg-blue-900"
           aria-label="Dismiss banner"
         >
           <X className="h-3 w-3" />

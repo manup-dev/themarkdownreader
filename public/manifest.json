@@ -3,13 +3,13 @@
   "short_name": "md-reader",
   "description": "Comprehend. Then act. Without the alt-tab. Understand any spec as a podcast or mind map, then ship a grounded prompt to Claude Code. Local, offline, MIT.",
   "version": "1.0.0",
-  "start_url": "/?source=pwa",
+  "start_url": "./?source=pwa",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#2563eb",
   "icons": [
     {
-      "src": "/favicon.svg",
+      "src": "./favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml"
     }

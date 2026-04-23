@@ -93,10 +93,34 @@ export function ShareDialog({ open, onClose, publicDocUrl }: ShareDialogProps) {
     showToast(`Downloaded ${built.sidecarFileName}`)
   }, [built])
 
-  // Close on ESC
+  // Close on ESC + focus trap. Keeping focus inside the modal is a basic
+  // a11y requirement: keyboard users without a trap end up tabbing into
+  // background content with no visual cue, then can't escape back.
+  // Implementation is the textbook minimum — wrap focus on Tab from the
+  // last focusable, and on Shift+Tab from the first.
+  const dialogRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose(); return }
+      if (e.key !== 'Tab') return
+      const root = dialogRef.current
+      if (!root) return
+      const focusables = root.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), a[href], textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+      if (focusables.length === 0) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      const active = document.activeElement
+      if (e.shiftKey && (active === first || !root.contains(active))) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
@@ -122,6 +146,7 @@ export function ShareDialog({ open, onClose, publicDocUrl }: ShareDialogProps) {
       aria-labelledby="share-dialog-title"
     >
       <div
+        ref={dialogRef}
         className="bg-white dark:bg-gray-900 sepia:bg-sepia-50 text-gray-900 dark:text-gray-100 sepia:text-sepia-900 rounded-lg shadow-2xl w-full max-w-md mx-4 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
@@ -131,7 +156,7 @@ export function ShareDialog({ open, onClose, publicDocUrl }: ShareDialogProps) {
           </h2>
           <button
             onClick={onClose}
-            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 sepia:hover:bg-sepia-100"
+            className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 sepia:hover:bg-sepia-100"
             aria-label="Close share dialog"
           >
             <X className="h-4 w-4" />
