@@ -1,5 +1,7 @@
 import type { TextAnchor } from '../lib/anchor'
 import type { TocEntry } from '../store/useStore'
+import type { AnnotationEvent, CheckpointEvent } from '../lib/annotation-events'
+import type { StoredEvent, CompactResult } from '../lib/annotation-log'
 
 export interface StoredDocument {
   id?: number
@@ -135,4 +137,14 @@ export interface StorageAdapter {
   importLibrary(json: string): Promise<void>
   clearAllData(): Promise<void>
   requestPersistentStorage(): Promise<void>
+
+  // Annotation WAL (optional — defaults synthesized from legacy CRUD when
+  // an embedder supplies a pre-v9 adapter). Consumers that implement these
+  // get sharable-annotation behavior; consumers that don't keep working.
+  appendEvents?(docKey: string, events: AnnotationEvent[]): Promise<void>
+  listEvents?(docKey: string, sinceSeq?: number): Promise<StoredEvent[]>
+  readCheckpoint?(docKey: string): Promise<CheckpointEvent | null>
+  writeCheckpoint?(docKey: string, cp: CheckpointEvent): Promise<void>
+  truncateBefore?(docKey: string, seq: number): Promise<number>
+  compactLog?(docKey: string): Promise<CompactResult>
 }

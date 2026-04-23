@@ -4,6 +4,7 @@ import { trackEvent, type TelemetryEvent } from '../lib/telemetry'
 import { resolveEnabledFeatures, enableFeature, disableFeature, isViewModeGated } from '../lib/feature-flags'
 import type { PodcastScript } from '../lib/podcast'
 import type { DiagramDSL } from '../lib/excalidraw-converter'
+import type { AnnotationEvent } from '../lib/annotation-events'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -146,6 +147,38 @@ export interface DocumentState {
   navigateToPath: (relOrAbsPath: string) => boolean
   hydrateFolderFromCache: () => Promise<void>
   refreshFolder: () => Promise<{ ok: true; added: number; changed: number; removed: number } | { ok: false; reason: string }>
+
+  // Remote-share state — set when the app loads a #url=… share. Drives
+  // the RemoteBanner and the Fork action. Null when the open document
+  // is local only.
+  remoteShare: RemoteShareState | null
+  setRemoteShare: (value: RemoteShareState | null) => void
+}
+
+export interface RemoteShareState {
+  /** The source URL the doc was fetched from (the share's `#url=`). */
+  sourceUrl: string
+  /** Display string for the share URL itself, for the "open original" link. */
+  shareUrl: string
+  /** Author identifier from the WAL header, if known. */
+  createdBy: string | null
+  /** Materialized counts for the banner. */
+  highlightCount: number
+  commentCount: number
+  /** Whether the user has forked yet — disables the Fork button when true. */
+  forked: boolean
+  /** True when the local doc's hash differs from the share's expected hash. */
+  driftWarning: boolean
+  /**
+   * The remote events as fetched. Stashed so the "Propose changes" diff
+   * view can compute the delta against the user's current local state
+   * without re-fetching the share. Not persisted (partialize excludes
+   * remoteShare), so keeping this as a typed array avoids a round-trip
+   * through JSONL on every dialog open.
+   */
+  originalEvents: AnnotationEvent[]
+  /** Local Dexie id of the document — needed to read current state for the diff. */
+  docId: number | null
 }
 
 // Persist theme/fontSize to localStorage — auto-detect system dark mode on first visit
@@ -493,6 +526,9 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       return { ok: false as const, reason: (e as Error).message || 'Failed to re-read folder' }
     }
   },
+
+  remoteShare: null,
+  setRemoteShare: (value) => set({ remoteShare: value }),
 }), {
   name: 'md-reader-session',
   storage: {

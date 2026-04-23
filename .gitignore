@@ -48,6 +48,7 @@ my-e2e-test.md
 # Eval run results
 scripts/eval/results.tsv
 scripts/eval/results/
+design/
 
 # VS Code extension build artifacts
 vscode-extension/dist/

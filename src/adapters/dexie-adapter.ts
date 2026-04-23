@@ -1,5 +1,7 @@
 import type { StorageAdapter, AddDocumentResult, StoredDocument, Highlight, Comment, SearchHit, DocStats, DocumentAnalysis, CachedAudio, CollectionCache, DocLinkExpanded } from '../types/storage-adapter'
 import * as ds from '../lib/docstore'
+import type { AnnotationEvent, CheckpointEvent } from '../lib/annotation-events'
+import { AnnotationLog, type StoredEvent, type CompactResult } from '../lib/annotation-log'
 
 export class DexieAdapter implements StorageAdapter {
   async addDocument(fileName: string, markdown: string, opts?: { skipPostProcessing?: boolean }): Promise<AddDocumentResult> {
@@ -100,5 +102,56 @@ export class DexieAdapter implements StorageAdapter {
   }
   async requestPersistentStorage(): Promise<void> {
     await ds.requestPersistentStorage()
+  }
+
+  // ─── Annotation WAL ──────────────────────────────────────────────────────
+
+  async appendEvents(docKey: string, events: AnnotationEvent[]): Promise<void> {
+    await ds.dexieSink.append(docKey, events)
+  }
+
+  async listEvents(docKey: string, sinceSeq?: number): Promise<StoredEvent[]> {
+    return ds.dexieSink.listEvents(docKey, sinceSeq)
+  }
+
+  async readCheckpoint(docKey: string): Promise<CheckpointEvent | null> {
+    return ds.dexieSink.readCheckpoint(docKey)
+  }
+
+  async writeCheckpoint(docKey: string, cp: CheckpointEvent): Promise<void> {
+    await ds.dexieSink.writeCheckpoint(docKey, cp)
+  }
+
+  async truncateBefore(docKey: string, seq: number): Promise<number> {
+    return ds.dexieSink.truncateBefore(docKey, seq)
+  }
+
+  async compactLog(docKey: string): Promise<CompactResult> {
+    const log = new AnnotationLog(docKey, ds.dexieSink, this.clientId())
+    await log.hydrate()
+    return log.compact()
+  }
+
+  /**
+   * Stable client identifier for this browser/session pairing. We use
+   * localStorage so the same browser is recognized across reloads, which
+   * gives us a usable tiebreaker in compareEvents and a useful "by" field
+   * for future attribution. Anonymous by default — no PII.
+   */
+  private clientId(): string {
+    try {
+      const key = 'md-reader.clientId'
+      let id = localStorage.getItem(key)
+      if (!id) {
+        id = crypto.randomUUID()
+        localStorage.setItem(key, id)
+      }
+      return id
+    } catch {
+      // SSR / test environments without localStorage: fall back to a
+      // per-call uuid. That's fine — replay ordering doesn't require
+      // persistence across calls.
+      return crypto.randomUUID()
+    }
   }
 }

@@ -38,6 +38,9 @@ const CrossDocGraph = lazy(() => import('./components/CrossDocGraph').then((m) =
 const CorrelationView = lazy(() => import('./components/CorrelationView').then((m) => ({ default: m.CorrelationView })))
 const SimilarityMap = lazy(() => import('./components/SimilarityMap').then((m) => ({ default: m.SimilarityMap })))
 const CollectionView = lazy(() => import('./components/CollectionView').then((m) => ({ default: m.CollectionView })))
+const ShareDialog = lazy(() => import('./components/ShareDialog').then((m) => ({ default: m.ShareDialog })))
+const RemoteBanner = lazy(() => import('./components/RemoteBanner').then((m) => ({ default: m.RemoteBanner })))
+const RepoBrowser = lazy(() => import('./components/RepoBrowser').then((m) => ({ default: m.RepoBrowser })))
 
 function LazyFallback() {
   return (
@@ -72,6 +75,12 @@ function AppContent() {
   const [commentCount, setCommentCount] = useState(0)
   const [focusMode, setFocusMode] = useState(false)
   const [fabMenuOpen, setFabMenuOpen] = useState(false)
+  const [shareDialogOpen, setShareDialogOpen] = useState(false)
+  const [repoBrowserHref, setRepoBrowserHref] = useState<string | null>(null)
+  // Surfaces share-loader failures as a banner so CORS/404/bad-hash cases
+  // don't leave the user staring at a blank Upload screen with an error
+  // only visible in DevTools.
+  const [shareLoadError, setShareLoadError] = useState<string | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [mobileTocOpen, setMobileTocOpen] = useState(false)
   const [isOffline, setIsOffline] = useState(!navigator.onLine)
@@ -146,19 +155,43 @@ function AppContent() {
       return
     }
 
-    // Handle #url=<encoded-url> — fetch raw content (public repos only)
-    if (hash.startsWith('#url=')) {
-      const encodedUrl = hash.slice(5)
-      window.history.replaceState(null, '', window.location.pathname)
-      try {
-        const targetUrl = decodeURIComponent(encodedUrl)
-        if (!targetUrl.startsWith('https://') && !targetUrl.startsWith('http://')) return
-        const fileName = targetUrl.split('/').pop() || 'document.md'
-        fetch(targetUrl)
-          .then((res) => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.text() })
-          .then((md) => setMarkdown(md, fileName))
-          .catch((err) => console.error('md-reader: Failed to fetch from extension URL:', err))
-      } catch { /* invalid URL encoding */ }
+    // Handle share URLs: #url=<doc>[&annot=<url|base64>][&hash=…] or
+    // #repo=<owner/name>&path=…. The share-loader does SSRF-guarded fetch
+    // for both doc and annotation sidecar, imports the events as local
+    // Dexie rows (so the existing UI renders them), and returns banner
+    // data for the RemoteBanner component.
+    const hasShareParams = /[#&?](url|repo)=/.test(hash)
+    if (hasShareParams) {
+      // Snapshot the full URL NOW. The history-syncing effect lower in this
+      // file will rewrite the hash to `#<viewMode>` before the dynamic
+      // import resolves, so the loader needs the URL up-front rather than
+      // reading window.location.href at call time.
+      const capturedHref = window.location.href
+      import('./lib/share-loader').then(async ({ loadShareFromHash }) => {
+        try {
+          const result = await loadShareFromHash({ href: capturedHref })
+          if (!result) return
+          if (result.kind === 'folder') {
+            // Folder share — clear any persisted doc so the RepoBrowser
+            // (gated on !markdown) actually renders, and clear remoteShare
+            // since this isn't a single-doc read.
+            useStore.getState().setMarkdown('')
+            useStore.getState().setRemoteShare(null)
+            setRepoBrowserHref(result.href)
+            return
+          }
+          // setActiveDocId so downstream consumers (CommentsPanel, highlight
+          // rendering, analysis lookups) query the right Dexie row. Must
+          // fire before setMarkdown — setMarkdown resets viewMode to 'read'
+          // which some effects key off, and those effects read activeDocId.
+          useStore.getState().setActiveDocId(result.docId)
+          setMarkdown(result.markdown, result.fileName)
+          useStore.getState().setRemoteShare(result.banner)
+        } catch (err) {
+          console.error('md-reader: Failed to load share URL:', err)
+          setShareLoadError((err as Error)?.message || 'Could not load the shared document.')
+        }
+      })
       return
     }
 
@@ -362,6 +395,12 @@ function AppContent() {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { setChatOpen(false); setCommentsOpen(false); setFocusMode(false); setFabMenuOpen(false) }
       if (e.ctrlKey && e.shiftKey && e.key === 'F') { e.preventDefault(); setFocusMode((f) => !f) }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'S' || e.key === 's')) {
+        const target = e.target as HTMLElement | null
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+        e.preventDefault()
+        setShareDialogOpen((o) => !o)
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
         const target = e.target as HTMLElement | null
         if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
@@ -429,6 +468,22 @@ function AppContent() {
     setChatWidth(Math.max(250, Math.min(600, cur - delta)))
   }, [setChatWidth])
 
+  // Repo browser takes precedence — when a folder share URL landed, the
+  // user should see the folder listing regardless of any persisted doc
+  // state (Zustand persist hydrates asynchronously and would otherwise
+  // restore a previous markdown after we clear it).
+  if (repoBrowserHref) {
+    return (
+      <Suspense fallback={<LazyFallback />}>
+        <RepoBrowser
+          href={repoBrowserHref}
+          onOpenFile={(url) => { setRepoBrowserHref(null); window.location.href = url }}
+          onOpenFolder={(url) => { setRepoBrowserHref(url) }}
+        />
+      </Suspense>
+    )
+  }
+
   if (!markdown && !workspaceMode && !folderFiles) {
     return <Upload />
   }
@@ -460,6 +515,9 @@ function AppContent() {
       {/* Main content */}
       <div id="main-content" className="flex-1 flex flex-col min-w-0" role="main">
         <Toolbar />
+        <Suspense fallback={null}>
+          <RemoteBanner />
+        </Suspense>
         <div className="flex-1 flex min-h-0">
           {/* Sidebar toggle — visible in any unified-shell view so users
               can re-open the sidebar regardless of which reading tab they
@@ -652,6 +710,37 @@ function AppContent() {
 
       {/* Telemetry opt-in banner (shows once) */}
       <TelemetryBanner />
+
+      {/* Share-load failure banner — fixed top, dismissible. Appears when
+          the share-loader rejects (CORS, 404 on the doc URL, bad hash
+          param). Falls back to Upload screen behind it. */}
+      {shareLoadError && (
+        <div
+          role="alert"
+          className="fixed top-0 inset-x-0 z-40 px-4 py-2 bg-red-600 text-white text-sm flex items-center gap-3 shadow-md"
+        >
+          <span className="font-medium">Couldn't load the shared document:</span>
+          <span className="opacity-90">{shareLoadError}</span>
+          <button
+            onClick={() => setShareLoadError(null)}
+            className="ml-auto px-2 py-0.5 rounded hover:bg-red-700 text-xs font-medium"
+            aria-label="Dismiss share load error"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Share dialog — opened via Ctrl+Shift+S keyboard shortcut. Lazy-
+          mounted so the first open pays the cost; keeps first paint lean. */}
+      <Suspense fallback={null}>
+        {shareDialogOpen && (
+          <ShareDialog
+            open={shareDialogOpen}
+            onClose={() => setShareDialogOpen(false)}
+          />
+        )}
+      </Suspense>
     </div>
   )
 }
