@@ -32,7 +32,10 @@ if (typeof window !== 'undefined') {
 if ('serviceWorker' in navigator) {
   if (import.meta.env.PROD) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Use BASE_URL so the SW path is correct under any deploy origin —
+      // hard-coding `/sw.js` 404s under GitHub Pages where the app lives
+      // at `/<repo>/`. Vite inlines BASE_URL at build time.
+      navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {
         // SW registration failed — no offline support, that's ok
       })
     })
