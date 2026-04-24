@@ -137,8 +137,11 @@ export class DexieAdapter implements StorageAdapter {
    * localStorage so the same browser is recognized across reloads, which
    * gives us a usable tiebreaker in compareEvents and a useful "by" field
    * for future attribution. Anonymous by default — no PII.
+   *
+   * Exposed so the routed adapter can stamp migrated events with the same
+   * identity the DexieAdapter would have used.
    */
-  private clientId(): string {
+  public clientId(): string {
     try {
       const key = 'md-reader.clientId'
       let id = localStorage.getItem(key)
