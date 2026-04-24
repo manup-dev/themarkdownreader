@@ -10,6 +10,7 @@ import { getStorageBreakdown, MAX_STORAGE_MB, runEviction } from '../lib/storage
 import { useAdapter } from '../provider/hooks'
 import { FEATURE_FLAGS } from '../lib/feature-flags'
 import { useStore } from '../store/useStore'
+import { StorageSettings } from './StorageSettings'
 
 // Use same key as ai.ts to avoid duplication
 const LS_OLLAMA_URL = 'md-reader-ollama-url'
@@ -104,6 +105,9 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
       </div>
 
       <hr className="border-gray-200 dark:border-gray-700" />
+
+      <StorageSettings />
+      <hr className="border-gray-200 dark:border-neutral-800" />
 
       {/* Preferred Backend */}
       <div className="flex flex-col gap-2">
