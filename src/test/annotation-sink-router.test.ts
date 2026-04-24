@@ -70,6 +70,21 @@ describe('AnnotationSinkRouter', () => {
     expect(dbStill.length).toBe(2) // non-destructive
   })
 
+  it('lazy migration: copies the source checkpoint to the target', async () => {
+    mode.setAnnotationStorageMode('file')
+    const checkpoint = {
+      v: 1, ts: 10, id: 'cp1', op: 'checkpoint' as const, priorEvents: 0,
+      state: { highlights: [], comments: [], unknown: [] },
+      clientId: 'test',
+    }
+    await dbSink.append('x', [ev('a', 1)])
+    await dbSink.writeCheckpoint('x', checkpoint)
+    const r = router()
+    const res = await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true })
+    const copiedCp = await res.sink.readCheckpoint('x')
+    expect(copiedCp).toEqual(checkpoint)
+  })
+
   it('lazy migration: db mode, empty db + existing file events → copies to db', async () => {
     mode.setAnnotationStorageMode('db')
     const fileSink = new InMemorySink()
