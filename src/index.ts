@@ -77,6 +77,22 @@ export type {
 export { AnnotationLog, makeHeader } from './lib/annotation-log'
 export type { AnnotationSink, StoredEvent, CompactResult } from './lib/annotation-log'
 
+export { FileSidecarSink } from './lib/file-sidecar-sink'
+export type { FileSidecarSinkOptions } from './lib/file-sidecar-sink'
+export {
+  getAnnotationStorageMode,
+  setAnnotationStorageMode,
+  detectFirstRunMode,
+  markNoticeShown,
+  STORAGE_MODE_KEY,
+  NOTICE_SHOWN_KEY,
+} from './lib/annotation-storage-mode'
+export type { AnnotationStorageMode } from './lib/annotation-storage-mode'
+export { AnnotationSinkRouter } from './lib/annotation-sink-router'
+export type { SinkResolution, AnnotationSinkRouterOptions, ResolveArgs } from './lib/annotation-sink-router'
+export { FileRoutedAdapter } from './adapters/file-routed-adapter'
+export type { DocContext, FileRoutedAdapterOptions } from './adapters/file-routed-adapter'
+
 export { SaveScheduler, IMMEDIATE_OPS, DEBOUNCED_OPS } from './lib/save-scheduler'
 export type { SchedulerOptions, TimerLike } from './lib/save-scheduler'
 
