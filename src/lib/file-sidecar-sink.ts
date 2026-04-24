@@ -28,12 +28,18 @@ export class FileSidecarSink implements AnnotationSink {
   private debounceMs: number
   /** Most recent error from a debounced write, or null. Cleared on success. */
   public lastWriteError: unknown = null
+  private fileHandle: FileSystemFileHandle
+  public readonly docKey: string
+  private readonly opts: FileSidecarSinkOptions
 
   constructor(
-    private fileHandle: FileSystemFileHandle,
-    public readonly docKey: string,
-    private readonly opts: FileSidecarSinkOptions = {},
+    fileHandle: FileSystemFileHandle,
+    docKey: string,
+    opts: FileSidecarSinkOptions = {},
   ) {
+    this.fileHandle = fileHandle
+    this.docKey = docKey
+    this.opts = opts
     this.debounceMs = opts.debounceMs ?? 250
   }
 

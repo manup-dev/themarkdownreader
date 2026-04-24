@@ -13,7 +13,7 @@ export interface DocContext {
 export interface FileRoutedAdapterOptions {
   base: DexieAdapter
   router: AnnotationSinkRouter
-  docContextProvider: () => DocContext
+  docContextProvider: () => Promise<DocContext> | DocContext
 }
 
 /**
@@ -25,12 +25,13 @@ export interface FileRoutedAdapterOptions {
  * Delegates every non-annotation method to the base DexieAdapter unchanged.
  */
 export class FileRoutedAdapter implements StorageAdapter {
-  constructor(private readonly opts: FileRoutedAdapterOptions) {}
+  private readonly opts: FileRoutedAdapterOptions
+  constructor(opts: FileRoutedAdapterOptions) { this.opts = opts }
 
   private get base(): DexieAdapter { return this.opts.base }
 
   private async activeSink(): Promise<{ sink: import('../lib/annotation-log').AnnotationSink | null; docKey: string | null }> {
-    const ctx = this.opts.docContextProvider()
+    const ctx = await this.opts.docContextProvider()
     if (!ctx.docKey) return { sink: null, docKey: null }
     const res = await this.opts.router.resolveSinkForDoc({
       docKey: ctx.docKey,
@@ -41,7 +42,7 @@ export class FileRoutedAdapter implements StorageAdapter {
   }
 
   async hydrateFromSinkIfNeeded(docId: number, docKey: string): Promise<void> {
-    const ctx = this.opts.docContextProvider()
+    const ctx = await this.opts.docContextProvider()
     const res = await this.opts.router.resolveSinkForDoc({
       docKey, folderHandleAvailable: ctx.folderHandleAvailable,
     })

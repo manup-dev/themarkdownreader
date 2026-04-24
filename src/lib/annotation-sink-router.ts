@@ -25,8 +25,9 @@ export interface ResolveArgs {
 export class AnnotationSinkRouter {
   private fileSinkCache = new Map<string, AnnotationSink>()
   private migrationsAttempted = new Set<string>()
+  private readonly options: AnnotationSinkRouterOptions
 
-  constructor(private readonly options: AnnotationSinkRouterOptions) {}
+  constructor(options: AnnotationSinkRouterOptions) { this.options = options }
 
   /**
    * Returns the durable sink for the given document, creating the file

@@ -20,8 +20,46 @@ import { Sidebar } from './components/Sidebar'
 import { FEATURE_FLAGS, resolveEnabledFeatures, enableFeature as enableFeatureFlag, disableFeature as disableFeatureFlag, resetFeatures } from './lib/feature-flags'
 import { MdReaderProvider } from './provider'
 import { DexieAdapter } from './adapters/dexie-adapter'
+import { FileRoutedAdapter } from './adapters/file-routed-adapter'
+import { AnnotationSinkRouter } from './lib/annotation-sink-router'
+import { FileSidecarSink } from './lib/file-sidecar-sink'
+import { dexieSink, deriveDocKey } from './lib/docstore'
+import { sidecarBasename } from './lib/share-builder'
+import type { StorageAdapter } from './types/storage-adapter'
 
-const dexieAdapter = new DexieAdapter()
+const baseAdapter = new DexieAdapter()
+
+const router = new AnnotationSinkRouter({
+  dbSink: dexieSink,
+  fileSinkFactory: async (docKey) => {
+    const { folderHandle, activeDocId } = useStore.getState()
+    if (!folderHandle) throw new Error('file mode requires a folder handle')
+    const doc = activeDocId != null ? await baseAdapter.getDocument(activeDocId) : null
+    if (!doc) throw new Error('no active document for file sink')
+    const basename = sidecarBasename(doc.fileName)
+    const handle = await folderHandle.getFileHandle(basename, { create: true })
+    const sink = new FileSidecarSink(handle, docKey, { parent: folderHandle, basename })
+    await sink.load()
+    return sink
+  },
+})
+
+const dexieAdapter: StorageAdapter = new FileRoutedAdapter({
+  base: baseAdapter,
+  router,
+  docContextProvider: async () => {
+    const { folderHandle, activeDocId } = useStore.getState()
+    if (activeDocId == null) {
+      return { docKey: null, docId: null, folderHandleAvailable: !!folderHandle }
+    }
+    const doc = await baseAdapter.getDocument(activeDocId)
+    return {
+      docKey: doc ? deriveDocKey(doc) : null,
+      docId: activeDocId,
+      folderHandleAvailable: !!folderHandle,
+    }
+  },
+})
 
 // Lazy load heavy/optional components
 const Chat = lazy(() => import('./components/Chat').then((m) => ({ default: m.Chat })))
@@ -87,6 +125,24 @@ function AppContent() {
   const setMarkdown = useStore((s) => s.setMarkdown)
   const activeDocId = useStore((s) => s.activeDocId)
   const dyslexicFont = useStore((s) => s.dyslexicFont)
+
+  // Per-doc hydrate: replay sidecar events into legacy tables when the
+  // active document changes and the sidecar has events the DB doesn't know.
+  useEffect(() => {
+    if (activeDocId == null) return
+    void (async () => {
+      const doc = await adapter.getDocument(activeDocId)
+      if (!doc) return
+      const key = deriveDocKey(doc)
+      const maybeHydrate = (adapter as unknown as {
+        hydrateFromSinkIfNeeded?: (id: number, key: string) => Promise<void>
+      }).hydrateFromSinkIfNeeded
+      if (maybeHydrate) {
+        try { await maybeHydrate.call(adapter, activeDocId, key) }
+        catch (e) { console.warn('[storage] hydrate failed', e) }
+      }
+    })()
+  }, [activeDocId, adapter])
 
   // Unified view: hydrate folder session from cache on mount (no prompt) +
   // install the __mdReaderLoadCollection test hook (used by E2E tests).
