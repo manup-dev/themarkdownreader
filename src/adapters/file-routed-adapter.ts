@@ -40,10 +40,6 @@ export class FileRoutedAdapter implements StorageAdapter {
     return { sink: res.sink, docKey: ctx.docKey }
   }
 
-  private makeId(prefix: string): string {
-    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-  }
-
   async hydrateFromSinkIfNeeded(docId: number, docKey: string): Promise<void> {
     const ctx = this.opts.docContextProvider()
     const res = await this.opts.router.resolveSinkForDoc({
@@ -106,9 +102,9 @@ export class FileRoutedAdapter implements StorageAdapter {
     const { sink, docKey } = await this.activeSink()
     if (sink && docKey) {
       await sink.append(docKey, [{
-        v: 1, ts: Date.now(), id: this.makeId('hdel'), op: 'highlight.del',
+        v: 1, ts: Date.now(), id: `h_${id}`, op: 'highlight.del',
         docKey,
-        targetId: `h_${id}`, clientId: this.base.clientId(),
+        clientId: this.base.clientId(),
       } as AnnotationEvent])
     }
   }
@@ -118,9 +114,9 @@ export class FileRoutedAdapter implements StorageAdapter {
     const { sink, docKey } = await this.activeSink()
     if (sink && docKey) {
       await sink.append(docKey, [{
-        v: 1, ts: Date.now(), id: this.makeId('hedit'), op: 'highlight.edit',
+        v: 1, ts: Date.now(), id: `h_${id}`, op: 'highlight.edit',
         docKey,
-        targetId: `h_${id}`, note, clientId: this.base.clientId(),
+        note, clientId: this.base.clientId(),
       } as AnnotationEvent])
     }
   }
@@ -130,9 +126,9 @@ export class FileRoutedAdapter implements StorageAdapter {
     const { sink, docKey } = await this.activeSink()
     if (sink && docKey) {
       await sink.append(docKey, [{
-        v: 1, ts: Date.now(), id: this.makeId('hedit'), op: 'highlight.edit',
+        v: 1, ts: Date.now(), id: `h_${id}`, op: 'highlight.edit',
         docKey,
-        targetId: `h_${id}`, color, clientId: this.base.clientId(),
+        color, clientId: this.base.clientId(),
       } as AnnotationEvent])
     }
   }
@@ -145,7 +141,7 @@ export class FileRoutedAdapter implements StorageAdapter {
         v: 1, ts: c.createdAt, id: `c_${id}`, op: 'comment.add',
         docKey,
         selectedText: c.selectedText, body: c.comment, author: c.author,
-        sectionId: c.sectionId, resolved: c.resolved,
+        sectionId: c.sectionId,
         anchor: c.anchor ?? { markdownStart: 0, markdownEnd: c.selectedText.length, exact: c.selectedText },
         clientId: this.base.clientId(),
       } as AnnotationEvent])
@@ -159,16 +155,16 @@ export class FileRoutedAdapter implements StorageAdapter {
     if (!sink || !docKey) return
     if (typeof updates.comment === 'string') {
       await sink.append(docKey, [{
-        v: 1, ts: Date.now(), id: this.makeId('cedit'), op: 'comment.edit',
+        v: 1, ts: Date.now(), id: `c_${id}`, op: 'comment.edit',
         docKey,
-        targetId: `c_${id}`, body: updates.comment, clientId: this.base.clientId(),
+        body: updates.comment, clientId: this.base.clientId(),
       } as AnnotationEvent])
     }
     if (typeof updates.resolved === 'boolean') {
       await sink.append(docKey, [{
-        v: 1, ts: Date.now(), id: this.makeId('cres'), op: 'comment.resolve',
+        v: 1, ts: Date.now(), id: `c_${id}`, op: 'comment.resolve',
         docKey,
-        targetId: `c_${id}`, resolved: updates.resolved, clientId: this.base.clientId(),
+        resolved: updates.resolved, clientId: this.base.clientId(),
       } as AnnotationEvent])
     }
   }
@@ -178,9 +174,9 @@ export class FileRoutedAdapter implements StorageAdapter {
     const { sink, docKey } = await this.activeSink()
     if (sink && docKey) {
       await sink.append(docKey, [{
-        v: 1, ts: Date.now(), id: this.makeId('cdel'), op: 'comment.del',
+        v: 1, ts: Date.now(), id: `c_${id}`, op: 'comment.del',
         docKey,
-        targetId: `c_${id}`, clientId: this.base.clientId(),
+        clientId: this.base.clientId(),
       } as AnnotationEvent])
     }
   }
@@ -212,10 +208,10 @@ export class FileRoutedAdapter implements StorageAdapter {
   importLibrary: StorageAdapter['importLibrary'] = (...a) => this.base.importLibrary(...a)
   clearAllData: StorageAdapter['clearAllData'] = () => this.base.clearAllData()
   requestPersistentStorage: StorageAdapter['requestPersistentStorage'] = () => this.base.requestPersistentStorage()
-  appendEvents: StorageAdapter['appendEvents'] = (...a) => this.base.appendEvents!(...a)
-  listEvents: StorageAdapter['listEvents'] = (...a) => this.base.listEvents!(...a)
-  readCheckpoint: StorageAdapter['readCheckpoint'] = (...a) => this.base.readCheckpoint!(...a)
-  writeCheckpoint: StorageAdapter['writeCheckpoint'] = (...a) => this.base.writeCheckpoint!(...a)
-  truncateBefore: StorageAdapter['truncateBefore'] = (...a) => this.base.truncateBefore!(...a)
-  compactLog: StorageAdapter['compactLog'] = (...a) => this.base.compactLog!(...a)
+  appendEvents: StorageAdapter['appendEvents'] = (...a) => this.base.appendEvents(...a)
+  listEvents: StorageAdapter['listEvents'] = (...a) => this.base.listEvents(...a)
+  readCheckpoint: StorageAdapter['readCheckpoint'] = (...a) => this.base.readCheckpoint(...a)
+  writeCheckpoint: StorageAdapter['writeCheckpoint'] = (...a) => this.base.writeCheckpoint(...a)
+  truncateBefore: StorageAdapter['truncateBefore'] = (...a) => this.base.truncateBefore(...a)
+  compactLog: StorageAdapter['compactLog'] = (...a) => this.base.compactLog(...a)
 }

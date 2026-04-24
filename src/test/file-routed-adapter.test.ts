@@ -6,6 +6,7 @@ import { InMemorySink } from '../lib/annotation-log'
 import { AnnotationSinkRouter } from '../lib/annotation-sink-router'
 import { setAnnotationStorageMode } from '../lib/annotation-storage-mode'
 import { db } from '../lib/docstore'
+import { materialize } from '../lib/annotation-events'
 
 describe('FileRoutedAdapter', () => {
   let base: DexieAdapter
@@ -106,5 +107,67 @@ describe('FileRoutedAdapter', () => {
     const a = makeAdapter(true)
     await a.hydrateFromSinkIfNeeded(docId, 'foo-key')
     expect((await base.getHighlights(docId)).length).toBe(1)
+  })
+
+  it('file mode: removeHighlight is a durable delete (materialize replays to empty)', async () => {
+    setAnnotationStorageMode('file')
+    const a = makeAdapter(true)
+    const id = await a.addHighlight({ docId, text: 'X', startOffset: 0, endOffset: 1,
+      color: 'yellow', note: '', createdAt: 1 })
+    await a.removeHighlight(id)
+    const events = (await fileSink.listEvents('foo-key')).map((s) => s.event)
+    const state = materialize(events)
+    expect(state.highlights.size).toBe(0)
+  })
+
+  it('file mode: updateHighlightColor is a durable edit (materialize reflects change)', async () => {
+    setAnnotationStorageMode('file')
+    const a = makeAdapter(true)
+    const id = await a.addHighlight({ docId, text: 'X', startOffset: 0, endOffset: 1,
+      color: 'yellow', note: '', createdAt: 1 })
+    await a.updateHighlightColor(id, 'pink')
+    const events = (await fileSink.listEvents('foo-key')).map((s) => s.event)
+    const state = materialize(events)
+    const hl = [...state.highlights.values()][0]
+    expect(hl.color).toBe('pink')
+  })
+
+  it('file mode: sink.append rejection propagates to caller', async () => {
+    setAnnotationStorageMode('file')
+    const failingSink: import('../lib/annotation-log').AnnotationSink = {
+      async append() { throw new Error('disk full') },
+      async listEvents() { return [] },
+      async readCheckpoint() { return null },
+      async writeCheckpoint() {},
+      async truncateBefore() { return 0 },
+    }
+    const failingRouter = new AnnotationSinkRouter({
+      dbSink: new InMemorySink(),
+      fileSinkFactory: async () => failingSink,
+    })
+    const a = new FileRoutedAdapter({
+      base, router: failingRouter,
+      docContextProvider: () => ({ docKey: 'foo-key', docId, folderHandleAvailable: true }),
+    })
+    await expect(a.addHighlight({ docId, text: 'X', startOffset: 0, endOffset: 1,
+      color: 'yellow', note: '', createdAt: 1 })).rejects.toThrow('disk full')
+  })
+
+  it('hydrateFromSinkIfNeeded: no-ops when legacy tables already have rows', async () => {
+    setAnnotationStorageMode('file')
+    const a = makeAdapter(true)
+    // Pre-seed a highlight via base directly.
+    await base.addHighlight({ docId, text: 'pre-existing', startOffset: 0, endOffset: 12,
+      color: 'yellow', note: '', createdAt: 1 })
+    // Seed the sink with an entirely different highlight.
+    await fileSink.append('foo-key', [{
+      v: 1, ts: 2, id: 'h_999', op: 'highlight.add', docKey: 'foo-key',
+      anchor: { markdownStart: 0, markdownEnd: 3, exact: 'new' }, color: 'pink',
+    } as never])
+    await a.hydrateFromSinkIfNeeded(docId, 'foo-key')
+    // Only the pre-existing row should remain.
+    const rows = await base.getHighlights(docId)
+    expect(rows.length).toBe(1)
+    expect(rows[0].text).toBe('pre-existing')
   })
 })
