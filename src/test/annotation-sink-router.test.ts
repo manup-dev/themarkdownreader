@@ -121,4 +121,44 @@ describe('AnnotationSinkRouter', () => {
     await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true })
     expect(fileFactoryCalls).toBe(1)
   })
+
+  it('does not stamp migrationsAttempted when source is unavailable (folder handle ungranted)', async () => {
+    mode.setAnnotationStorageMode('db')
+    const fileSink = new InMemorySink()
+    fileSinks.set('x', fileSink)
+    await fileSink.append('x', [ev('a', 1)])
+    const r = new AnnotationSinkRouter({
+      dbSink,
+      fileSinkFactory: async () => fileSink,
+    })
+    // First resolve: no folder handle → nothing to migrate, don't stamp.
+    await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: false })
+    expect((await dbSink.listEvents('x')).length).toBe(0)
+    // Second resolve: folder handle now available → migration proceeds.
+    await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true })
+    expect((await dbSink.listEvents('x')).length).toBe(1)
+  })
+
+  it('un-stamps and rethrows when migration target.append fails', async () => {
+    mode.setAnnotationStorageMode('file')
+    await dbSink.append('x', [ev('a', 1)])
+    let attempts = 0
+    const failingFileSink: import('../lib/annotation-log').AnnotationSink = {
+      async append() { attempts++; throw new Error('disk full') },
+      async listEvents() { return [] },
+      async readCheckpoint() { return null },
+      async writeCheckpoint() {},
+      async truncateBefore() { return 0 },
+    }
+    const r = new AnnotationSinkRouter({
+      dbSink,
+      fileSinkFactory: async () => failingFileSink,
+    })
+    await expect(r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true }))
+      .rejects.toThrow('disk full')
+    // Second call should retry (not stamped).
+    await expect(r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true }))
+      .rejects.toThrow('disk full')
+    expect(attempts).toBe(2)
+  })
 })

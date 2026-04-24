@@ -28,6 +28,12 @@ export class AnnotationSinkRouter {
 
   constructor(private readonly options: AnnotationSinkRouterOptions) {}
 
+  /**
+   * Returns the durable sink for the given document, creating the file
+   * sink on demand, running lazy per-doc migration (non-destructive), and
+   * reporting whether a fall-back occurred (file-mode preferred but no
+   * folder handle available).
+   */
   async resolveSinkForDoc(args: ResolveArgs): Promise<SinkResolution> {
     const mode = getAnnotationStorageMode()
     const wantsFile = mode === 'file' && args.folderHandleAvailable
@@ -55,18 +61,16 @@ export class AnnotationSinkRouter {
     direction: 'toFile' | 'toDb',
     folderAvailable: boolean,
   ): Promise<void> {
+    const source = direction === 'toFile'
+      ? this.options.dbSink
+      : (folderAvailable ? await this.getFileSink(docKey) : null)
+    if (!source) return // no source available — allow retry later when it becomes available
+
     const key = `${docKey}:${direction}`
     if (this.migrationsAttempted.has(key)) return
     this.migrationsAttempted.add(key)
 
     const target = direction === 'toFile' ? await this.getFileSink(docKey) : this.options.dbSink
-    const source =
-      direction === 'toFile'
-        ? this.options.dbSink
-        : folderAvailable
-          ? await this.getFileSink(docKey)
-          : null
-    if (!source) return
 
     const targetEvents = await target.listEvents(docKey)
     if (targetEvents.length > 0) return // target already has data — don't clobber
@@ -74,15 +78,24 @@ export class AnnotationSinkRouter {
     const sourceEvents = await source.listEvents(docKey)
     if (!sourceEvents.length) return
 
-    await target.append(
-      docKey,
-      sourceEvents.map((s) => s.event),
-    )
-    const sourceCp = await source.readCheckpoint(docKey)
-    if (sourceCp) await target.writeCheckpoint(docKey, sourceCp)
+    try {
+      await target.append(docKey, sourceEvents.map((s) => s.event))
+      const sourceCp = await source.readCheckpoint(docKey)
+      if (sourceCp) await target.writeCheckpoint(docKey, sourceCp)
+    } catch (err) {
+      // Un-stamp so a future open can retry instead of silently skipping.
+      this.migrationsAttempted.delete(key)
+      // eslint-disable-next-line no-console
+      console.warn(`[AnnotationSinkRouter] migration ${direction} failed for ${docKey}`, err)
+      throw err
+    }
   }
 
-  /** Test/helper hook: forget cached sinks (e.g. after mode flip). */
+  /**
+   * Test/helper hook: forget cached file sinks and the migrations-attempted
+   * set so migration will re-run on the next open. Useful after a mode flip
+   * or when integration-testing across sessions.
+   */
   reset(): void {
     this.fileSinkCache.clear()
     this.migrationsAttempted.clear()
