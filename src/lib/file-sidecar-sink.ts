@@ -8,6 +8,8 @@ export interface FileSidecarSinkOptions {
   basename?: string
   /** Override the debounce window (ms). Default 250. */
   debounceMs?: number
+  /** Invoked when a debounced write fails. flushNow() still rejects directly. */
+  onWriteError?: (err: unknown) => void
 }
 
 /**
@@ -24,6 +26,8 @@ export class FileSidecarSink implements AnnotationSink {
   private flushTimer: ReturnType<typeof setTimeout> | null = null
   private writeInflight: Promise<void> | null = null
   private debounceMs: number
+  /** Most recent error from a debounced write, or null. Cleared on success. */
+  public lastWriteError: unknown = null
 
   constructor(
     private fileHandle: FileSystemFileHandle,
@@ -116,27 +120,33 @@ export class FileSidecarSink implements AnnotationSink {
     if (this.flushTimer) return
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null
-      void this.doFlush()
+      this.doFlush().catch((err) => {
+        this.lastWriteError = err
+        try { this.opts.onWriteError?.(err) } catch { /* never let observer throw into the void */ }
+      })
     }, this.debounceMs)
   }
 
   private async doFlush(): Promise<void> {
     if (!this.dirty) return
     if (this.writeInflight) { await this.writeInflight; return this.doFlush() }
+    // Claim this flush cycle; mutations arriving during the async write
+    // will set dirty=true again and the recursive re-entry above picks
+    // them up on the next iteration.
+    this.dirty = false
+    const snapshotEvents: AnnotationEvent[] = []
+    if (this.checkpoint) snapshotEvents.push(this.checkpoint)
+    for (const row of this.shadow) snapshotEvents.push(row.event)
+    const text = encodeWal(snapshotEvents)
     this.writeInflight = (async () => {
-      const events: AnnotationEvent[] = []
-      if (this.checkpoint) events.push(this.checkpoint)
-      for (const row of this.shadow) events.push(row.event)
-      const text = encodeWal(events)
       const writable = await this.fileHandle.createWritable()
       try {
         await writable.write(text)
       } finally {
         await writable.close()
       }
-      this.dirty = false
     })()
-    try { await this.writeInflight } finally { this.writeInflight = null }
+    try { await this.writeInflight; this.lastWriteError = null } finally { this.writeInflight = null }
   }
 
   private async quarantineCorrupt(err: unknown): Promise<void> {

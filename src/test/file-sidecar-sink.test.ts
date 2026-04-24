@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { FileSidecarSink } from '../lib/file-sidecar-sink'
 import type { AnnotationEvent } from '../lib/annotation-events'
 import { encodeWal } from '../lib/annotation-events'
@@ -34,6 +34,7 @@ function hl(id: string, ts: number): AnnotationEvent {
 
 describe('FileSidecarSink', () => {
   beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
 
   it('load() from empty file yields empty state', async () => {
     const handle = makeFakeFileHandle('')
@@ -118,5 +119,26 @@ describe('FileSidecarSink', () => {
       { create: true },
     )
     expect(parent.removeEntry).toHaveBeenCalledWith('.foo.md.annot')
+  })
+
+  it('debounced write failure invokes onWriteError + sets lastWriteError', async () => {
+    const failingHandle = {
+      async getFile() { return new File([''], 's.annot') },
+      async createWritable() { throw new Error('disk full') },
+    }
+    const onWriteError = vi.fn()
+    const sink = new FileSidecarSink(
+      failingHandle as unknown as FileSystemFileHandle,
+      'k',
+      { onWriteError },
+    )
+    await sink.load()
+    await sink.append('k', [hl('a', 1)])
+    await vi.advanceTimersByTimeAsync(300)
+    // Let microtasks flush
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(onWriteError).toHaveBeenCalledOnce()
+    expect(sink.lastWriteError).toBeInstanceOf(Error)
   })
 })
