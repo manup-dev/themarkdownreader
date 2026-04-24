@@ -375,6 +375,36 @@ function AppContent() {
     }
   }, [markdown])
 
+  // First-run notice: inform existing users about the new file-mode option
+  useEffect(() => {
+    void (async () => {
+      const { detectFirstRunMode, markNoticeShown } = await import('./lib/annotation-storage-mode')
+      const { db } = await import('./lib/docstore')
+      const { shouldShowNotice } = await detectFirstRunMode({
+        hasExistingAnnotations: async () => {
+          const hCount = await db.highlights.count()
+          if (hCount > 0) return true
+          const cCount = await db.comments.count()
+          return cCount > 0
+        },
+      })
+      if (!shouldShowNotice) return
+      const toast = document.createElement('div')
+      toast.className = 'toast-notify'
+      const msg = document.createElement('span')
+      msg.textContent = 'Annotations can now be saved as files next to your markdown. Open AI Settings to switch.'
+      const dismiss = document.createElement('button')
+      dismiss.type = 'button'
+      dismiss.textContent = 'Dismiss'
+      dismiss.style.cssText = 'margin-left:8px;text-decoration:underline;cursor:pointer'
+      dismiss.addEventListener('click', () => { markNoticeShown(); toast.remove() })
+      toast.appendChild(msg)
+      toast.appendChild(dismiss)
+      document.body.appendChild(toast)
+      setTimeout(() => { markNoticeShown(); toast.remove() }, 15_000)
+    })()
+  }, [])
+
   // Track previous view for directional transitions
   const [prevViewMode, setPrevViewMode] = useState(viewMode)
   if (viewMode !== prevViewMode) {
