@@ -113,5 +113,10 @@ describe('FileSidecarSink', () => {
     )
     await sink.load() // must not throw
     expect(await sink.listEvents('k')).toEqual([])
+    expect(parent.getFileHandle).toHaveBeenCalledWith(
+      expect.stringMatching(/^\.foo\.md\.annot\.broken-\d+$/),
+      { create: true },
+    )
+    expect(parent.removeEntry).toHaveBeenCalledWith('.foo.md.annot')
   })
 })

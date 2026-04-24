@@ -45,6 +45,8 @@ export class FileSidecarSink implements AnnotationSink {
     }
     try {
       const events = decodeWal(text)
+      // Treat "non-empty file parsed to zero events" as corruption.
+      if (events.length === 0) throw new Error('decodeWal returned empty for non-empty input')
       this.ingest(events)
     } catch (err) {
       await this.quarantineCorrupt(err)
