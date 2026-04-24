@@ -10,8 +10,21 @@ export function StorageSettings() {
   const [mode, setMode] = useState<AnnotationStorageMode>(() => getAnnotationStorageMode())
 
   function pick(m: AnnotationStorageMode) {
+    if (m === mode) return
     setMode(m)
     setAnnotationStorageMode(m)
+    // Flush any cached per-doc sinks + migration stamps so lazy
+    // migration re-runs on the next open in the new target mode.
+    void import('../App').then((mod) => {
+      try { mod.resetAnnotationSinkRouter() } catch { /* app module not ready */ }
+    })
+    if (typeof document !== 'undefined') {
+      const toast = document.createElement('div')
+      toast.className = 'toast-notify'
+      toast.textContent = 'Storage mode changed. Open a document to migrate.'
+      document.body.appendChild(toast)
+      setTimeout(() => toast.remove(), 5_000)
+    }
   }
 
   return (

@@ -128,7 +128,16 @@ export class FileSidecarSink implements AnnotationSink {
       this.flushTimer = null
       this.doFlush().catch((err) => {
         this.lastWriteError = err
-        try { this.opts.onWriteError?.(err) } catch { /* never let observer throw into the void */ }
+        this.dirty = true                 // re-mark so the retry will actually attempt a flush
+        try { this.opts.onWriteError?.(err) } catch { /* guard */ }
+        // Schedule a one-shot retry with backoff. Capped at 5s to avoid tight loops.
+        const backoff = Math.min(this.debounceMs * 2, 5_000)
+        if (!this.flushTimer) {
+          this.flushTimer = setTimeout(() => {
+            this.flushTimer = null
+            void this.doFlush().catch(() => { /* swallow — lastWriteError already set */ })
+          }, backoff)
+        }
       })
     }, this.debounceMs)
   }

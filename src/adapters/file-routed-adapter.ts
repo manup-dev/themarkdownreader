@@ -218,5 +218,9 @@ export class FileRoutedAdapter implements StorageAdapter {
   readCheckpoint: StorageAdapter['readCheckpoint'] = (...a) => this.base.readCheckpoint(...a)
   writeCheckpoint: StorageAdapter['writeCheckpoint'] = (...a) => this.base.writeCheckpoint(...a)
   truncateBefore: StorageAdapter['truncateBefore'] = (...a) => this.base.truncateBefore(...a)
+  // NOTE: compactLog delegates to base (dexieSink). In file mode this is a
+  // no-op on the wrong data store — the authoritative WAL is in the sidecar,
+  // not IDB. No active callers rely on compactLog; if one is added, switch
+  // to the router-resolved sink.
   compactLog: StorageAdapter['compactLog'] = (...a) => this.base.compactLog(...a)
 }

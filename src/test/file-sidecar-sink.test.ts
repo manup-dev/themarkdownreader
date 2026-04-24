@@ -141,4 +141,31 @@ describe('FileSidecarSink', () => {
     expect(onWriteError).toHaveBeenCalledOnce()
     expect(sink.lastWriteError).toBeInstanceOf(Error)
   })
+
+  it('dirty flag is restored on write failure so the next mutation triggers a retry', async () => {
+    let failNext = true
+    const handle = {
+      async getFile() { return new File([''], 's.annot') },
+      async createWritable() {
+        if (failNext) { failNext = false; throw new Error('transient') }
+        return {
+          write: vi.fn(async () => {}),
+          close: vi.fn(async () => {}),
+          truncate: vi.fn(async () => {}),
+        }
+      },
+    }
+    const sink = new FileSidecarSink(handle as unknown as FileSystemFileHandle, 'k', { debounceMs: 50 })
+    await sink.load()
+    await sink.append('k', [hl('a', 1)])
+    // First flush fails.
+    await vi.advanceTimersByTimeAsync(60)
+    await Promise.resolve()
+    expect(sink.lastWriteError).toBeInstanceOf(Error)
+    // Backoff retry succeeds (createWritable now returns a working writer).
+    await vi.advanceTimersByTimeAsync(200)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(sink.lastWriteError).toBeNull()
+  })
 })

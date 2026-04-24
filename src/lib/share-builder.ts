@@ -126,6 +126,13 @@ export async function buildShareForDocument(input: ShareInputs): Promise<BuiltSh
  * Combine the persisted log + the legacy projection so a doc that's never
  * had a share yet still produces a useful WAL on first publish. Dedupe by
  * (id, op) so an event present in both sources is kept once.
+ *
+ * NOTE: reads from dexieSink only. In file mode the authoritative WAL
+ * is in the `.annot` sidecar but this function still works because
+ * FileRoutedAdapter keeps the legacy tables populated, so
+ * legacyEventsForDoc captures the current state. Intermediate history
+ * is lost; only the final snapshot is shareable. v1 tradeoff — fix by
+ * resolving via AnnotationSinkRouter when share-flow needs full WAL.
  */
 async function collectAnnotationEvents(docId: number, docKey: string): Promise<AnnotationEvent[]> {
   const [persisted, legacy] = await Promise.all([

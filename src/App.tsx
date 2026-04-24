@@ -36,7 +36,20 @@ const router = new AnnotationSinkRouter({
     if (!folderHandle) throw new Error('file mode requires a folder handle')
     const basename = sidecarBasename(fileName)
     const handle = await folderHandle.getFileHandle(basename, { create: true })
-    const sink = new FileSidecarSink(handle, docKey, { parent: folderHandle, basename })
+    const sink = new FileSidecarSink(handle, docKey, {
+      parent: folderHandle,
+      basename,
+      onWriteError: (err) => {
+        // eslint-disable-next-line no-console
+        console.warn('[storage] sidecar write failed', err)
+        if (typeof document === 'undefined') return
+        const toast = document.createElement('div')
+        toast.className = 'toast-notify'
+        toast.textContent = 'Could not save annotations to file — check folder permissions or disk space.'
+        document.body.appendChild(toast)
+        setTimeout(() => toast.remove(), 8_000)
+      },
+    })
     await sink.load()
     return sink
   },
@@ -59,6 +72,15 @@ const dexieAdapter: StorageAdapter = new FileRoutedAdapter({
     }
   },
 })
+
+/**
+ * Clear the sink router's caches (per-doc file sinks + migrationsAttempted
+ * set). Call after changing the annotation storage mode so the next doc
+ * open goes through lazy migration again on the new target sink.
+ */
+export function resetAnnotationSinkRouter(): void {
+  router.reset()
+}
 
 // Lazy load heavy/optional components
 const Chat = lazy(() => import('./components/Chat').then((m) => ({ default: m.Chat })))

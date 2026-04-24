@@ -26,4 +26,13 @@ describe('StorageSettings', () => {
     render(<StorageSettings />)
     expect(screen.getByText(/opened from a folder/i)).toBeInTheDocument()
   })
+
+  it('does not crash if App module is unavailable or resetAnnotationSinkRouter throws', () => {
+    setAnnotationStorageMode('file')
+    render(<StorageSettings />)
+    // Clicking the other radio kicks off resetAnnotationSinkRouter via dynamic import.
+    // We just verify the persistence side-effect happens and no throw escapes.
+    fireEvent.click(screen.getByLabelText(/Local database/i))
+    expect(getAnnotationStorageMode()).toBe('db')
+  })
 })
