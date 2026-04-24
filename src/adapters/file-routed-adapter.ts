@@ -7,6 +7,7 @@ import { materialize } from '../lib/annotation-events'
 export interface DocContext {
   docKey: string | null
   docId: number | null
+  fileName: string | null
   folderHandleAvailable: boolean
 }
 
@@ -36,6 +37,7 @@ export class FileRoutedAdapter implements StorageAdapter {
     const res = await this.opts.router.resolveSinkForDoc({
       docKey: ctx.docKey,
       folderHandleAvailable: ctx.folderHandleAvailable,
+      fileName: ctx.fileName ?? undefined,
     })
     if (res.effectiveMode === 'db') return { sink: null, docKey: ctx.docKey }
     return { sink: res.sink, docKey: ctx.docKey }
@@ -44,7 +46,9 @@ export class FileRoutedAdapter implements StorageAdapter {
   async hydrateFromSinkIfNeeded(docId: number, docKey: string): Promise<void> {
     const ctx = await this.opts.docContextProvider()
     const res = await this.opts.router.resolveSinkForDoc({
-      docKey, folderHandleAvailable: ctx.folderHandleAvailable,
+      docKey,
+      folderHandleAvailable: ctx.folderHandleAvailable,
+      fileName: ctx.fileName ?? undefined,
     })
     if (res.effectiveMode !== 'file') return
 

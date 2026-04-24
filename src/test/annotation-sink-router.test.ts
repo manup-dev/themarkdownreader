@@ -24,7 +24,7 @@ describe('AnnotationSinkRouter', () => {
   function router() {
     return new AnnotationSinkRouter({
       dbSink,
-      fileSinkFactory: async (docKey: string) => {
+      fileSinkFactory: async ({ docKey }: { docKey: string; fileName: string }) => {
         fileFactoryCalls++
         const existing = fileSinks.get(docKey)
         if (existing) return existing
@@ -37,7 +37,7 @@ describe('AnnotationSinkRouter', () => {
 
   it('db mode: returns dbSink, fellBack=false', async () => {
     mode.setAnnotationStorageMode('db')
-    const res = await router().resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true })
+    const res = await router().resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true, fileName: 'x.md' })
     expect(res.effectiveMode).toBe('db')
     expect(res.fellBack).toBe(false)
     expect(res.sink).toBe(dbSink)
@@ -53,7 +53,7 @@ describe('AnnotationSinkRouter', () => {
 
   it('file mode with folder handle: returns file sink', async () => {
     mode.setAnnotationStorageMode('file')
-    const res = await router().resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true })
+    const res = await router().resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true, fileName: 'x.md' })
     expect(res.effectiveMode).toBe('file')
     expect(res.fellBack).toBe(false)
     expect(res.sink).toBe(fileSinks.get('x'))
@@ -63,7 +63,7 @@ describe('AnnotationSinkRouter', () => {
     mode.setAnnotationStorageMode('file')
     await dbSink.append('x', [ev('a', 1), ev('b', 2)])
     const r = router()
-    const res = await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true })
+    const res = await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true, fileName: 'x.md' })
     const copied = await (res.sink as InMemorySink).listEvents('x')
     expect(copied.map((s) => s.event.id)).toEqual(['a', 'b'])
     const dbStill = await dbSink.listEvents('x')
@@ -80,7 +80,7 @@ describe('AnnotationSinkRouter', () => {
     await dbSink.append('x', [ev('a', 1)])
     await dbSink.writeCheckpoint('x', checkpoint)
     const r = router()
-    const res = await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true })
+    const res = await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true, fileName: 'x.md' })
     const copiedCp = await res.sink.readCheckpoint('x')
     expect(copiedCp).toEqual(checkpoint)
   })
@@ -94,11 +94,11 @@ describe('AnnotationSinkRouter', () => {
       dbSink,
       fileSinkFactory: async () => fileSink,
     })
-    const res = await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true })
+    const res = await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true, fileName: 'x.md' })
     const copied = await dbSink.listEvents('x')
     expect(copied.map((s) => s.event.id)).toEqual(['a'])
     // Unchanged on subsequent open (idempotent)
-    await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true })
+    await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true, fileName: 'x.md' })
     expect((await dbSink.listEvents('x')).length).toBe(1)
     expect(res.effectiveMode).toBe('db')
   })
@@ -109,7 +109,7 @@ describe('AnnotationSinkRouter', () => {
     const fileSink = new InMemorySink()
     fileSinks.set('x', fileSink)
     await fileSink.append('x', [ev('f', 1)])
-    const res = await router().resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true })
+    const res = await router().resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true, fileName: 'x.md' })
     const listed = await (res.sink as InMemorySink).listEvents('x')
     expect(listed.map((s) => s.event.id)).toEqual(['f'])
   })
@@ -117,8 +117,8 @@ describe('AnnotationSinkRouter', () => {
   it('caches file sink per-docKey', async () => {
     mode.setAnnotationStorageMode('file')
     const r = router()
-    await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true })
-    await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true })
+    await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true, fileName: 'x.md' })
+    await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true, fileName: 'x.md' })
     expect(fileFactoryCalls).toBe(1)
   })
 
@@ -135,7 +135,7 @@ describe('AnnotationSinkRouter', () => {
     await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: false })
     expect((await dbSink.listEvents('x')).length).toBe(0)
     // Second resolve: folder handle now available → migration proceeds.
-    await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true })
+    await r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true, fileName: 'x.md' })
     expect((await dbSink.listEvents('x')).length).toBe(1)
   })
 
@@ -154,11 +154,25 @@ describe('AnnotationSinkRouter', () => {
       dbSink,
       fileSinkFactory: async () => failingFileSink,
     })
-    await expect(r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true }))
+    await expect(r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true, fileName: 'x.md' }))
       .rejects.toThrow('disk full')
     // Second call should retry (not stamped).
-    await expect(r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true }))
+    await expect(r.resolveSinkForDoc({ docKey: 'x', folderHandleAvailable: true, fileName: 'x.md' }))
       .rejects.toThrow('disk full')
     expect(attempts).toBe(2)
+  })
+
+  it('passes fileName through to fileSinkFactory', async () => {
+    mode.setAnnotationStorageMode('file')
+    const calls: Array<{ docKey: string; fileName: string }> = []
+    const r = new AnnotationSinkRouter({
+      dbSink,
+      fileSinkFactory: async ({ docKey, fileName }) => {
+        calls.push({ docKey, fileName })
+        return new InMemorySink()
+      },
+    })
+    await r.resolveSinkForDoc({ docKey: 'sha123', folderHandleAvailable: true, fileName: 'intro.md' })
+    expect(calls).toEqual([{ docKey: 'sha123', fileName: 'intro.md' }])
   })
 })

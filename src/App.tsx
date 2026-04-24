@@ -31,12 +31,10 @@ const baseAdapter = new DexieAdapter()
 
 const router = new AnnotationSinkRouter({
   dbSink: dexieSink,
-  fileSinkFactory: async (docKey) => {
-    const { folderHandle, activeDocId } = useStore.getState()
+  fileSinkFactory: async ({ docKey, fileName }) => {
+    const { folderHandle } = useStore.getState()
     if (!folderHandle) throw new Error('file mode requires a folder handle')
-    const doc = activeDocId != null ? await baseAdapter.getDocument(activeDocId) : null
-    if (!doc) throw new Error('no active document for file sink')
-    const basename = sidecarBasename(doc.fileName)
+    const basename = sidecarBasename(fileName)
     const handle = await folderHandle.getFileHandle(basename, { create: true })
     const sink = new FileSidecarSink(handle, docKey, { parent: folderHandle, basename })
     await sink.load()
@@ -50,12 +48,13 @@ const dexieAdapter: StorageAdapter = new FileRoutedAdapter({
   docContextProvider: async () => {
     const { folderHandle, activeDocId } = useStore.getState()
     if (activeDocId == null) {
-      return { docKey: null, docId: null, folderHandleAvailable: !!folderHandle }
+      return { docKey: null, docId: null, fileName: null, folderHandleAvailable: !!folderHandle }
     }
     const doc = await baseAdapter.getDocument(activeDocId)
     return {
       docKey: doc ? deriveDocKey(doc) : null,
       docId: activeDocId,
+      fileName: doc?.fileName ?? null,
       folderHandleAvailable: !!folderHandle,
     }
   },
@@ -138,8 +137,11 @@ function AppContent() {
         hydrateFromSinkIfNeeded?: (id: number, key: string) => Promise<void>
       }).hydrateFromSinkIfNeeded
       if (maybeHydrate) {
-        try { await maybeHydrate.call(adapter, activeDocId, key) }
-        catch (e) { console.warn('[storage] hydrate failed', e) }
+        try {
+          await maybeHydrate.call(adapter, activeDocId, key)
+          window.dispatchEvent(new CustomEvent('md-reader-comment-changed'))
+          window.dispatchEvent(new CustomEvent('md-reader-highlight-changed'))
+        } catch (e) { console.warn('[storage] hydrate failed', e) }
       }
     })()
   }, [activeDocId, adapter])

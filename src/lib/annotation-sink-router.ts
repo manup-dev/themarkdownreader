@@ -9,12 +9,14 @@ export interface SinkResolution {
 
 export interface AnnotationSinkRouterOptions {
   dbSink: AnnotationSink
-  fileSinkFactory: (docKey: string) => Promise<AnnotationSink>
+  fileSinkFactory: (args: { docKey: string; fileName: string }) => Promise<AnnotationSink>
 }
 
 export interface ResolveArgs {
   docKey: string
   folderHandleAvailable: boolean
+  /** Required when effective mode is 'file'. Passed through to the factory. */
+  fileName?: string
 }
 
 /**
@@ -37,22 +39,22 @@ export class AnnotationSinkRouter {
    */
   async resolveSinkForDoc(args: ResolveArgs): Promise<SinkResolution> {
     const mode = getAnnotationStorageMode()
-    const wantsFile = mode === 'file' && args.folderHandleAvailable
+    const wantsFile = mode === 'file' && args.folderHandleAvailable && !!args.fileName
     if (!wantsFile) {
       const fellBack = mode === 'file' && !args.folderHandleAvailable
       // Migrate file → db on the first db-mode open per doc per session.
-      if (!fellBack) await this.maybeMigrate(args.docKey, 'toDb', args.folderHandleAvailable)
+      if (!fellBack) await this.maybeMigrate(args.docKey, 'toDb', args.folderHandleAvailable, args.fileName)
       return { sink: this.options.dbSink, effectiveMode: 'db', fellBack }
     }
-    const fileSink = await this.getFileSink(args.docKey)
-    await this.maybeMigrate(args.docKey, 'toFile', true)
+    const fileSink = await this.getFileSink(args.docKey, args.fileName!)
+    await this.maybeMigrate(args.docKey, 'toFile', true, args.fileName)
     return { sink: fileSink, effectiveMode: 'file', fellBack: false }
   }
 
-  private async getFileSink(docKey: string): Promise<AnnotationSink> {
+  private async getFileSink(docKey: string, fileName: string): Promise<AnnotationSink> {
     const cached = this.fileSinkCache.get(docKey)
     if (cached) return cached
-    const sink = await this.options.fileSinkFactory(docKey)
+    const sink = await this.options.fileSinkFactory({ docKey, fileName })
     this.fileSinkCache.set(docKey, sink)
     return sink
   }
@@ -61,17 +63,21 @@ export class AnnotationSinkRouter {
     docKey: string,
     direction: 'toFile' | 'toDb',
     folderAvailable: boolean,
+    fileName?: string,
   ): Promise<void> {
     const source = direction === 'toFile'
       ? this.options.dbSink
-      : (folderAvailable ? await this.getFileSink(docKey) : null)
+      : (folderAvailable && fileName ? await this.getFileSink(docKey, fileName) : null)
     if (!source) return // no source available — allow retry later when it becomes available
 
     const key = `${docKey}:${direction}`
     if (this.migrationsAttempted.has(key)) return
     this.migrationsAttempted.add(key)
 
-    const target = direction === 'toFile' ? await this.getFileSink(docKey) : this.options.dbSink
+    const target = direction === 'toFile'
+      ? (fileName ? await this.getFileSink(docKey, fileName) : null)
+      : this.options.dbSink
+    if (!target) { this.migrationsAttempted.delete(key); return }
 
     const targetEvents = await target.listEvents(docKey)
     if (targetEvents.length > 0) return // target already has data — don't clobber

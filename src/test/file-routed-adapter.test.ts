@@ -41,6 +41,7 @@ describe('FileRoutedAdapter', () => {
       docContextProvider: () => ({
         docKey: 'foo-key',
         docId,
+        fileName: 'foo.md',
         folderHandleAvailable,
       }),
     })
@@ -147,7 +148,7 @@ describe('FileRoutedAdapter', () => {
     })
     const a = new FileRoutedAdapter({
       base, router: failingRouter,
-      docContextProvider: () => ({ docKey: 'foo-key', docId, folderHandleAvailable: true }),
+      docContextProvider: () => ({ docKey: 'foo-key', docId, fileName: 'foo.md', folderHandleAvailable: true }),
     })
     await expect(a.addHighlight({ docId, text: 'X', startOffset: 0, endOffset: 1,
       color: 'yellow', note: '', createdAt: 1 })).rejects.toThrow('disk full')
