@@ -251,11 +251,27 @@ export function VscodeApp() {
 
   if (!markdown) {
     return (
-      <div className={`vscode-webview flex items-center justify-center h-screen ${themeClasses[theme]}`}>
-        <div className="text-center space-y-3">
-          <h2 className="text-xl font-bold text-gray-700 dark:text-gray-200">md-reader</h2>
-          <p className="text-sm text-gray-400">Open a markdown file to start reading.</p>
-          <p className="text-xs text-gray-300 dark:text-gray-600">Ctrl+Shift+R when a .md file is open</p>
+      <div className={`vscode-webview md-reader-empty-gradient flex items-center justify-center h-screen ${themeClasses[theme]}`}>
+        <div className="text-center space-y-4 max-w-sm px-6">
+          <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+            <BookText className="h-8 w-8 text-white" strokeWidth={2.25} />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-2xl font-bold tracking-tight text-gray-800 dark:text-gray-100">md-reader</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              A calm, focused reading experience for markdown.
+            </p>
+          </div>
+          <div className="pt-2 flex flex-col items-center gap-2">
+            <p className="text-xs text-gray-500 dark:text-gray-400">Open any <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300">.md</code> file, then press</p>
+            <div className="flex items-center gap-1.5">
+              <span className="md-reader-kbd">Ctrl</span>
+              <span className="text-gray-400 text-xs">+</span>
+              <span className="md-reader-kbd">Shift</span>
+              <span className="text-gray-400 text-xs">+</span>
+              <span className="md-reader-kbd">R</span>
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -270,15 +286,22 @@ export function VscodeApp() {
       {showSidebar && (
         <>
           <aside
-            className="shrink-0 border-r border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white dark:bg-gray-900 sepia:bg-sepia-50 overflow-y-auto p-3"
+            className="shrink-0 border-r border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white dark:bg-gray-900 sepia:bg-sepia-50 overflow-y-auto"
             style={{ width: sidebarWidth }}
           >
-            <div className="flex items-center justify-between mb-1">
-              <button onClick={() => setSidebarOpen(false)} className="p-0.5 text-gray-400 hover:text-gray-600 ml-auto" title="Hide sidebar">
+            <div className="sticky top-0 z-10 flex items-center justify-between px-3 py-2 border-b border-gray-200/70 dark:border-gray-800/70 bg-white/90 dark:bg-gray-900/90 sepia:bg-sepia-50/90 backdrop-blur-sm">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500 dark:text-gray-400">Outline</span>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="p-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                title="Hide outline"
+              >
                 <PanelLeftClose className="h-3.5 w-3.5" />
               </button>
             </div>
-            <OutlinePanel maxLevel={6} />
+            <div className="pb-3">
+              <OutlinePanel maxLevel={6} />
+            </div>
           </aside>
           <ResizeHandle onResize={handleSidebarResize} />
         </>
@@ -287,72 +310,85 @@ export function VscodeApp() {
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* View tabs */}
-        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white/80 dark:bg-gray-900/80 sepia:bg-sepia-50/80 backdrop-blur-sm">
+        <div className="md-reader-toolbar flex items-center gap-1 px-3 py-2 border-b border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white/80 dark:bg-gray-900/80 sepia:bg-sepia-50/80">
           {!showSidebar && viewMode === 'read' && (
-            <button onClick={() => setSidebarOpen(true)} className="p-1 text-gray-400 hover:text-gray-600 mr-1">
-              <PanelLeftOpen className="h-3.5 w-3.5" />
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-1.5 rounded-md text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors mr-1"
+              title="Show outline"
+            >
+              <PanelLeftOpen className="h-4 w-4" />
             </button>
           )}
-          {viewModes.map((vm) => {
-            const Icon = vm.icon
-            return (
-              <button
-                key={vm.value}
-                onClick={() => setViewMode(vm.value)}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                  viewMode === vm.value
-                    ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-200'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
-                }`}
-                title={vm.label}
-              >
-                <Icon className="h-4 w-4" />
-                <span className="hidden sm:inline">{vm.label}</span>
-              </button>
-            )
-          })}
+          <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-gray-100/60 dark:bg-gray-800/40 sepia:bg-sepia-200/50">
+            {viewModes.map((vm) => {
+              const Icon = vm.icon
+              const isActive = viewMode === vm.value
+              return (
+                <button
+                  key={vm.value}
+                  onClick={() => setViewMode(vm.value)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-all ${
+                    isActive
+                      ? 'md-reader-tab-active'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-white/70 dark:hover:bg-gray-700/60'
+                  }`}
+                  title={vm.label}
+                  aria-pressed={isActive}
+                >
+                  <Icon className="h-[15px] w-[15px]" strokeWidth={isActive ? 2.4 : 2} />
+                  <span className="hidden md:inline">{vm.label}</span>
+                </button>
+              )
+            })}
+          </div>
           <div className="flex-1" />
           {/* Theme toggle */}
-          <div className="flex items-center gap-0.5 mr-1">
+          <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-gray-100/60 dark:bg-gray-800/40 sepia:bg-sepia-200/50 mr-1">
             <button
               onClick={() => setTheme('light')}
-              className={`p-1 rounded transition-colors ${theme === 'light' ? 'bg-amber-100 text-amber-700' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+              className={`p-1.5 rounded-md transition-all ${theme === 'light' ? 'bg-amber-100 text-amber-700 shadow-sm' : 'text-gray-500 hover:text-amber-600 dark:text-gray-400 dark:hover:text-amber-300 hover:bg-white/70 dark:hover:bg-gray-700/60'}`}
               title="Light theme"
+              aria-pressed={theme === 'light'}
             >
-              <Sun className="h-4 w-4" />
+              <Sun className="h-[15px] w-[15px]" />
             </button>
             <button
               onClick={() => setTheme('dark')}
-              className={`p-1 rounded transition-colors ${theme === 'dark' ? 'bg-blue-950/50 text-blue-300' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+              className={`p-1.5 rounded-md transition-all ${theme === 'dark' ? 'bg-indigo-500/20 text-indigo-200 shadow-sm ring-1 ring-indigo-400/30' : 'text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-300 hover:bg-white/70 dark:hover:bg-gray-700/60'}`}
               title="Dark theme"
+              aria-pressed={theme === 'dark'}
             >
-              <Moon className="h-4 w-4" />
+              <Moon className="h-[15px] w-[15px]" />
             </button>
             <button
               onClick={() => setTheme('sepia')}
-              className={`p-1 rounded transition-colors ${theme === 'sepia' ? 'bg-amber-100 text-amber-800' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+              className={`p-1.5 rounded-md transition-all ${theme === 'sepia' ? 'bg-amber-200/60 text-amber-900 shadow-sm' : 'text-gray-500 hover:text-amber-700 dark:text-gray-400 dark:hover:text-amber-300 hover:bg-white/70 dark:hover:bg-gray-700/60'}`}
               title="Sepia theme"
+              aria-pressed={theme === 'sepia'}
             >
-              <BookOpen className="h-4 w-4" />
+              <BookOpen className="h-[15px] w-[15px]" />
             </button>
             <button
               onClick={() => setTheme('high-contrast')}
-              className={`p-1 rounded transition-colors ${theme === 'high-contrast' ? 'bg-gray-800 text-yellow-300' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+              className={`p-1.5 rounded-md transition-all ${theme === 'high-contrast' ? 'bg-gray-900 text-yellow-300 shadow-sm ring-1 ring-yellow-400/30' : 'text-gray-500 hover:text-yellow-600 dark:text-gray-400 dark:hover:text-yellow-300 hover:bg-white/70 dark:hover:bg-gray-700/60'}`}
               title="High Contrast theme"
+              aria-pressed={theme === 'high-contrast'}
             >
-              <Contrast className="h-4 w-4" />
+              <Contrast className="h-[15px] w-[15px]" />
             </button>
           </div>
           <button
             onClick={() => setCommentsOpen(!commentsOpen)}
-            className={`p-1 rounded text-xs transition-colors ${
+            className={`p-1.5 rounded-md transition-all ${
               commentsOpen
-                ? 'bg-teal-100 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300'
-                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                ? 'bg-teal-500/15 text-teal-700 dark:text-teal-300 ring-1 ring-teal-400/30'
+                : 'text-gray-500 hover:text-teal-600 dark:text-gray-400 dark:hover:text-teal-300 hover:bg-gray-100 dark:hover:bg-gray-800'
             }`}
             title="Comments & Prompt Builder"
+            aria-pressed={commentsOpen}
           >
-            <MessageSquare className="h-4 w-4" />
+            <MessageSquare className="h-[15px] w-[15px]" />
           </button>
         </div>
 

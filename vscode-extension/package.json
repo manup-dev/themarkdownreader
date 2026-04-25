@@ -8,6 +8,11 @@
   "engines": {
     "vscode": "^1.85.0"
   },
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#1e1b4b",
+    "theme": "dark"
+  },
   "categories": [
     "Visualization",
     "Education",
