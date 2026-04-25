@@ -139,17 +139,58 @@ article h5:hover > span[aria-hidden], article h6:hover > span[aria-hidden] {
 .dark article h1, .dark article h2 { color: #f1f5f9 !important; font-weight: 700; }
 .dark article h3, .dark article h4 { color: #e2e8f0 !important; font-weight: 600; }
 
-/* VS Code webview — improved readability (higher contrast, better spacing).
+/* ─────────────────────────────────────────────────────────────────────
+ * VS Code webview — polished theme integration.
  *
- * NOTE on selector order: the `.dark` class lives on <html> (set by
- * VscodeApp's useLayoutEffect), and `.vscode-webview` is a descendant div
- * on the React root. So the correct selector for "dark-themed webview
- * article text" is `.dark .vscode-webview article …` — NOT the other way
- * around. Earlier versions used `.vscode-webview .dark article …` which
- * never matched, leaving article text at the default (black) color and
- * producing an unreadable dark-on-dark rendering in VS Code dark themes.
- */
-.vscode-webview article { font-size: 15px !important; line-height: 1.8 !important; }
+ * Goal: feel like a native VS Code panel, not a bolt-on. We use VS Code
+ * theme tokens (--vscode-*) as a base, then layer our readability
+ * improvements (higher contrast, better spacing, legible code blocks).
+ *
+ * Selector note: `.dark` is set on <html> by VscodeApp's useLayoutEffect;
+ * `.vscode-webview` is on a descendant div. So the correct selector for
+ * "dark-themed webview article text" is `.dark .vscode-webview …`.
+ * ──────────────────────────────────────────────────────────────────── */
+
+/* Base font stack + wrapper color fallback from VS Code theme */
+.vscode-webview {
+  color: var(--vscode-editor-foreground, inherit);
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+}
+
+/* Native-feeling text selection inside the webview */
+.vscode-webview ::selection {
+  background: var(--vscode-editor-selectionBackground, rgba(59, 130, 246, 0.35));
+  color: var(--vscode-editor-selectionForeground, inherit);
+}
+
+/* Scrollbars follow VS Code tokens */
+.vscode-webview ::-webkit-scrollbar { width: 10px; height: 10px; }
+.vscode-webview ::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background, #4a556880);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.vscode-webview ::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground, #6b7280);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+.vscode-webview ::-webkit-scrollbar-thumb:active {
+  background: var(--vscode-scrollbarSlider-activeBackground, #9ca3af);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* Article typography */
+.vscode-webview article { font-size: 15px !important; line-height: 1.75 !important; }
+.vscode-webview article h1 { font-size: 1.75em !important; margin-top: 1.5em !important; letter-spacing: -0.01em; }
+.vscode-webview article h2 { font-size: 1.4em !important; margin-top: 1.3em !important; letter-spacing: -0.005em; }
+.vscode-webview article h3 { font-size: 1.15em !important; margin-top: 1.1em !important; }
+
+/* Light theme — keep default Tailwind prose colors (high contrast on white) */
+
+/* Dark theme readability overrides */
 .dark .vscode-webview article,
 .dark .vscode-webview article p,
 .dark .vscode-webview article li,
@@ -158,22 +199,93 @@ article h5:hover > span[aria-hidden], article h6:hover > span[aria-hidden] {
 .dark .vscode-webview article em { color: #e5e7eb !important; }
 .dark .vscode-webview article strong { color: #f9fafb !important; }
 .dark .vscode-webview article a { color: #93c5fd !important; }
-.dark .vscode-webview article code { color: #a5f3fc !important; }
+.dark .vscode-webview article a:hover { color: #bfdbfe !important; text-decoration-color: #60a5fa; }
 .dark .vscode-webview article blockquote p { color: #9ca3af !important; }
+.dark .vscode-webview article blockquote { border-left-color: #4f46e5 !important; }
 .dark .vscode-webview article h1,
 .dark .vscode-webview article h2,
 .dark .vscode-webview article h3,
 .dark .vscode-webview article h4,
 .dark .vscode-webview article h5,
-.dark .vscode-webview article h6 { color: #f1f5f9 !important; }
-.vscode-webview article h1 { font-size: 1.75em !important; margin-top: 1.5em !important; }
-.vscode-webview article h2 { font-size: 1.4em !important; margin-top: 1.3em !important; }
-.vscode-webview article h3 { font-size: 1.15em !important; margin-top: 1.1em !important; }
-/* VS Code sidebar readability */
+.dark .vscode-webview article h6 { color: #f8fafc !important; }
+
+/* Inline code chip — legible pill on all themes */
+.vscode-webview article :not(pre) > code {
+  padding: 0.12em 0.4em;
+  border-radius: 4px;
+  font-size: 0.88em;
+  background: var(--vscode-textCodeBlock-background, rgba(99, 102, 241, 0.08));
+  color: #6d28d9;
+  border: 1px solid rgba(99, 102, 241, 0.15);
+}
+.dark .vscode-webview article :not(pre) > code {
+  background: rgba(99, 102, 241, 0.15) !important;
+  color: #c4b5fd !important;
+  border-color: rgba(129, 140, 248, 0.25);
+}
+.sepia .vscode-webview article :not(pre) > code {
+  background: rgba(180, 83, 9, 0.1) !important;
+  color: #9a3412 !important;
+  border-color: rgba(180, 83, 9, 0.2);
+}
+
+/* Code blocks — clean rounded container with soft border */
+.vscode-webview article pre {
+  background: #f8fafc !important;
+  border-radius: 8px;
+  padding: 0.95em 1.1em !important;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.25);
+}
+.dark .vscode-webview article pre {
+  background: #0f172a !important;
+  box-shadow: inset 0 0 0 1px rgba(71, 85, 105, 0.45);
+}
+.sepia .vscode-webview article pre {
+  background: #f5ede3 !important;
+  box-shadow: inset 0 0 0 1px rgba(180, 134, 64, 0.3);
+}
+
+/* Sidebar (outline / TOC) readability */
 .dark .vscode-webview aside { color: #d1d5db; }
 .dark .vscode-webview aside a { color: #93c5fd !important; }
-/* Sepia mode in the webview — mirror the dark fix so sepia picks up
- * its own palette on the outer wrapper. */
+
+/* Hide the OutlinePanel's own "Contents" header — we render our own
+ * sticky "Outline" header in VscodeApp.tsx so it stays pinned while
+ * the list scrolls. Keeps the panel from showing two headers. */
+.vscode-webview aside nav > h3 { display: none; }
+
+/* Outline nav list polish inside the VS Code sidebar */
+.vscode-webview aside nav { padding-top: 0.25rem !important; }
+.vscode-webview aside nav ul { padding: 0 0.25rem; }
+.vscode-webview aside nav button {
+  border-radius: 6px;
+  padding-top: 0.375rem !important;
+  padding-bottom: 0.375rem !important;
+  padding-right: 0.5rem !important;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.vscode-webview aside nav button:hover {
+  background: rgba(99, 102, 241, 0.08) !important;
+}
+.dark .vscode-webview aside nav button:hover {
+  background: rgba(129, 140, 248, 0.12) !important;
+}
+
+/* Active outline entry — accent gradient + bold left bar */
+.vscode-webview aside nav button.border-blue-500 {
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.14), transparent 70%);
+  border-left-color: #6366f1 !important;
+  color: #4338ca !important;
+  font-weight: 600;
+}
+.dark .vscode-webview aside nav button.border-blue-500 {
+  background: linear-gradient(90deg, rgba(129, 140, 248, 0.22), transparent 70%);
+  border-left-color: #a78bfa !important;
+  color: #e0e7ff !important;
+}
+
+/* Sepia mode in the webview */
 .sepia .vscode-webview article,
 .sepia .vscode-webview article p,
 .sepia .vscode-webview article li,
@@ -183,14 +295,82 @@ article h5:hover > span[aria-hidden], article h6:hover > span[aria-hidden] {
 .sepia .vscode-webview article h2,
 .sepia .vscode-webview article h3,
 .sepia .vscode-webview article h4 { color: #3f2e17 !important; }
-/* Belt-and-braces fallback: if for any reason the dark-class propagation
- * fails (early paint before React mounts, host stylesheet conflict, etc.),
- * inherit text color from VS Code's editor foreground token so text is at
- * worst readable against VS Code's own background. We intentionally do
- * NOT set background-color here because the Tailwind `bg-gray-950` /
- * `bg-gray-50` / etc. utilities on the same element should win for the
- * chosen theme; this only provides a sane default for `color`. */
-.vscode-webview { color: var(--vscode-editor-foreground, inherit); }
+
+/* Highlight & comment hover — stronger feedback inside VS Code */
+.vscode-webview [data-highlight-id]:hover { filter: brightness(0.9) saturate(1.1); }
+.dark .vscode-webview [data-highlight-id]:hover { filter: brightness(1.15) saturate(1.15); }
+
+/* Table polish for VS Code */
+.vscode-webview article table { border-radius: 6px; overflow: hidden; }
+.vscode-webview article th {
+  background: rgba(99, 102, 241, 0.08);
+  font-weight: 600;
+}
+.dark .vscode-webview article th {
+  background: rgba(129, 140, 248, 0.15);
+  color: #e0e7ff !important;
+}
+.dark .vscode-webview article td { border-color: rgba(71, 85, 105, 0.5) !important; }
+.dark .vscode-webview article th { border-color: rgba(71, 85, 105, 0.6) !important; }
+
+/* View-tab row — frosted, themed border */
+.vscode-webview .md-reader-toolbar {
+  border-bottom: 1px solid var(--vscode-panel-border, rgba(148, 163, 184, 0.2)) !important;
+  background: color-mix(in srgb, var(--vscode-editor-background, #fff) 80%, transparent) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* View tab buttons — prominent active state with gradient */
+.vscode-webview .md-reader-tab-active {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+  color: #fff !important;
+  box-shadow: 0 1px 3px rgba(99, 102, 241, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+.vscode-webview .md-reader-tab-active:hover { filter: brightness(1.05); }
+.dark .vscode-webview .md-reader-tab-active {
+  background: linear-gradient(135deg, #818cf8, #a78bfa) !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(129, 140, 248, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Outline sidebar active heading — strong accent bar */
+.vscode-webview .md-reader-outline-active {
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.15), transparent 60%) !important;
+  border-left-color: #6366f1 !important;
+  color: #4f46e5 !important;
+  font-weight: 600 !important;
+}
+.dark .vscode-webview .md-reader-outline-active {
+  background: linear-gradient(90deg, rgba(129, 140, 248, 0.25), transparent 60%) !important;
+  border-left-color: #a78bfa !important;
+  color: #c4b5fd !important;
+}
+
+/* Empty state (no markdown yet) — punchy, welcoming */
+.vscode-webview .md-reader-empty-gradient {
+  background: radial-gradient(ellipse at top, rgba(139, 92, 246, 0.08), transparent 60%),
+              radial-gradient(ellipse at bottom right, rgba(99, 102, 241, 0.06), transparent 50%);
+}
+.dark .vscode-webview .md-reader-empty-gradient {
+  background: radial-gradient(ellipse at top, rgba(139, 92, 246, 0.18), transparent 60%),
+              radial-gradient(ellipse at bottom right, rgba(99, 102, 241, 0.12), transparent 50%);
+}
+
+/* Keybind chip in empty state */
+.vscode-webview .md-reader-kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: 0.75rem;
+  background: var(--vscode-keybindingLabel-background, rgba(148, 163, 184, 0.15));
+  color: var(--vscode-keybindingLabel-foreground, #475569);
+  border: 1px solid var(--vscode-keybindingLabel-border, rgba(148, 163, 184, 0.3));
+  box-shadow: inset 0 -1px 0 var(--vscode-keybindingLabel-bottomBorder, rgba(0, 0, 0, 0.1));
+}
 /* Code block borders for better delineation */
 article pre { border: 1px solid #e5e7eb; border-radius: 0.5rem; }
 .dark article pre { border-color: #374151; }

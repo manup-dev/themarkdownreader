@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#4f46e5"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#e2e8f0"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+      <feOffset dx="0" dy="2"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.35"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Rounded purple-indigo tile -->
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#bg)"/>
+
+  <!-- Soft highlight -->
+  <rect x="4" y="4" width="120" height="60" rx="26" fill="#ffffff" opacity="0.08"/>
+
+  <!-- Open book -->
+  <g filter="url(#shadow)">
+    <!-- Left page -->
+    <path d="M22 38 Q22 32 28 32 L58 32 Q64 32 64 38 L64 96 Q64 94 58 94 L28 94 Q22 94 22 96 Z" fill="url(#page)"/>
+    <!-- Right page -->
+    <path d="M106 38 Q106 32 100 32 L70 32 Q64 32 64 38 L64 96 Q64 94 70 94 L100 94 Q106 94 106 96 Z" fill="url(#page)"/>
+    <!-- Spine shadow -->
+    <path d="M62 34 L66 34 L66 94 L62 94 Z" fill="#cbd5e1" opacity="0.55"/>
+
+    <!-- Left page lines -->
+    <rect x="30" y="44" width="28" height="3" rx="1.5" fill="#6366f1" opacity="0.85"/>
+    <rect x="30" y="54" width="24" height="2" rx="1" fill="#94a3b8"/>
+    <rect x="30" y="62" width="28" height="2" rx="1" fill="#94a3b8"/>
+    <rect x="30" y="70" width="20" height="2" rx="1" fill="#94a3b8"/>
+    <rect x="30" y="80" width="26" height="2" rx="1" fill="#94a3b8"/>
+    <rect x="30" y="88" width="18" height="2" rx="1" fill="#94a3b8"/>
+
+    <!-- Right page lines -->
+    <rect x="70" y="44" width="24" height="3" rx="1.5" fill="#6366f1" opacity="0.85"/>
+    <rect x="70" y="54" width="28" height="2" rx="1" fill="#94a3b8"/>
+    <rect x="70" y="62" width="22" height="2" rx="1" fill="#94a3b8"/>
+    <rect x="70" y="70" width="26" height="2" rx="1" fill="#94a3b8"/>
+    <rect x="70" y="80" width="20" height="2" rx="1" fill="#94a3b8"/>
+    <rect x="70" y="88" width="24" height="2" rx="1" fill="#94a3b8"/>
+  </g>
+
+  <!-- AI sparkle, upper right corner of book -->
+  <g transform="translate(92 34)">
+    <path d="M0 -10 L2.4 -2.4 L10 0 L2.4 2.4 L0 10 L-2.4 2.4 L-10 0 L-2.4 -2.4 Z" fill="url(#spark)"/>
+    <circle r="2" fill="#fff" opacity="0.9"/>
+  </g>
+  <g transform="translate(104 52)" opacity="0.85">
+    <path d="M0 -5 L1.2 -1.2 L5 0 L1.2 1.2 L0 5 L-1.2 1.2 L-5 0 L-1.2 -1.2 Z" fill="#fde68a"/>
+  </g>
+</svg>
