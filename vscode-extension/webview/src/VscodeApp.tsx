@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
-import { Loader2, PanelLeftClose, PanelLeftOpen, MessageSquare, Sun, Moon, BookOpen, Contrast, BookText, GitBranch, LayoutGrid, TreePine, Share2, GraduationCap } from 'lucide-react'
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
+import { Loader2, PanelLeftClose, PanelLeftOpen, MessageSquare, Sun, Moon, BookOpen, Contrast, BookText, GitBranch, LayoutGrid, TreePine, Share2, GraduationCap, Maximize2, Minimize2, X, Sparkles } from 'lucide-react'
 import { useStore } from '@app/store/useStore'
 import { Reader } from '@app/components/Reader'
 import { OutlinePanel } from '@app/components/OutlinePanel'
@@ -48,6 +48,13 @@ export function VscodeApp() {
   const fileName = useStore((s) => s.fileName)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [commentsOpen, setCommentsOpen] = useState(false)
+  const [commentsExpanded, setCommentsExpanded] = useState(false)
+  const [commentsWidth, setCommentsWidth] = useState(() => {
+    if (typeof window === 'undefined') return 360
+    const saved = window.localStorage?.getItem('md-reader-vscode-sidekick-width')
+    const parsed = saved ? parseInt(saved, 10) : NaN
+    return Number.isFinite(parsed) ? Math.max(280, Math.min(720, parsed)) : 360
+  })
   const [aiActionResult, setAiActionResult] = useState<{ action: string; text: string; result?: string } | null>(null)
   const lastScrollSectionRef = useRef<string>('')
   const [ttsAutoPlay, setTtsAutoPlay] = useState(false)
@@ -246,6 +253,23 @@ export function VscodeApp() {
     setSidebarWidth(Math.max(150, Math.min(350, sidebarWidth + delta)))
   }, [sidebarWidth, setSidebarWidth])
 
+  // Sidekick (right) panel resize: drag handle is on its LEFT edge, so a
+  // negative delta (dragging left) should grow the panel.
+  const handleCommentsResize = useCallback((delta: number) => {
+    if (commentsExpanded) return
+    setCommentsWidth((w) => {
+      const next = Math.max(280, Math.min(720, w - delta))
+      try { window.localStorage?.setItem('md-reader-vscode-sidekick-width', String(next)) } catch { /* localStorage may be blocked */ }
+      return next
+    })
+  }, [commentsExpanded])
+
+  const effectiveCommentsWidth = useMemo(() => {
+    if (!commentsExpanded) return commentsWidth
+    if (typeof window === 'undefined') return 720
+    return Math.max(720, Math.min(960, Math.round(window.innerWidth * 0.55)))
+  }, [commentsExpanded, commentsWidth])
+
   const themeClasses: Record<Theme, string> = { light: 'bg-gray-50', dark: 'bg-gray-950', sepia: 'bg-sepia-100', 'high-contrast': 'bg-black' }
   const showSidebar = sidebarOpen && markdown && viewMode === 'read'
 
@@ -380,15 +404,16 @@ export function VscodeApp() {
           </div>
           <button
             onClick={() => setCommentsOpen(!commentsOpen)}
-            className={`p-1.5 rounded-md transition-all ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-all ${
               commentsOpen
-                ? 'bg-teal-500/15 text-teal-700 dark:text-teal-300 ring-1 ring-teal-400/30'
-                : 'text-gray-500 hover:text-teal-600 dark:text-gray-400 dark:hover:text-teal-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                ? 'md-reader-sidekick-toggle-active'
+                : 'text-gray-600 dark:text-gray-300 hover:text-teal-700 dark:hover:text-teal-200 hover:bg-gray-100 dark:hover:bg-gray-800 ring-1 ring-transparent hover:ring-teal-400/20'
             }`}
-            title="Comments & Prompt Builder"
+            title="Toggle Sidekick (notes, comments, prompt builder)"
             aria-pressed={commentsOpen}
           >
-            <MessageSquare className="h-[15px] w-[15px]" />
+            <MessageSquare className="h-[15px] w-[15px]" strokeWidth={commentsOpen ? 2.4 : 2} />
+            <span className="hidden md:inline">Sidekick</span>
           </button>
         </div>
 
@@ -403,15 +428,63 @@ export function VscodeApp() {
         </Suspense>
       </div>
 
-      {/* Comments panel */}
+      {/* Sidekick dashboard (Comments + Prompt Builder) */}
       {commentsOpen && (
-        <aside className="shrink-0 border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-y-auto" style={{ width: 300 }}>
-          <Suspense fallback={<LazyFallback />}>
-            <ErrorBoundary name="Comments">
-              <CommentsPanel onClose={() => setCommentsOpen(false)} />
-            </ErrorBoundary>
-          </Suspense>
-        </aside>
+        <>
+          <ResizeHandle onResize={handleCommentsResize} />
+          <aside
+            className="md-reader-sidekick shrink-0 border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex flex-col"
+            style={{
+              width: effectiveCommentsWidth,
+              transition: commentsExpanded ? 'width 220ms cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
+            }}
+            aria-label="Notes and AI sidekick"
+          >
+            {/* Dashboard header */}
+            <div className="md-reader-sidekick-header flex items-center justify-between gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-800 sepia:border-sepia-200 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="md-reader-sidekick-badge w-7 h-7 rounded-md flex items-center justify-center shrink-0">
+                  <Sparkles className="h-[15px] w-[15px] text-white" strokeWidth={2.4} />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[13px] font-semibold tracking-tight text-gray-800 dark:text-gray-100 leading-tight truncate">
+                    Sidekick
+                  </span>
+                  <span className="text-[10px] uppercase tracking-[0.08em] text-gray-500 dark:text-gray-400 leading-tight">
+                    Notes · Prompts
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-0.5 shrink-0">
+                <button
+                  onClick={() => setCommentsExpanded((v) => !v)}
+                  className="p-1.5 rounded-md text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  title={commentsExpanded ? 'Restore' : 'Maximize'}
+                  aria-pressed={commentsExpanded}
+                  aria-label={commentsExpanded ? 'Restore sidekick' : 'Maximize sidekick'}
+                >
+                  {commentsExpanded ? <Minimize2 className="h-[14px] w-[14px]" /> : <Maximize2 className="h-[14px] w-[14px]" />}
+                </button>
+                <button
+                  onClick={() => { setCommentsOpen(false); setCommentsExpanded(false) }}
+                  className="p-1.5 rounded-md text-gray-500 hover:text-rose-600 dark:text-gray-400 dark:hover:text-rose-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  title="Close"
+                  aria-label="Close sidekick"
+                >
+                  <X className="h-[14px] w-[14px]" />
+                </button>
+              </div>
+            </div>
+            {/* Body */}
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <Suspense fallback={<LazyFallback />}>
+                <ErrorBoundary name="Comments">
+                  <CommentsPanel onClose={() => { setCommentsOpen(false); setCommentsExpanded(false) }} />
+                </ErrorBoundary>
+              </Suspense>
+            </div>
+          </aside>
+        </>
       )}
 
       {/* Selection menu (highlight, AI explain, comment, copy) */}
