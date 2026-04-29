@@ -8,17 +8,21 @@
   "scripts": {
     "build": "node esbuild.config.mjs",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e:act": "vitest run test/e2e/act.test.ts",
+    "test:e2e:playwright": "playwright test",
+    "test:e2e": "npm run test:e2e:act && npm run test:e2e:playwright"
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
     "@actions/github": "^6.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.0.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4",
-    "@types/node": "^22.0.0"
+    "vitest": "^2.1.4"
   },
   "engines": {
     "node": ">=20"
