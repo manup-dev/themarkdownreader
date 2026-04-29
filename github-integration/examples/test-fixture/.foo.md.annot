@@ -1,0 +1,4 @@
+{"v":1,"ts":1761868800000,"id":"h","op":"header","schema":"mdreader.annot/1","doc":{"title":"Fixture"},"createdAt":1761868800000}
+{"v":1,"ts":1761868800001,"id":"c1","op":"comment.add","docKey":"d","anchor":{"line":7,"text":"unique sentence"},"selectedText":"A unique sentence about pluripotent cellular memory.","body":"Citation needed.","author":"alice","sectionId":"section-a"}
+{"v":1,"ts":1761868800002,"id":"c2","op":"comment.add","docKey":"d","anchor":{"line":3,"text":"first paragraph"},"selectedText":"The first paragraph is here.","body":"Resolved nit, leaving for posterity.","author":"bob","sectionId":"intro"}
+{"v":1,"ts":1761868800003,"id":"c2","op":"comment.resolve","docKey":"d","resolved":true}

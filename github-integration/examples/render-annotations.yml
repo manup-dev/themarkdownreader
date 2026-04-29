@@ -1,0 +1,20 @@
+# Drop into .github/workflows/ in any repo that uses md-reader annotations.
+name: Render annotations
+on:
+  push:
+    paths:
+      - '**/*.md'
+      - '**/.*.md.annot'
+permissions:
+  contents: write
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: render
+        uses: manup-dev/themarkdownreader/github-integration@v1
+      - if: steps.render.outputs.changed_count != '0'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'chore: refresh annotation companions'
