@@ -18145,7 +18145,7 @@ var require_summary = __commonJS({
     exports2.summary = exports2.markdownSummary = exports2.SUMMARY_DOCS_URL = exports2.SUMMARY_ENV_VAR = void 0;
     var os_1 = require("os");
     var fs_1 = require("fs");
-    var { access, appendFile, writeFile } = fs_1.promises;
+    var { access: access2, appendFile, writeFile: writeFile2 } = fs_1.promises;
     exports2.SUMMARY_ENV_VAR = "GITHUB_STEP_SUMMARY";
     exports2.SUMMARY_DOCS_URL = "https://docs.github.com/actions/using-workflows/workflow-commands-for-github-actions#adding-a-job-summary";
     var Summary = class {
@@ -18168,7 +18168,7 @@ var require_summary = __commonJS({
             throw new Error(`Unable to find environment variable for $${exports2.SUMMARY_ENV_VAR}. Check if your runtime environment supports job summaries.`);
           }
           try {
-            yield access(pathFromEnv, fs_1.constants.R_OK | fs_1.constants.W_OK);
+            yield access2(pathFromEnv, fs_1.constants.R_OK | fs_1.constants.W_OK);
           } catch (_a) {
             throw new Error(`Unable to access summary file: '${pathFromEnv}'. Check if the file has correct read/write permissions.`);
           }
@@ -18203,7 +18203,7 @@ var require_summary = __commonJS({
         return __awaiter(this, void 0, void 0, function* () {
           const overwrite = !!(options === null || options === void 0 ? void 0 : options.overwrite);
           const filePath = yield this.filePath();
-          const writeFunc = overwrite ? writeFile : appendFile;
+          const writeFunc = overwrite ? writeFile2 : appendFile;
           yield writeFunc(filePath, this._buffer, { encoding: "utf8" });
           return this.emptyBuffer();
         });
@@ -19679,7 +19679,7 @@ var require_core = __commonJS({
       process.env["PATH"] = `${inputPath}${path.delimiter}${process.env["PATH"]}`;
     }
     exports2.addPath = addPath;
-    function getInput(name, options) {
+    function getInput2(name, options) {
       const val = process.env[`INPUT_${name.replace(/ /g, "_").toUpperCase()}`] || "";
       if (options && options.required && !val) {
         throw new Error(`Input required and not supplied: ${name}`);
@@ -19689,9 +19689,9 @@ var require_core = __commonJS({
       }
       return val.trim();
     }
-    exports2.getInput = getInput;
+    exports2.getInput = getInput2;
     function getMultilineInput(name, options) {
-      const inputs = getInput(name, options).split("\n").filter((x) => x !== "");
+      const inputs = getInput2(name, options).split("\n").filter((x) => x !== "");
       if (options && options.trimWhitespace === false) {
         return inputs;
       }
@@ -19701,7 +19701,7 @@ var require_core = __commonJS({
     function getBooleanInput(name, options) {
       const trueValue = ["true", "True", "TRUE"];
       const falseValue = ["false", "False", "FALSE"];
-      const val = getInput(name, options);
+      const val = getInput2(name, options);
       if (trueValue.includes(val))
         return true;
       if (falseValue.includes(val))
@@ -19710,7 +19710,7 @@ var require_core = __commonJS({
 Support boolean input list: \`true | True | TRUE | false | False | FALSE\``);
     }
     exports2.getBooleanInput = getBooleanInput;
-    function setOutput(name, value) {
+    function setOutput2(name, value) {
       const filePath = process.env["GITHUB_OUTPUT"] || "";
       if (filePath) {
         return (0, file_command_1.issueFileCommand)("OUTPUT", (0, file_command_1.prepareKeyValueMessage)(name, value));
@@ -19718,7 +19718,7 @@ Support boolean input list: \`true | True | TRUE | false | False | FALSE\``);
       process.stdout.write(os.EOL);
       (0, command_1.issueCommand)("set-output", { name }, (0, utils_1.toCommandValue)(value));
     }
-    exports2.setOutput = setOutput;
+    exports2.setOutput = setOutput2;
     function setCommandEcho(enabled) {
       (0, command_1.issue)("echo", enabled ? "on" : "off");
     }
@@ -19816,12 +19816,51 @@ Support boolean input list: \`true | True | TRUE | false | False | FALSE\``);
 // src/index.ts
 var index_exports = {};
 __export(index_exports, {
-  decodeWal: () => decodeWal,
-  emptyState: () => emptyState,
-  materialize: () => materialize
+  runPipeline: () => runPipeline
 });
 module.exports = __toCommonJS(index_exports);
 var core = __toESM(require_core(), 1);
+var import_promises3 = require("node:fs/promises");
+var import_node_path3 = require("node:path");
+
+// src/discover.ts
+var import_promises = require("node:fs/promises");
+var import_node_path = require("node:path");
+var SKIP_DIRS = /* @__PURE__ */ new Set(["node_modules", ".git", "dist", "build", ".next", "coverage"]);
+async function findSidecars(root) {
+  const out = [];
+  await walk(root, out);
+  return out;
+}
+async function walk(dir, out) {
+  let entries;
+  try {
+    entries = await (0, import_promises.readdir)(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const full = (0, import_node_path.join)(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (SKIP_DIRS.has(entry.name)) continue;
+      if (entry.name.startsWith(".") && entry.name !== ".") continue;
+      await walk(full, out);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    if (!entry.name.endsWith(".annot")) continue;
+    if (!entry.name.startsWith(".")) continue;
+    const stem = entry.name.slice(1, -".annot".length);
+    if (!stem) continue;
+    const sourcePath = (0, import_node_path.join)((0, import_node_path.dirname)(full), stem);
+    try {
+      await (0, import_promises.access)(sourcePath);
+    } catch {
+      continue;
+    }
+    out.push({ sourcePath, sidecarPath: full });
+  }
+}
 
 // ../src/lib/annotation-events.ts
 var SCHEMA_VERSION = 1;
@@ -19990,16 +20029,168 @@ function validateOpShape(evt) {
   }
 }
 
-// src/index.ts
-async function run() {
-  core.info("md-reader github-integration: scaffold ready, pipeline TBD in Task 6");
+// src/anchor.ts
+function resolveLine(anchor, source) {
+  const lines = source.split("\n");
+  if (typeof anchor.line === "number" && anchor.line >= 1 && anchor.line <= lines.length) {
+    return anchor.line;
+  }
+  if (typeof anchor.text === "string" && anchor.text.length > 0) {
+    const needle = anchor.text;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes(needle)) return i + 1;
+    }
+  }
+  return null;
 }
-run().catch((err) => {
-  core.setFailed(err instanceof Error ? err.message : String(err));
-});
+
+// src/render.ts
+var HEADER = "<!-- generated by md-reader github-integration \xB7 do not edit -->";
+function renderCommentsMarkdown(state, sourcePathRelative, sourceText, opts = {}) {
+  const all = [...state.comments.values()];
+  if (all.length === 0) return "";
+  const decorated = all.map((c) => ({
+    c,
+    line: resolveLine(c.anchor, sourceText)
+  }));
+  decorated.sort((a, b) => {
+    const al = a.line ?? Number.MAX_SAFE_INTEGER;
+    const bl = b.line ?? Number.MAX_SAFE_INTEGER;
+    if (al !== bl) return al - bl;
+    return a.c.createdAt - b.c.createdAt;
+  });
+  const now = opts.now ?? Date.now();
+  const stamp = formatDate(now);
+  const total = decorated.length;
+  const parts = [
+    HEADER,
+    `# Comments on \`${sourcePathRelative}\``,
+    "",
+    `${total} ${total === 1 ? "comment" : "comments"} \xB7 last updated ${stamp}`,
+    "",
+    "---",
+    ""
+  ];
+  for (const { c, line } of decorated) {
+    parts.push(renderOne(c, line, sourcePathRelative));
+    parts.push("");
+    parts.push("---");
+    parts.push("");
+  }
+  while (parts.length && (parts[parts.length - 1] === "" || parts[parts.length - 1] === "---")) {
+    parts.pop();
+  }
+  return parts.join("\n") + "\n";
+}
+function renderOne(c, line, sourcePath) {
+  const lineLabel = line ? `Line ${line}` : "Unanchored";
+  const link = line ? `[Open in source](${sourcePath}#L${line})` : `[Open in source](${sourcePath})`;
+  const quote = quoteSnippet(c.selectedText);
+  const stamp = formatDate(c.createdAt);
+  const body = (c.body ?? "").trim();
+  if (c.resolved) {
+    return [
+      "<details>",
+      `<summary>Resolved \xB7 ${lineLabel} \u2014 ${quote}</summary>`,
+      "",
+      `**${escapeMd(c.author)}** \xB7 ${stamp}`,
+      "",
+      body,
+      "",
+      link,
+      "</details>"
+    ].join("\n");
+  }
+  return [
+    `### ${lineLabel} \u2014 ${quote}`,
+    "",
+    `**${escapeMd(c.author)}** \xB7 ${stamp}`,
+    "",
+    body,
+    "",
+    link
+  ].join("\n");
+}
+function quoteSnippet(text) {
+  const trimmed = (text ?? "").trim().replace(/\s+/g, " ");
+  const max = 120;
+  const truncated = trimmed.length > max ? trimmed.slice(0, max - 1) + "\u2026" : trimmed;
+  return `\u201C${truncated}\u201D`;
+}
+function escapeMd(s) {
+  return s.replace(/[*_`[\]<>]/g, (m) => "\\" + m);
+}
+function formatDate(ms) {
+  const d = new Date(ms);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// src/apply.ts
+var import_promises2 = require("node:fs/promises");
+var import_node_path2 = require("node:path");
+async function writeOutputsIfChanged(outputs) {
+  const changed = [];
+  for (const { path, content } of outputs) {
+    const existing = await readSafely(path);
+    if (content === "") {
+      if (existing !== null) {
+        await (0, import_promises2.unlink)(path);
+        changed.push(path);
+      }
+      continue;
+    }
+    if (existing === content) continue;
+    await (0, import_promises2.mkdir)((0, import_node_path2.dirname)(path), { recursive: true });
+    await (0, import_promises2.writeFile)(path, content, "utf8");
+    changed.push(path);
+  }
+  return changed;
+}
+async function readSafely(path) {
+  try {
+    return await (0, import_promises2.readFile)(path, "utf8");
+  } catch (err) {
+    if (err.code === "ENOENT") return null;
+    throw err;
+  }
+}
+
+// src/index.ts
+async function runPipeline(opts) {
+  const pairs = await findSidecars(opts.workspace);
+  const outputs = [];
+  for (const { sourcePath, sidecarPath } of pairs) {
+    const [walText, sourceText] = await Promise.all([
+      (0, import_promises3.readFile)(sidecarPath, "utf8"),
+      (0, import_promises3.readFile)(sourcePath, "utf8")
+    ]);
+    const events = decodeWal(walText);
+    const state = materialize(events);
+    const sourceRel = (0, import_node_path3.relative)((0, import_node_path3.dirname)(sourcePath), sourcePath);
+    const rendered = renderCommentsMarkdown(state, sourceRel, sourceText, { now: opts.now });
+    outputs.push({ path: sourcePath + opts.suffix, content: rendered });
+  }
+  const changed = await writeOutputsIfChanged(outputs);
+  return { processed: pairs.length, changed };
+}
+async function run() {
+  const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  const suffix = core.getInput("suffix") || ".comments.md";
+  const result = await runPipeline({ workspace, suffix });
+  core.setOutput("processed", String(result.processed));
+  core.setOutput("changed", result.changed.join("\n"));
+  core.setOutput("changed_count", String(result.changed.length));
+  core.info(`md-reader: processed ${result.processed} sidecar(s), ${result.changed.length} file(s) changed.`);
+}
+if (process.env.GITHUB_ACTIONS === "true") {
+  run().catch((err) => {
+    core.setFailed(err instanceof Error ? err.message : String(err));
+  });
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
-  decodeWal,
-  emptyState,
-  materialize
+  runPipeline
 });

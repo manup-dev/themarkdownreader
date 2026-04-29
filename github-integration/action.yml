@@ -1,0 +1,21 @@
+name: 'md-reader: render annotations'
+description: 'Render .annot sidecars into github.com-readable markdown companions.'
+author: 'md-reader contributors'
+branding:
+  icon: 'message-square'
+  color: 'purple'
+inputs:
+  suffix:
+    description: 'Suffix appended to each source filename to form the companion path.'
+    required: false
+    default: '.comments.md'
+outputs:
+  processed:
+    description: 'Number of sidecars processed.'
+  changed:
+    description: 'Newline-separated list of companion files written or deleted.'
+  changed_count:
+    description: 'Length of the changed list.'
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
