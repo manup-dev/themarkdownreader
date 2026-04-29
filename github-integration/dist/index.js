@@ -19835,7 +19835,7 @@ async function findSidecars(root) {
 async function walk(dir, out) {
   let entries;
   try {
-    entries = await (0, import_promises.readdir)(dir, { withFileTypes: true });
+    entries = await (0, import_promises.readdir)(dir, { withFileTypes: true, encoding: "utf8" });
   } catch {
     return;
   }
@@ -19862,7 +19862,7 @@ async function walk(dir, out) {
   }
 }
 
-// ../src/lib/annotation-events.ts
+// src/lib/annotation-events.ts
 var SCHEMA_VERSION = 1;
 var KNOWN_OPS = /* @__PURE__ */ new Set([
   "header",

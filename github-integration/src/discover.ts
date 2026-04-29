@@ -20,9 +20,9 @@ export async function findSidecars(root: string): Promise<SidecarPair[]> {
 }
 
 async function walk(dir: string, out: SidecarPair[]): Promise<void> {
-  let entries: Awaited<ReturnType<typeof readdir>>
+  let entries: import('node:fs').Dirent<string>[]
   try {
-    entries = await readdir(dir, { withFileTypes: true })
+    entries = await readdir(dir, { withFileTypes: true, encoding: 'utf8' })
   } catch {
     return
   }

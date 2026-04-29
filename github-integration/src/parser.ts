@@ -7,4 +7,4 @@ export {
   type MaterializedComment,
   type MaterializedHighlight,
   type AnchorCoords,
-} from '../../src/lib/annotation-events'
+} from './lib/annotation-events'
