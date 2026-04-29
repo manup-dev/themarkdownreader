@@ -1,0 +1,26 @@
+{
+  "name": "@md-reader/github-integration",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GitHub Action that renders md-reader .annot sidecars into github.com-readable markdown companions.",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^6.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4",
+    "@types/node": "^22.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
