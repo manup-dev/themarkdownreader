@@ -74,6 +74,10 @@ docs/superpowers/
 # CLI build output
 cli/dist/
 
+# GitHub Action bundle MUST be tracked (Actions execute the committed dist directly)
+!github-integration/dist/
+!github-integration/dist/**
+
 # Bundle analysis
 dist/bundle-stats.html
 
