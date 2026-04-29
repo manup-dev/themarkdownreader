@@ -8,6 +8,10 @@ var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
@@ -24,6 +28,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // node_modules/@actions/core/lib/utils.js
 var require_utils = __commonJS({
@@ -19809,10 +19814,192 @@ Support boolean input list: \`true | True | TRUE | false | False | FALSE\``);
 });
 
 // src/index.ts
+var index_exports = {};
+__export(index_exports, {
+  decodeWal: () => decodeWal,
+  emptyState: () => emptyState,
+  materialize: () => materialize
+});
+module.exports = __toCommonJS(index_exports);
 var core = __toESM(require_core(), 1);
+
+// ../src/lib/annotation-events.ts
+var SCHEMA_VERSION = 1;
+var KNOWN_OPS = /* @__PURE__ */ new Set([
+  "header",
+  "highlight.add",
+  "highlight.del",
+  "highlight.edit",
+  "comment.add",
+  "comment.edit",
+  "comment.resolve",
+  "comment.del",
+  "checkpoint"
+]);
+function emptyState() {
+  return { highlights: /* @__PURE__ */ new Map(), comments: /* @__PURE__ */ new Map(), unknown: [] };
+}
+function reduce(state, event) {
+  switch (event.op) {
+    case "header":
+      return state;
+    case "highlight.add": {
+      const e = event;
+      const next = new Map(state.highlights);
+      next.set(e.id, {
+        id: e.id,
+        docKey: e.docKey,
+        anchor: e.anchor,
+        color: e.color,
+        note: e.note,
+        createdAt: e.ts,
+        createdBy: e.by
+      });
+      return { ...state, highlights: next };
+    }
+    case "highlight.del": {
+      if (!state.highlights.has(event.id)) return state;
+      const next = new Map(state.highlights);
+      next.delete(event.id);
+      return { ...state, highlights: next };
+    }
+    case "highlight.edit": {
+      const e = event;
+      const prev = state.highlights.get(e.id);
+      if (!prev) return state;
+      const next = new Map(state.highlights);
+      next.set(e.id, {
+        ...prev,
+        color: e.color ?? prev.color,
+        note: e.note !== void 0 ? e.note : prev.note
+      });
+      return { ...state, highlights: next };
+    }
+    case "comment.add": {
+      const e = event;
+      const next = new Map(state.comments);
+      next.set(e.id, {
+        id: e.id,
+        docKey: e.docKey,
+        anchor: e.anchor,
+        selectedText: e.selectedText,
+        body: e.body,
+        author: e.author,
+        sectionId: e.sectionId,
+        resolved: false,
+        createdAt: e.ts,
+        createdBy: e.by
+      });
+      return { ...state, comments: next };
+    }
+    case "comment.edit": {
+      const e = event;
+      const prev = state.comments.get(e.id);
+      if (!prev) return state;
+      const next = new Map(state.comments);
+      next.set(e.id, { ...prev, body: e.body });
+      return { ...state, comments: next };
+    }
+    case "comment.resolve": {
+      const e = event;
+      const prev = state.comments.get(e.id);
+      if (!prev) return state;
+      const next = new Map(state.comments);
+      next.set(e.id, { ...prev, resolved: e.resolved });
+      return { ...state, comments: next };
+    }
+    case "comment.del": {
+      if (!state.comments.has(event.id)) return state;
+      const next = new Map(state.comments);
+      next.delete(event.id);
+      return { ...state, comments: next };
+    }
+    case "checkpoint": {
+      const e = event;
+      const highlights = /* @__PURE__ */ new Map();
+      for (const h of e.state.highlights) highlights.set(h.id, h);
+      const comments = /* @__PURE__ */ new Map();
+      for (const c of e.state.comments) comments.set(c.id, c);
+      return { highlights, comments, unknown: e.state.unknown ?? [] };
+    }
+    default: {
+      return { ...state, unknown: [...state.unknown, event] };
+    }
+  }
+}
+function materialize(events) {
+  let s = emptyState();
+  for (const e of events) s = reduce(s, e);
+  return s;
+}
+var MAX_WAL_BYTES = 8 * 1024 * 1024;
+var MAX_WAL_EVENTS = 5e4;
+function decodeWal(text) {
+  if (text.length > MAX_WAL_BYTES) {
+    text = text.slice(0, MAX_WAL_BYTES);
+  }
+  const out = [];
+  const lines = text.split("\n");
+  for (const rawLine of lines) {
+    if (out.length >= MAX_WAL_EVENTS) break;
+    const line = rawLine.trim();
+    if (!line) continue;
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+    const evt = parsed;
+    if (typeof evt.op !== "string" || typeof evt.ts !== "number" || typeof evt.id !== "string") continue;
+    if (typeof evt.v !== "number") continue;
+    if (!validateOpShape(evt)) continue;
+    if (evt.v > SCHEMA_VERSION) {
+      out.push({ ...evt, forwardCompat: true });
+      continue;
+    }
+    out.push(evt);
+  }
+  return out;
+}
+function validateOpShape(evt) {
+  const op = evt.op;
+  if (!KNOWN_OPS.has(op)) return true;
+  switch (op) {
+    case "header":
+      return typeof evt.schema === "string" && !!evt.doc && typeof evt.doc === "object";
+    case "highlight.add":
+      return typeof evt.color === "string" && !!evt.anchor && typeof evt.anchor === "object" && typeof evt.docKey === "string";
+    case "highlight.edit":
+      return typeof evt.docKey === "string";
+    case "highlight.del":
+      return typeof evt.docKey === "string";
+    case "comment.add":
+      return typeof evt.selectedText === "string" && typeof evt.body === "string" && typeof evt.author === "string" && typeof evt.sectionId === "string" && typeof evt.docKey === "string" && !!evt.anchor && typeof evt.anchor === "object";
+    case "comment.edit":
+      return typeof evt.body === "string" && typeof evt.docKey === "string";
+    case "comment.resolve":
+      return typeof evt.resolved === "boolean" && typeof evt.docKey === "string";
+    case "comment.del":
+      return typeof evt.docKey === "string";
+    case "checkpoint":
+      return !!evt.state && typeof evt.state === "object";
+    default:
+      return true;
+  }
+}
+
+// src/index.ts
 async function run() {
   core.info("md-reader github-integration: scaffold ready, pipeline TBD in Task 6");
 }
 run().catch((err) => {
   core.setFailed(err instanceof Error ? err.message : String(err));
+});
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  decodeWal,
+  emptyState,
+  materialize
 });
