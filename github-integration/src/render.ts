@@ -61,8 +61,8 @@ export function renderCommentsMarkdown(
 }
 
 function renderOne(c: MaterializedComment, line: number | null, sourcePath: string): string {
-  const lineLabel = line ? `Line ${line}` : 'Unanchored'
-  const link = line ? `[Open in source](${sourcePath}#L${line})` : `[Open in source](${sourcePath})`
+  const lineLabel = line !== null ? `Line ${line}` : 'Unanchored'
+  const link = line !== null ? `[Open in source](${sourcePath}#L${line})` : `[Open in source](${sourcePath})`
   const quote = quoteSnippet(c.selectedText)
   const stamp = formatDate(c.createdAt)
   const body = (c.body ?? '').trim()

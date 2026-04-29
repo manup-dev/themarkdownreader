@@ -16,7 +16,14 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'co
  */
 export async function findSidecars(root: string): Promise<SidecarPair[]> {
   const out: SidecarPair[] = []
-  await walk(root, out)
+  const visited = new Set<string>()
+  try {
+    const rootStat = await fsStat(root)
+    visited.add(`${rootStat.dev}:${rootStat.ino}`)
+  } catch {
+    return out // root doesn't exist
+  }
+  await walk(root, out, visited)
   return out
 }
 

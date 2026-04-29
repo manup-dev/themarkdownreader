@@ -58,7 +58,8 @@ describe('runPipeline', () => {
     await expect(runPipeline({ workspace: root, suffix: '.foo/../bar.md' })).rejects.toThrow(/invalid suffix/)
   })
 
-  it('isolates a single corrupt sidecar and continues with the rest', async () => {
+  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0
+  it.skipIf(isRoot)('isolates a single corrupt sidecar and continues with the rest', async () => {
     const { chmod } = await import('node:fs/promises')
     await writeFile(join(root, 'good.md'), '# good\n\nbody\n')
     await writeFile(join(root, '.good.md.annot'),

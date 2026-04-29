@@ -53,3 +53,46 @@ describe('forward-compat: v>SCHEMA_VERSION events survive a checkpoint round-tri
     expect(state.unknown.length).toBe(1)
   })
 })
+
+describe('dedupeEvents output is ts-sorted even after key updates', () => {
+  it('produces chronological order when a duplicate key has the highest ts', () => {
+    // Three events: c@ts=50 (stale), b@ts=100, c@ts=300 (winner).
+    // After Round 1's fix this returned [c300, b100] — broken.
+    const cStale: AnnotationEvent = { v:1, ts:50,  id:'c', op:'comment.resolve', docKey:'d', resolved:false } as AnnotationEvent
+    const b:      AnnotationEvent = { v:1, ts:100, id:'b', op:'comment.add', docKey:'d', anchor:{},
+      selectedText:'x', body:'b', author:'a', sectionId:'s' } as AnnotationEvent
+    const cFresh: AnnotationEvent = { v:1, ts:300, id:'c', op:'comment.resolve', docKey:'d', resolved:true } as AnnotationEvent
+
+    const out = dedupeEvents([cFresh, b, cStale])
+    expect(out.length).toBe(2)
+    // Must be chronological: b (ts=100) before cFresh (ts=300).
+    expect(out[0]).toBe(b)
+    expect(out[1]).toBe(cFresh)
+  })
+
+  it('end-to-end: three-event interleaving with resolve-without-prior-add no longer drops resolve', () => {
+    const add:     AnnotationEvent = { v:1, ts:100, id:'c', op:'comment.add', docKey:'d', anchor:{},
+      selectedText:'x', body:'b', author:'a', sectionId:'s' } as AnnotationEvent
+    const other:   AnnotationEvent = { v:1, ts:150, id:'b', op:'comment.add', docKey:'d', anchor:{},
+      selectedText:'y', body:'q', author:'a', sectionId:'s' } as AnnotationEvent
+    const resolve: AnnotationEvent = { v:1, ts:200, id:'c', op:'comment.resolve', docKey:'d', resolved:true } as AnnotationEvent
+
+    // Hostile input order
+    const merged = dedupeEvents([resolve, add, other])
+    const state = materialize(merged)
+    expect(state.comments.get('c')?.resolved).toBe(true)
+  })
+})
+
+describe('compareEvents OP_PRIORITY tiebreaker (same ts)', () => {
+  it('orders comment.add before comment.resolve at identical ts and clientId', () => {
+    const add: AnnotationEvent = { v:1, ts:100, clientId:'A', id:'c', op:'comment.add',
+      docKey:'d', anchor:{}, selectedText:'x', body:'b', author:'a', sectionId:'s' } as AnnotationEvent
+    const resolve: AnnotationEvent = { v:1, ts:100, clientId:'A', id:'c', op:'comment.resolve',
+      docKey:'d', resolved:true } as AnnotationEvent
+    expect(compareEvents(add, resolve)).toBeLessThan(0)
+    // End-to-end: hostile input → still resolved
+    const state = materialize(dedupeEvents([resolve, add]))
+    expect(state.comments.get('c')?.resolved).toBe(true)
+  })
+})

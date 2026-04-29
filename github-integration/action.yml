@@ -16,6 +16,8 @@ outputs:
     description: 'Newline-separated list of companion files written or deleted.'
   changed_count:
     description: 'Length of the changed list.'
+  skipped:
+    description: 'Number of sidecars skipped due to read or parse errors. Use to gate alerts.'
 runs:
   using: 'node20'
   main: 'dist/index.js'

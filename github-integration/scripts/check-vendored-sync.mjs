@@ -30,5 +30,8 @@ if (missing.length || extra.length) {
   if (missing.length) console.warn('  Missing from vendored: ' + missing.join('; '))
   if (extra.length)   console.warn('  Extra in vendored:    ' + extra.join('; '))
   console.warn('Update github-integration/src/lib/annotation-events.ts to match.')
-  // Exit 0 — warning only, not failing CI. A future task can promote this to an error.
+  // In CI, fail the build. Locally, just warn so dev iterations stay fast.
+  if (process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true') {
+    process.exit(1)
+  }
 }

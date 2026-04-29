@@ -62,4 +62,22 @@ describe('findSidecars', () => {
     // b/ is a symlink to a/ — cycle guard should prevent revisiting a/page.md via b/.
     expect(stems).toEqual(['a/page.md', 'foo.md', 'sub/bar.md'])
   })
+
+  it('breaks cycles when a symlink points back to the root', async () => {
+    const { symlink } = await import('node:fs/promises')
+    // Use a fresh isolated tmp dir so no sidecars from beforeAll/prior tests bleed in.
+    const isolated = await mkdtemp(join(tmpdir(), 'mdr-selflink-'))
+    try {
+      // Root contains a sidecar pair plus a symlink that points back to root.
+      await writeFile(join(isolated, 'doc.md'), '# d')
+      await writeFile(join(isolated, '.doc.md.annot'), '')
+      await symlink(isolated, join(isolated, 'self'), 'dir')
+      const pairs = await findSidecars(isolated)
+      // Without seeding root's inode, the symlink walks root again and emits a duplicate.
+      const sidecars = pairs.map((p) => p.sidecarPath.replace(isolated + '/', '')).sort()
+      expect(sidecars).toEqual(['.doc.md.annot'])
+    } finally {
+      await rm(isolated, { recursive: true, force: true })
+    }
+  })
 })

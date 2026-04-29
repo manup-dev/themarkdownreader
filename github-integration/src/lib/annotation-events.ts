@@ -364,13 +364,15 @@ export function compareEvents(a: AnnotationEvent, b: AnnotationEvent): number {
  * Sorts BEFORE deduping so the last-ts entry wins, not the last input-array position.
  */
 export function dedupeEvents(events: AnnotationEvent[]): AnnotationEvent[] {
-  // Sort first so the LATEST event wins on (id, op) collisions. The original
-  // implementation deduped first then sorted, which made input-array position
-  // determine the winner instead of timestamp.
+  // Sort first so the LATEST event wins on (id, op) collisions.
+  // Then sort again at the end because Map preserves KEY INSERTION ORDER —
+  // an in-place value update on a duplicate keeps the entry at its original
+  // (now-wrong) position, breaking the materialize contract that events are
+  // applied in chronological order.
   const sorted = [...events].sort(compareEvents)
   const seen = new Map<string, AnnotationEvent>()
   for (const e of sorted) seen.set(`${e.id}|${e.op}`, e)
-  return [...seen.values()]
+  return [...seen.values()].sort(compareEvents)
 }
 
 // ─── JSONL codec ────────────────────────────────────────────────────────────

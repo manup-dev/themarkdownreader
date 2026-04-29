@@ -19829,7 +19829,14 @@ var import_node_path = require("node:path");
 var SKIP_DIRS = /* @__PURE__ */ new Set(["node_modules", ".git", "dist", "build", ".next", "coverage"]);
 async function findSidecars(root) {
   const out = [];
-  await walk(root, out);
+  const visited = /* @__PURE__ */ new Set();
+  try {
+    const rootStat = await (0, import_promises.stat)(root);
+    visited.add(`${rootStat.dev}:${rootStat.ino}`);
+  } catch {
+    return out;
+  }
+  await walk(root, out, visited);
   return out;
 }
 async function walk(dir, out, visited = /* @__PURE__ */ new Set()) {
@@ -20107,8 +20114,8 @@ function renderCommentsMarkdown(state, sourcePathRelative, sourceText) {
   return parts.join("\n") + "\n";
 }
 function renderOne(c, line, sourcePath) {
-  const lineLabel = line ? `Line ${line}` : "Unanchored";
-  const link = line ? `[Open in source](${sourcePath}#L${line})` : `[Open in source](${sourcePath})`;
+  const lineLabel = line !== null ? `Line ${line}` : "Unanchored";
+  const link = line !== null ? `[Open in source](${sourcePath}#L${line})` : `[Open in source](${sourcePath})`;
   const quote = quoteSnippet(c.selectedText);
   const stamp = formatDate(c.createdAt);
   const body = (c.body ?? "").trim();
@@ -20205,7 +20212,8 @@ async function runPipeline(opts) {
     } catch (err) {
       skipped++;
       const msg = err instanceof Error ? err.message : String(err);
-      core.warning(`md-reader: skipped ${sidecarPath} \u2014 ${msg}`);
+      const companion = sourcePath + opts.suffix;
+      core.warning(`md-reader: skipped sidecar=${sidecarPath} companion=${companion}: ${msg}`);
     }
   }
   const changed = await writeOutputsIfChanged(outputs);
@@ -20218,6 +20226,7 @@ async function run() {
   core.setOutput("processed", String(result.processed));
   core.setOutput("changed", result.changed.join("\n"));
   core.setOutput("changed_count", String(result.changed.length));
+  core.setOutput("skipped", String(result.skipped));
   core.info(`md-reader: processed ${result.processed} sidecar(s), ${result.changed.length} file(s) changed, ${result.skipped} skipped.`);
 }
 if (process.env.GITHUB_ACTIONS === "true") {

@@ -115,6 +115,7 @@ concurrency:
 | `processed` | Number of sidecars processed. |
 | `changed` | Newline-separated list of companion files written or deleted. |
 | `changed_count` | Length of the changed list (handy for `if:` gates). |
+| `skipped` | Number of sidecars skipped due to read or parse errors. Use to gate alerts. |
 
 ## Permissions
 
@@ -133,6 +134,9 @@ Use the `act` recipe above, or import `runPipeline` from `dist/index.js` in a No
 
 **Q: Why isn't this a GitHub App?**
 Apps add OAuth complexity and a marketplace listing for the same outcome. The Action ships today, can be wrapped by an App later, and uses zero external services.
+
+**Q: I clicked "Open in source" in the rendered companion and it didn't scroll anywhere.**
+GitHub strips fragment identifiers (`#L9`) from links inside rendered markdown previews. The link works correctly when you click it from the **blob view** of the companion (use the "Code" tab → click the file → the rendered view shows the link, then click "Raw" or "Blame" to navigate the markdown source which preserves the anchor). On mobile and in PR diff views, anchors also resolve. We render the anchor anyway because it's load-bearing in every other surface; the only loss is the rendered-preview view.
 
 **Q: What's the parser source of truth?**
 The `.annot` JSONL grammar lives in the main md-reader repo at `src/lib/annotation-events.ts`. This package vendors a copy at `src/lib/annotation-events.ts` so it can typecheck cleanly without inheriting the parent's DOM-typed transitive imports. Keep them in sync.

@@ -41,7 +41,8 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
     } catch (err) {
       skipped++
       const msg = err instanceof Error ? err.message : String(err)
-      core.warning(`md-reader: skipped ${sidecarPath} — ${msg}`)
+      const companion = sourcePath + opts.suffix
+      core.warning(`md-reader: skipped sidecar=${sidecarPath} companion=${companion}: ${msg}`)
     }
   }
   const changed = await writeOutputsIfChanged(outputs)
@@ -55,6 +56,7 @@ async function run(): Promise<void> {
   core.setOutput('processed', String(result.processed))
   core.setOutput('changed', result.changed.join('\n'))
   core.setOutput('changed_count', String(result.changed.length))
+  core.setOutput('skipped', String(result.skipped))
   core.info(`md-reader: processed ${result.processed} sidecar(s), ${result.changed.length} file(s) changed, ${result.skipped} skipped.`)
 }
 
