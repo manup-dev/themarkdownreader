@@ -53,6 +53,6 @@ describe.skipIf(!HAS_ACT)('act-driven workflow run', () => {
     expect(out).toContain('# Comments on `foo.md`')
     expect(out).toContain('Citation needed.')
     expect(out).toContain('<details>')
-    expect(out).toContain('Resolved · Line 3')
+    expect(out).toContain('Resolved · Line 5')
   }, 180_000)
 })

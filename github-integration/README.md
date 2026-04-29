@@ -10,11 +10,11 @@ When your team writes highlights and comments on markdown docs in [md-reader](ht
 
 Three obvious ways to surface md-reader annotations to a github.com viewer, and we picked the one with the least friction:
 
-| Surface | Install required for viewer | Works on every push | Auth surface |
-|---|---|---|---|
-| **This Action (committed companion)** | none | yes | `contents: write` only |
-| Browser extension | install per viewer | n/a | none, but each viewer must opt in |
-| PR review comments | none | PR-only | `pull-requests: write` |
+| Surface | Install required for viewer | Works on every push | Visible where on github.com | Auth surface |
+|---|---|---|---|---|
+| **This Action (committed companion)** | none | yes | file browser, blame, mobile, raw, blob | `contents: write` only |
+| Browser extension | install per viewer | n/a | wherever the extension injects | none, but each viewer must opt in |
+| PR review comments | none | PR-only | PR conversation tab | `pull-requests: write` |
 
 A future opt-in flag will add the PR-review-comment path on top of the same parser. The committed companion is the default because it's visible everywhere on github.com without ceremony.
 
@@ -92,6 +92,16 @@ MDR_GITHUB_E2E=1 npm run test:e2e:playwright
 
 It's gated behind `MDR_GITHUB_E2E=1` because anonymous calls to api.github.com are rate-limited (60/hour) — fine for development, but we don't want it running in tight CI loops.
 
+## Concurrency
+
+If your repo can have multiple workflow runs touching the same branch (e.g., rapid pushes), wrap the workflow in a concurrency group so commits don't race:
+
+```yaml
+concurrency:
+  group: render-${{ github.ref }}
+  cancel-in-progress: false
+```
+
 ## Inputs
 
 | Name | Default | Description |
@@ -111,6 +121,9 @@ It's gated behind `MDR_GITHUB_E2E=1` because anonymous calls to api.github.com a
 `contents: write` is sufficient *and* required if you commit the rendered output back. The Action itself never makes API calls — it only reads and writes files in `GITHUB_WORKSPACE`.
 
 ## FAQ
+
+**Q: I have highlights without comments — where do they show up?**
+They don't, by design. Highlights without prose carry no review value on github.com (color isn't visible in the rendered companion); only `comment.add` events are surfaced. If you want highlight-with-note rendering, file an issue.
 
 **Q: I have `.annot` files I don't want rendered (e.g., archived docs).**
 Tighten the workflow's `paths:` filter to skip those directories, or rename the sidecar — anything not matching `.<stem>.annot` is ignored.

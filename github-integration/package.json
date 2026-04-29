@@ -7,6 +7,8 @@
   "type": "module",
   "scripts": {
     "build": "node esbuild.config.mjs",
+    "check:vendored-sync": "node scripts/check-vendored-sync.mjs",
+    "pretest": "npm run check:vendored-sync",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "test:e2e:act": "vitest run test/e2e/act.test.ts",

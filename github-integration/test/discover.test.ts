@@ -46,4 +46,20 @@ describe('findSidecars', () => {
     const pairs = await findSidecars(root)
     expect(pairs.find((p) => p.sourcePath.includes('node_modules'))).toBeUndefined()
   })
+
+  it('follows symlinked directories without revisiting them', async () => {
+    const { symlink } = await import('node:fs/promises')
+    // Set up: real dir `a` with a sidecar; symlink `b` pointing to `a`.
+    await mkdir(join(root, 'a'), { recursive: true })
+    await writeFile(join(root, 'a', 'page.md'), '# page')
+    await writeFile(join(root, 'a', '.page.md.annot'), '')
+    await symlink(join(root, 'a'), join(root, 'b'), 'dir')
+    const pairs = await findSidecars(root)
+    // The same real file is reachable via both paths (a/ and b/);
+    // cycle guard ensures we visit it once, not twice.
+    const stems = pairs.map((p) => p.sourcePath.replace(root + '/', '')).sort()
+    // root contains: foo.md, sub/bar.md (from beforeAll), and a/page.md (new).
+    // b/ is a symlink to a/ — cycle guard should prevent revisiting a/page.md via b/.
+    expect(stems).toEqual(['a/page.md', 'foo.md', 'sub/bar.md'])
+  })
 })

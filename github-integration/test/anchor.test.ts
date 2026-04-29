@@ -16,8 +16,13 @@ const SOURCE = [
 ].join('\n')
 
 describe('resolveLine', () => {
-  it('uses anchor.line when present and within range', () => {
-    expect(resolveLine({ line: 7 }, SOURCE)).toBe(7)
+  it('uses anchor.line when present and within range (0-indexed input → 1-based output)', () => {
+    // 0-indexed line 6 = 1-based line 7 ("The unique sentence with foo bar baz.")
+    expect(resolveLine({ line: 6 }, SOURCE)).toBe(7)
+  })
+
+  it('accepts anchor.line === 0 and returns line 1', () => {
+    expect(resolveLine({ line: 0 }, SOURCE)).toBe(1)
   })
 
   it('clamps anchor.line out-of-range to null', () => {
@@ -33,7 +38,7 @@ describe('resolveLine', () => {
   })
 
   it('prefers explicit line over text', () => {
-    // line 3 wins even though "foo" appears on line 7
-    expect(resolveLine({ line: 3, text: 'foo' }, SOURCE)).toBe(3)
+    // 0-indexed line 2 = 1-based line 3 ("First paragraph here."), even though "foo" appears on line 7
+    expect(resolveLine({ line: 2, text: 'foo' }, SOURCE)).toBe(3)
   })
 })

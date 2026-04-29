@@ -329,26 +329,48 @@ export function materialize(events: Iterable<AnnotationEvent>): DocState {
   return s
 }
 
+const OP_PRIORITY: Record<string, number> = {
+  'header': 0,
+  'highlight.add': 1,
+  'comment.add': 1,
+  'highlight.edit': 2,
+  'comment.edit': 2,
+  'comment.resolve': 2,
+  'highlight.del': 3,
+  'comment.del': 3,
+  'checkpoint': 4,
+}
+
 /**
  * Deterministic ordering for merging event streams from multiple clients.
- * Primary: ts. Ties broken by clientId, then by id.
+ * Primary: ts. Ties broken by clientId, then by op lifecycle priority (add
+ * before resolve/del at the same ts), then by id.
  */
 export function compareEvents(a: AnnotationEvent, b: AnnotationEvent): number {
   if (a.ts !== b.ts) return a.ts - b.ts
   const ac = a.clientId ?? ''
   const bc = b.clientId ?? ''
   if (ac !== bc) return ac < bc ? -1 : 1
+  // Same ts+clientId: prefer the lifecycle-earlier op so add precedes resolve/del.
+  const ap = OP_PRIORITY[a.op] ?? 99
+  const bp = OP_PRIORITY[b.op] ?? 99
+  if (ap !== bp) return ap - bp
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 }
 
 /**
- * Deduplicate events by (id, op). Later occurrences win.
+ * Deduplicate events by (id, op). Latest-ts wins on collision.
  * Used when merging remote and local WALs before replay.
+ * Sorts BEFORE deduping so the last-ts entry wins, not the last input-array position.
  */
 export function dedupeEvents(events: AnnotationEvent[]): AnnotationEvent[] {
+  // Sort first so the LATEST event wins on (id, op) collisions. The original
+  // implementation deduped first then sorted, which made input-array position
+  // determine the winner instead of timestamp.
+  const sorted = [...events].sort(compareEvents)
   const seen = new Map<string, AnnotationEvent>()
-  for (const e of events) seen.set(`${e.id}|${e.op}`, e)
-  return [...seen.values()].sort(compareEvents)
+  for (const e of sorted) seen.set(`${e.id}|${e.op}`, e)
+  return [...seen.values()]
 }
 
 // ─── JSONL codec ────────────────────────────────────────────────────────────

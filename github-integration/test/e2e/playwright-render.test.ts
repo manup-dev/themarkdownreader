@@ -14,10 +14,10 @@ test('GitHub renders the .comments.md companion with the structure we promise', 
   await writeFile(join(root, 'foo.md'), '# F\n\nbody line\n')
   await writeFile(join(root, '.foo.md.annot'),
     JSON.stringify({ v:1, ts: Date.UTC(2026,3,30), id:'c1', op:'comment.add',
-      docKey:'d', anchor:{ line:3, text:'body line' },
+      docKey:'d', anchor:{ line:2, text:'body line' },
       selectedText:'body line', body:'pw note', author:'alice', sectionId:'s' }) + '\n')
 
-  await runPipeline({ workspace: root, suffix: '.comments.md', now: Date.UTC(2026,3,30) })
+  await runPipeline({ workspace: root, suffix: '.comments.md' })
   const companion = await readFile(join(root, 'foo.md.comments.md'), 'utf8')
 
   // 2. Ask GitHub's public renderer to convert it to the exact HTML they'd show.

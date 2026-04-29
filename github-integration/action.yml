@@ -3,7 +3,7 @@ description: 'Render .annot sidecars into github.com-readable markdown companion
 author: 'md-reader contributors'
 branding:
   icon: 'message-square'
-  color: 'purple'
+  color: 'blue'
 inputs:
   suffix:
     description: 'Suffix appended to each source filename to form the companion path.'
