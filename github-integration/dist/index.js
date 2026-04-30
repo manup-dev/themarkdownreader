@@ -20093,11 +20093,21 @@ function renderCommentsMarkdown(state, sourcePathRelative, sourceText) {
     return a.c.createdAt - b.c.createdAt;
   });
   const total = decorated.length;
+  const openCount = decorated.filter((d) => !d.c.resolved).length;
+  const resolvedCount = total - openCount;
+  let countLine;
+  if (resolvedCount === 0) {
+    countLine = `${openCount} ${openCount === 1 ? "comment" : "comments"}`;
+  } else if (openCount === 0) {
+    countLine = `${resolvedCount} resolved`;
+  } else {
+    countLine = `${openCount} open \xB7 ${resolvedCount} resolved`;
+  }
   const parts = [
     HEADER,
     `# Comments on \`${sourcePathRelative}\``,
     "",
-    `${total} ${total === 1 ? "comment" : "comments"}`,
+    countLine,
     "",
     "---",
     ""
@@ -20114,8 +20124,9 @@ function renderCommentsMarkdown(state, sourcePathRelative, sourceText) {
   return parts.join("\n") + "\n";
 }
 function renderOne(c, line, sourcePath) {
-  const lineLabel = line !== null ? `Line ${line}` : "Unanchored";
-  const link = line !== null ? `[Open in source](${sourcePath}#L${line})` : `[Open in source](${sourcePath})`;
+  const valid = line !== null && line > 0;
+  const lineLabel = valid ? `Line ${line}` : "Unanchored";
+  const link = valid ? `[Open in source](${sourcePath}#L${line})` : `[Open in source](${sourcePath})`;
   const quote = quoteSnippet(c.selectedText);
   const stamp = formatDate(c.createdAt);
   const body = (c.body ?? "").trim();

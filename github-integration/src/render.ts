@@ -35,12 +35,23 @@ export function renderCommentsMarkdown(
   })
 
   const total = decorated.length
+  const openCount = decorated.filter(d => !d.c.resolved).length
+  const resolvedCount = total - openCount
+
+  let countLine: string
+  if (resolvedCount === 0) {
+    countLine = `${openCount} ${openCount === 1 ? 'comment' : 'comments'}`
+  } else if (openCount === 0) {
+    countLine = `${resolvedCount} resolved`
+  } else {
+    countLine = `${openCount} open · ${resolvedCount} resolved`
+  }
 
   const parts: string[] = [
     HEADER,
     `# Comments on \`${sourcePathRelative}\``,
     '',
-    `${total} ${total === 1 ? 'comment' : 'comments'}`,
+    countLine,
     '',
     '---',
     '',
@@ -61,8 +72,9 @@ export function renderCommentsMarkdown(
 }
 
 function renderOne(c: MaterializedComment, line: number | null, sourcePath: string): string {
-  const lineLabel = line !== null ? `Line ${line}` : 'Unanchored'
-  const link = line !== null ? `[Open in source](${sourcePath}#L${line})` : `[Open in source](${sourcePath})`
+  const valid = line !== null && line > 0
+  const lineLabel = valid ? `Line ${line}` : 'Unanchored'
+  const link = valid ? `[Open in source](${sourcePath}#L${line})` : `[Open in source](${sourcePath})`
   const quote = quoteSnippet(c.selectedText)
   const stamp = formatDate(c.createdAt)
   const body = (c.body ?? '').trim()

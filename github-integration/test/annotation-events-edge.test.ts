@@ -46,8 +46,8 @@ describe('comment.del before comment.add is a no-op', () => {
   })
 })
 
-describe('forward-compat: v>SCHEMA_VERSION events survive a checkpoint round-trip', () => {
-  it('preserves unknown future events through reduce', () => {
+describe('forward-compat: unknown future ops are preserved in state.unknown', () => {
+  it('preserves an event with v > SCHEMA_VERSION through reduce()', () => {
     const future = { v:99, ts:100, id:'x', op:'mystery.op', forwardCompat:true } as unknown as AnnotationEvent
     const state = materialize([future])
     expect(state.unknown.length).toBe(1)

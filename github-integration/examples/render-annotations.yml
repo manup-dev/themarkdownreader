@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: render
-        uses: manup-dev/themarkdownreader/github-integration@v1
+        uses: manup-dev/themarkdownreader/github-integration@main
       - if: steps.render.outputs.changed_count != '0'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:

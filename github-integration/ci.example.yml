@@ -1,0 +1,36 @@
+# Copy this to your repo's .github/workflows/ to validate the github-integration package.
+# This file lives at github-integration/ci.example.yml and is NOT auto-executed.
+name: github-integration CI
+
+on:
+  pull_request:
+    paths:
+      - 'github-integration/**'
+  push:
+    branches: [master, main]
+    paths:
+      - 'github-integration/**'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: github-integration
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: github-integration/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Verify dist/ is in sync with src/
+        run: |
+          npm run build
+          if ! git diff --exit-code dist/ ; then
+            echo "::error::dist/index.js is out of date — re-run 'npm run build' and commit the result."
+            exit 1
+          fi

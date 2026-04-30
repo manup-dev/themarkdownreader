@@ -47,7 +47,7 @@ describe('renderCommentsMarkdown', () => {
     const out = renderCommentsMarkdown(state, 'basic.md', source)
 
     expect(out).toContain('# Comments on `basic.md`')
-    expect(out).toContain('2 comments')
+    expect(out).toContain('1 open · 1 resolved')
     expect(out).toContain('Line 7')
     expect(out).toContain('“unique sentence with foo bar baz”')
     expect(out).toContain('nice catch here')

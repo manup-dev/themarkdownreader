@@ -20,6 +20,8 @@ A future opt-in flag will add the PR-review-comment path on top of the same pars
 
 ## Quick start
 
+> **Note:** The Action isn't tagged yet. Until `v1` ships, pin to `@main` (shown below) or to a specific commit SHA. The API will not change without a major-version bump.
+
 Drop this in `.github/workflows/render-annotations.yml`:
 
 ```yaml
@@ -32,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: render
-        uses: manup-dev/themarkdownreader/github-integration@v1
+        uses: manup-dev/themarkdownreader/github-integration@main
       - if: steps.render.outputs.changed_count != '0'
         uses: stefanzweifel/git-auto-commit-action@v5
         with: { commit_message: 'chore: refresh annotation companions' }
@@ -101,6 +103,16 @@ concurrency:
   group: render-${{ github.ref }}
   cancel-in-progress: false
 ```
+
+## Continuous integration
+
+The package ships an example CI workflow at [`ci.example.yml`](./ci.example.yml). Copy it to your repo's `.github/workflows/github-integration-ci.yml` to:
+
+- run `npm test` on every PR,
+- typecheck and bundle on every PR,
+- fail the build when the committed `dist/index.js` is out of sync with `src/`.
+
+The committed bundle is what GitHub Actions executes — keeping it in sync is load-bearing.
 
 ## Inputs
 
