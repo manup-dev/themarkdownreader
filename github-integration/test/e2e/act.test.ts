@@ -23,7 +23,7 @@ describe.skipIf(!HAS_ACT)('act-driven workflow run', () => {
 
     // The fixture's workflow uses `uses: ./`, meaning act expects an action.yml
     // at the workflow's checkout root. Symlink the package root into the staged
-    // fixture so `./` resolves to our action.yml + dist/index.js.
+    // fixture so `./` resolves to our action.yml + dist/index.cjs.
     const actionLink = join(stage, 'action.yml')
     const distLink = join(stage, 'dist')
     try { rmSync(actionLink, { force: true }) } catch {}

@@ -6,7 +6,7 @@ await build({
   platform: 'node',
   target: 'node20',
   format: 'cjs',
-  outfile: 'dist/index.js',
+  outfile: 'dist/index.cjs',
   sourcemap: false,
   minify: false,
   legalComments: 'none',

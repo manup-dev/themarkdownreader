@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "GitHub Action that renders md-reader .annot sidecars into github.com-readable markdown companions.",
-  "main": "dist/index.js",
+  "main": "dist/index.cjs",
   "type": "module",
   "scripts": {
     "build": "node esbuild.config.mjs",

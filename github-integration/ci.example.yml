@@ -31,6 +31,18 @@ jobs:
         run: |
           npm run build
           if ! git diff --exit-code dist/ ; then
-            echo "::error::dist/index.js is out of date — re-run 'npm run build' and commit the result."
+            echo "::error::dist/index.cjs is out of date — re-run 'npm run build' and commit the result."
             exit 1
           fi
+      - name: Smoke-test the bundled Action
+        env:
+          GITHUB_ACTIONS: 'true'
+        run: |
+          mkdir -p /tmp/smoke
+          cp test/e2e/fixture-repo/foo.md test/e2e/fixture-repo/.foo.md.annot /tmp/smoke/
+          GITHUB_WORKSPACE=/tmp/smoke node dist/index.cjs
+          test -f /tmp/smoke/foo.md.comments.md
+          grep -q '1 open · 1 resolved' /tmp/smoke/foo.md.comments.md
+          # Re-run must be idempotent (no changes)
+          OUTPUT=$(GITHUB_WORKSPACE=/tmp/smoke node dist/index.cjs 2>&1)
+          echo "$OUTPUT" | grep -q '0 file(s) changed'

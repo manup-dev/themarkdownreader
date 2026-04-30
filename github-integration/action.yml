@@ -20,4 +20,4 @@ outputs:
     description: 'Number of sidecars skipped due to read or parse errors. Use to gate alerts.'
 runs:
   using: 'node20'
-  main: 'dist/index.js'
+  main: 'dist/index.cjs'

@@ -110,7 +110,7 @@ The package ships an example CI workflow at [`ci.example.yml`](./ci.example.yml)
 
 - run `npm test` on every PR,
 - typecheck and bundle on every PR,
-- fail the build when the committed `dist/index.js` is out of sync with `src/`.
+- fail the build when the committed `dist/index.cjs` is out of sync with `src/`.
 
 The committed bundle is what GitHub Actions executes — keeping it in sync is load-bearing.
 
@@ -142,7 +142,11 @@ They don't, by design. Highlights without prose carry no review value on github.
 Tighten the workflow's `paths:` filter to skip those directories, or rename the sidecar — anything not matching `.<stem>.annot` is ignored.
 
 **Q: How do I test before pushing?**
-Use the `act` recipe above, or import `runPipeline` from `dist/index.js` in a Node REPL.
+Use the `act` recipe above (recommended). Or, for a quick spot-check, invoke the bundle directly:
+```bash
+GITHUB_ACTIONS=true GITHUB_WORKSPACE=/path/to/some/dir node dist/index.cjs
+```
+The bundle is CommonJS; `require('./dist/index.cjs')` exposes `runPipeline` if you want programmatic access.
 
 **Q: Why isn't this a GitHub App?**
 Apps add OAuth complexity and a marketplace listing for the same outcome. The Action ships today, can be wrapped by an App later, and uses zero external services.
