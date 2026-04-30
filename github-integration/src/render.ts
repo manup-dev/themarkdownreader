@@ -47,13 +47,19 @@ export function renderCommentsMarkdown(
     countLine = `**${openCount} open** · ${resolvedCount} resolved`
   }
 
-  // Author summary line
+  // Author summary line (capped at 5 named authors to avoid long wraps)
   const byAuthor = new Map<string, number>()
   for (const c of all) byAuthor.set(c.author, (byAuthor.get(c.author) ?? 0) + 1)
-  const authors = [...byAuthor.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([name, n]) => `${name} (${n})`)
-  const authorLine = `Comments by ${authors.join(', ')}`
+  const authorEntries = [...byAuthor.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  let authorLine: string
+  const cap = 5
+  if (authorEntries.length <= cap) {
+    authorLine = `Comments by ${authorEntries.map(([n, k]) => `${n} (${k})`).join(', ')}`
+  } else {
+    const head = authorEntries.slice(0, cap).map(([n, k]) => `${n} (${k})`).join(', ')
+    const others = authorEntries.length - cap
+    authorLine = `Comments by ${head}, … (${others} other${others === 1 ? '' : 's'})`
+  }
 
   // Reference timestamp for relative formatting: most recent event's ts
   const lastEventTs = Math.max(...all.map((c) => c.createdAt))
@@ -95,12 +101,12 @@ export function renderCommentsMarkdown(
 function renderOne(c: MaterializedComment, line: number | null, sourcePath: string, referenceMs: number): string {
   const valid = line !== null && line > 0
 
-  // Section context prefix
+  // Section context prefix (escape markdown control chars to prevent injection)
   const sectionPrefix = (() => {
     const raw = c.anchor.section ?? c.sectionId ?? ''
     if (!raw) return ''
     const human = raw.replace(/[-_]+/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase())
-    return `${human} · `
+    return `${escapeMd(human)} · `
   })()
 
   const lineLabel = valid ? `${sectionPrefix}Line ${line}` : `${sectionPrefix || ''}Unanchored`
@@ -112,6 +118,7 @@ function renderOne(c: MaterializedComment, line: number | null, sourcePath: stri
   if (c.resolved) {
     return [
       `<a id="mdr-${c.id}"></a>`,
+      '',
       '<details>',
       `<summary>Resolved · ${lineLabel} by ${escapeMd(c.author)} — ${quote}</summary>`,
       '',

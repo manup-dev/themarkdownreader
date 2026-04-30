@@ -20105,8 +20105,16 @@ function renderCommentsMarkdown(state, sourcePathRelative, sourceText) {
   }
   const byAuthor = /* @__PURE__ */ new Map();
   for (const c of all) byAuthor.set(c.author, (byAuthor.get(c.author) ?? 0) + 1);
-  const authors = [...byAuthor.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, n]) => `${name} (${n})`);
-  const authorLine = `Comments by ${authors.join(", ")}`;
+  const authorEntries = [...byAuthor.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  let authorLine;
+  const cap = 5;
+  if (authorEntries.length <= cap) {
+    authorLine = `Comments by ${authorEntries.map(([n, k]) => `${n} (${k})`).join(", ")}`;
+  } else {
+    const head = authorEntries.slice(0, cap).map(([n, k]) => `${n} (${k})`).join(", ");
+    const others = authorEntries.length - cap;
+    authorLine = `Comments by ${head}, \u2026 (${others} other${others === 1 ? "" : "s"})`;
+  }
   const lastEventTs = Math.max(...all.map((c) => c.createdAt));
   const parts = [
     HEADER,
@@ -20141,7 +20149,7 @@ function renderOne(c, line, sourcePath, referenceMs) {
     const raw = c.anchor.section ?? c.sectionId ?? "";
     if (!raw) return "";
     const human = raw.replace(/[-_]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
-    return `${human} \xB7 `;
+    return `${escapeMd(human)} \xB7 `;
   })();
   const lineLabel = valid ? `${sectionPrefix}Line ${line}` : `${sectionPrefix || ""}Unanchored`;
   const link = valid ? `[Open in source](${sourcePath}#L${line})` : `[Open in source](${sourcePath})`;
@@ -20151,6 +20159,7 @@ function renderOne(c, line, sourcePath, referenceMs) {
   if (c.resolved) {
     return [
       `<a id="mdr-${c.id}"></a>`,
+      "",
       "<details>",
       `<summary>Resolved \xB7 ${lineLabel} by ${escapeMd(c.author)} \u2014 ${quote}</summary>`,
       "",

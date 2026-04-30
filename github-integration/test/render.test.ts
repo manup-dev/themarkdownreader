@@ -268,4 +268,26 @@ describe('renderCommentsMarkdown', () => {
     const lines = out.trimEnd().split('\n')
     expect(lines[lines.length - 1]).toContain('Re-run the workflow to refresh.')
   })
+
+  it('escapes markdown control chars in section humanization', () => {
+    const state: DocState = {
+      highlights: new Map(),
+      comments: new Map([
+        ['x', comment({ id: 'x', body: 'b', anchor: { line: 0 }, sectionId: 'hero*section', author: 'a', createdAt: 1 })],
+      ]),
+      unknown: [],
+    }
+    const out = renderCommentsMarkdown(state, 'x.md', 'l1\n')
+    expect(out).toContain('Hero\\*Section · Line 1')
+  })
+
+  it('caps the author summary at 5 named authors', () => {
+    const map = new Map<string, MaterializedComment>()
+    for (let i = 0; i < 8; i++) {
+      map.set(`c${i}`, comment({ id: `c${i}`, body: 'b', author: `user${i}`, anchor: { line: 0 }, createdAt: i }))
+    }
+    const state: DocState = { highlights: new Map(), comments: map, unknown: [] }
+    const out = renderCommentsMarkdown(state, 'x.md', 'l1\n')
+    expect(out).toMatch(/Comments by user0 \(1\), user1 \(1\), user2 \(1\), user3 \(1\), user4 \(1\), … \(3 others\)/)
+  })
 })
