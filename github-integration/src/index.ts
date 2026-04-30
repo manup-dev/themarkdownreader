@@ -4,7 +4,7 @@ import { dirname, relative } from 'node:path'
 import { findSidecars } from './discover'
 import { decodeWal, materialize } from './parser'
 import { renderCommentsMarkdown } from './render'
-import { writeOutputsIfChanged, type OutputFile } from './apply'
+import { writeOutputsIfChanged } from './apply'
 
 export interface PipelineOptions {
   workspace: string
@@ -23,7 +23,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
     throw new Error(`invalid suffix: ${JSON.stringify(suffix)} — must be a plain filename suffix without separators or ".."`)
   }
   const pairs = await findSidecars(opts.workspace)
-  const outputs: OutputFile[] = []
+  const allChanged: string[] = []
   let skipped = 0
   for (const { sourcePath, sidecarPath } of pairs) {
     try {
@@ -37,7 +37,9 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
       // companion sits next to its source, so a relative same-dir link works.
       const sourceRel = relative(dirname(sourcePath), sourcePath)
       const rendered = renderCommentsMarkdown(state, sourceRel, sourceText)
-      outputs.push({ path: sourcePath + opts.suffix, content: rendered })
+      const companion = sourcePath + opts.suffix
+      const changed = await writeOutputsIfChanged([{ path: companion, content: rendered }])
+      allChanged.push(...changed)
     } catch (err) {
       skipped++
       const msg = err instanceof Error ? err.message : String(err)
@@ -45,8 +47,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
       core.warning(`md-reader: skipped sidecar=${sidecarPath} companion=${companion}: ${msg}`)
     }
   }
-  const changed = await writeOutputsIfChanged(outputs)
-  return { processed: pairs.length, changed, skipped }
+  return { processed: pairs.length, changed: allChanged, skipped }
 }
 
 async function run(): Promise<void> {
@@ -57,7 +58,10 @@ async function run(): Promise<void> {
   core.setOutput('changed', result.changed.join('\n'))
   core.setOutput('changed_count', String(result.changed.length))
   core.setOutput('skipped', String(result.skipped))
-  core.info(`md-reader: processed ${result.processed} sidecar(s), ${result.changed.length} file(s) changed, ${result.skipped} skipped.`)
+  core.notice(
+    `md-reader: ${result.processed} sidecar${result.processed === 1 ? '' : 's'} · ` +
+    `${result.changed.length} changed · ${result.skipped} skipped`
+  )
 }
 
 // Only auto-run when invoked as the Actions entrypoint, not when imported by tests.

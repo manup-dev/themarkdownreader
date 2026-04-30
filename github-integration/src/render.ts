@@ -44,8 +44,19 @@ export function renderCommentsMarkdown(
   } else if (openCount === 0) {
     countLine = `${resolvedCount} resolved`
   } else {
-    countLine = `${openCount} open · ${resolvedCount} resolved`
+    countLine = `**${openCount} open** · ${resolvedCount} resolved`
   }
+
+  // Author summary line
+  const byAuthor = new Map<string, number>()
+  for (const c of all) byAuthor.set(c.author, (byAuthor.get(c.author) ?? 0) + 1)
+  const authors = [...byAuthor.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([name, n]) => `${name} (${n})`)
+  const authorLine = `Comments by ${authors.join(', ')}`
+
+  // Reference timestamp for relative formatting: most recent event's ts
+  const lastEventTs = Math.max(...all.map((c) => c.createdAt))
 
   const parts: string[] = [
     HEADER,
@@ -53,12 +64,14 @@ export function renderCommentsMarkdown(
     '',
     countLine,
     '',
+    authorLine,
+    '',
     '---',
     '',
   ]
 
   for (const { c, line } of decorated) {
-    parts.push(renderOne(c, line, sourcePathRelative))
+    parts.push(renderOne(c, line, sourcePathRelative, lastEventTs))
     parts.push('')
     parts.push('---')
     parts.push('')
@@ -68,21 +81,39 @@ export function renderCommentsMarkdown(
   while (parts.length && (parts[parts.length - 1] === '' || parts[parts.length - 1] === '---')) {
     parts.pop()
   }
+
+  // Footer attribution — extract just the filename from the relative path
+  const sourceFilename = sourcePathRelative.replace(/.*[\\/]/, '')
+  parts.push('')
+  parts.push('---')
+  parts.push('')
+  parts.push(`_Generated from the sibling \`.${sourceFilename}.annot\` by [md-reader](https://github.com/manup-dev/themarkdownreader). Re-run the workflow to refresh._`)
+
   return parts.join('\n') + '\n'
 }
 
-function renderOne(c: MaterializedComment, line: number | null, sourcePath: string): string {
+function renderOne(c: MaterializedComment, line: number | null, sourcePath: string, referenceMs: number): string {
   const valid = line !== null && line > 0
-  const lineLabel = valid ? `Line ${line}` : 'Unanchored'
+
+  // Section context prefix
+  const sectionPrefix = (() => {
+    const raw = c.anchor.section ?? c.sectionId ?? ''
+    if (!raw) return ''
+    const human = raw.replace(/[-_]+/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase())
+    return `${human} · `
+  })()
+
+  const lineLabel = valid ? `${sectionPrefix}Line ${line}` : `${sectionPrefix || ''}Unanchored`
   const link = valid ? `[Open in source](${sourcePath}#L${line})` : `[Open in source](${sourcePath})`
   const quote = quoteSnippet(c.selectedText)
-  const stamp = formatDate(c.createdAt)
+  const stamp = formatRelativeStamp(c.createdAt, referenceMs)
   const body = (c.body ?? '').trim()
 
   if (c.resolved) {
     return [
+      `<a id="mdr-${c.id}"></a>`,
       '<details>',
-      `<summary>Resolved · ${lineLabel} — ${quote}</summary>`,
+      `<summary>Resolved · ${lineLabel} by ${escapeMd(c.author)} — ${quote}</summary>`,
       '',
       `**${escapeMd(c.author)}** · ${stamp}`,
       '',
@@ -94,6 +125,7 @@ function renderOne(c: MaterializedComment, line: number | null, sourcePath: stri
   }
 
   return [
+    `<a id="mdr-${c.id}"></a>`,
     `### ${lineLabel} — ${quote}`,
     '',
     `**${escapeMd(c.author)}** · ${stamp}`,
@@ -108,7 +140,7 @@ function quoteSnippet(text: string): string {
   const trimmed = (text ?? '').trim().replace(/\s+/g, ' ')
   const max = 120
   const truncated = trimmed.length > max ? trimmed.slice(0, max - 1) + '…' : trimmed
-  return `“${truncated}”`
+  return `"${truncated}"`
 }
 
 function escapeMd(s: string): string {
@@ -122,4 +154,20 @@ function formatDate(ms: number): string {
   const m = String(d.getUTCMonth() + 1).padStart(2, '0')
   const day = String(d.getUTCDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+function formatRelativeStamp(ms: number, nowMs: number): string {
+  const iso = formatDate(ms)
+  const diffSec = Math.max(0, Math.floor((nowMs - ms) / 1000))
+  const rel = relativeFromSeconds(diffSec)
+  return rel ? `${iso} (${rel})` : iso
+}
+
+function relativeFromSeconds(s: number): string | null {
+  if (s < 60) return 'just now'
+  const m = Math.floor(s / 60); if (m < 60) return `${m} minute${m === 1 ? '' : 's'} ago`
+  const h = Math.floor(m / 60); if (h < 24) return `${h} hour${h === 1 ? '' : 's'} ago`
+  const d = Math.floor(h / 24); if (d < 30) return `${d} day${d === 1 ? '' : 's'} ago`
+  const mo = Math.floor(d / 30); if (mo < 12) return `${mo} month${mo === 1 ? '' : 's'} ago`
+  return null  // older than a year — ISO date alone is clearer
 }

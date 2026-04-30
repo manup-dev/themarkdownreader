@@ -6,6 +6,48 @@
 
 When your team writes highlights and comments on markdown docs in [md-reader](https://github.com/manup-dev/themarkdownreader), the data is stored in a small JSONL sidecar named `.foo.md.annot` next to each `foo.md`. This action reads every paired sidecar in your repo on push and emits a sibling `foo.md.comments.md` companion that GitHub renders natively. Reviewers can browse comments inline on github.com — file browser, blame, mobile, raw — without installing the md-reader reader, the browser extension, or anything else. Resolved comments collapse into `<details>` blocks; unanchored comments still show but without line links.
 
+## What it looks like
+
+When you push, the workflow writes a sibling `foo.md.comments.md`. Open it on github.com and you'll see:
+
+```markdown
+# Comments on `foo.md`
+
+**1 open** · 1 resolved
+
+Comments by alice (1), bob (1)
+
+---
+
+<a id="mdr-c1"></a>
+### Section A · Line 9 — "A unique sentence about pluripotent cellular memory."
+
+**alice** · 2026-04-30 (2 days ago)
+
+Citation needed.
+
+[Open in source](foo.md#L9)
+
+---
+
+<a id="mdr-c2"></a>
+<details>
+<summary>Resolved · Intro · Line 5 by bob — "The first paragraph is here."</summary>
+
+**bob** · 2026-04-29 (3 days ago)
+
+Resolved nit, leaving for posterity.
+
+[Open in source](foo.md#L5)
+</details>
+
+---
+
+_Generated from the sibling `.foo.md.annot` by [md-reader](https://github.com/manup-dev/themarkdownreader). Re-run the workflow to refresh._
+```
+
+Resolved comments collapse, line links work in blob view, and `<a id="mdr-c1">` anchors let you deep-link to a specific comment from PRs.
+
 ## Why this exists
 
 Three obvious ways to surface md-reader annotations to a github.com viewer, and we picked the one with the least friction:

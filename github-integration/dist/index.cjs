@@ -17586,12 +17586,12 @@ var require_lib = __commonJS({
             throw new Error("Client has already been disposed.");
           }
           const parsedUrl = new URL(requestUrl);
-          let info2 = this._prepareRequest(verb, parsedUrl, headers);
+          let info = this._prepareRequest(verb, parsedUrl, headers);
           const maxTries = this._allowRetries && RetryableHttpVerbs.includes(verb) ? this._maxRetries + 1 : 1;
           let numTries = 0;
           let response;
           do {
-            response = yield this.requestRaw(info2, data);
+            response = yield this.requestRaw(info, data);
             if (response && response.message && response.message.statusCode === HttpCodes.Unauthorized) {
               let authenticationHandler;
               for (const handler of this.handlers) {
@@ -17601,7 +17601,7 @@ var require_lib = __commonJS({
                 }
               }
               if (authenticationHandler) {
-                return authenticationHandler.handleAuthentication(this, info2, data);
+                return authenticationHandler.handleAuthentication(this, info, data);
               } else {
                 return response;
               }
@@ -17624,8 +17624,8 @@ var require_lib = __commonJS({
                   }
                 }
               }
-              info2 = this._prepareRequest(verb, parsedRedirectUrl, headers);
-              response = yield this.requestRaw(info2, data);
+              info = this._prepareRequest(verb, parsedRedirectUrl, headers);
+              response = yield this.requestRaw(info, data);
               redirectsRemaining--;
             }
             if (!response.message.statusCode || !HttpResponseRetryCodes.includes(response.message.statusCode)) {
@@ -17654,7 +17654,7 @@ var require_lib = __commonJS({
        * @param info
        * @param data
        */
-      requestRaw(info2, data) {
+      requestRaw(info, data) {
         return __awaiter(this, void 0, void 0, function* () {
           return new Promise((resolve, reject) => {
             function callbackForResult(err, res) {
@@ -17666,7 +17666,7 @@ var require_lib = __commonJS({
                 resolve(res);
               }
             }
-            this.requestRawWithCallback(info2, data, callbackForResult);
+            this.requestRawWithCallback(info, data, callbackForResult);
           });
         });
       }
@@ -17676,12 +17676,12 @@ var require_lib = __commonJS({
        * @param data
        * @param onResult
        */
-      requestRawWithCallback(info2, data, onResult) {
+      requestRawWithCallback(info, data, onResult) {
         if (typeof data === "string") {
-          if (!info2.options.headers) {
-            info2.options.headers = {};
+          if (!info.options.headers) {
+            info.options.headers = {};
           }
-          info2.options.headers["Content-Length"] = Buffer.byteLength(data, "utf8");
+          info.options.headers["Content-Length"] = Buffer.byteLength(data, "utf8");
         }
         let callbackCalled = false;
         function handleResult(err, res) {
@@ -17690,7 +17690,7 @@ var require_lib = __commonJS({
             onResult(err, res);
           }
         }
-        const req = info2.httpModule.request(info2.options, (msg) => {
+        const req = info.httpModule.request(info.options, (msg) => {
           const res = new HttpClientResponse(msg);
           handleResult(void 0, res);
         });
@@ -17702,7 +17702,7 @@ var require_lib = __commonJS({
           if (socket) {
             socket.end();
           }
-          handleResult(new Error(`Request timeout: ${info2.options.path}`));
+          handleResult(new Error(`Request timeout: ${info.options.path}`));
         });
         req.on("error", function(err) {
           handleResult(err);
@@ -17738,27 +17738,27 @@ var require_lib = __commonJS({
         return this._getProxyAgentDispatcher(parsedUrl, proxyUrl);
       }
       _prepareRequest(method, requestUrl, headers) {
-        const info2 = {};
-        info2.parsedUrl = requestUrl;
-        const usingSsl = info2.parsedUrl.protocol === "https:";
-        info2.httpModule = usingSsl ? https : http;
+        const info = {};
+        info.parsedUrl = requestUrl;
+        const usingSsl = info.parsedUrl.protocol === "https:";
+        info.httpModule = usingSsl ? https : http;
         const defaultPort = usingSsl ? 443 : 80;
-        info2.options = {};
-        info2.options.host = info2.parsedUrl.hostname;
-        info2.options.port = info2.parsedUrl.port ? parseInt(info2.parsedUrl.port) : defaultPort;
-        info2.options.path = (info2.parsedUrl.pathname || "") + (info2.parsedUrl.search || "");
-        info2.options.method = method;
-        info2.options.headers = this._mergeHeaders(headers);
+        info.options = {};
+        info.options.host = info.parsedUrl.hostname;
+        info.options.port = info.parsedUrl.port ? parseInt(info.parsedUrl.port) : defaultPort;
+        info.options.path = (info.parsedUrl.pathname || "") + (info.parsedUrl.search || "");
+        info.options.method = method;
+        info.options.headers = this._mergeHeaders(headers);
         if (this.userAgent != null) {
-          info2.options.headers["user-agent"] = this.userAgent;
+          info.options.headers["user-agent"] = this.userAgent;
         }
-        info2.options.agent = this._getAgent(info2.parsedUrl);
+        info.options.agent = this._getAgent(info.parsedUrl);
         if (this.handlers) {
           for (const handler of this.handlers) {
-            handler.prepareRequest(info2.options);
+            handler.prepareRequest(info.options);
           }
         }
-        return info2;
+        return info;
       }
       _mergeHeaders(headers) {
         if (this.requestOptions && this.requestOptions.headers) {
@@ -19744,14 +19744,14 @@ Support boolean input list: \`true | True | TRUE | false | False | FALSE\``);
       (0, command_1.issueCommand)("warning", (0, utils_1.toCommandProperties)(properties), message instanceof Error ? message.toString() : message);
     }
     exports2.warning = warning2;
-    function notice(message, properties = {}) {
+    function notice2(message, properties = {}) {
       (0, command_1.issueCommand)("notice", (0, utils_1.toCommandProperties)(properties), message instanceof Error ? message.toString() : message);
     }
-    exports2.notice = notice;
-    function info2(message) {
+    exports2.notice = notice2;
+    function info(message) {
       process.stdout.write(message + os.EOL);
     }
-    exports2.info = info2;
+    exports2.info = info;
     function startGroup(name) {
       (0, command_1.issue)("group", name);
     }
@@ -20101,19 +20101,26 @@ function renderCommentsMarkdown(state, sourcePathRelative, sourceText) {
   } else if (openCount === 0) {
     countLine = `${resolvedCount} resolved`;
   } else {
-    countLine = `${openCount} open \xB7 ${resolvedCount} resolved`;
+    countLine = `**${openCount} open** \xB7 ${resolvedCount} resolved`;
   }
+  const byAuthor = /* @__PURE__ */ new Map();
+  for (const c of all) byAuthor.set(c.author, (byAuthor.get(c.author) ?? 0) + 1);
+  const authors = [...byAuthor.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, n]) => `${name} (${n})`);
+  const authorLine = `Comments by ${authors.join(", ")}`;
+  const lastEventTs = Math.max(...all.map((c) => c.createdAt));
   const parts = [
     HEADER,
     `# Comments on \`${sourcePathRelative}\``,
     "",
     countLine,
     "",
+    authorLine,
+    "",
     "---",
     ""
   ];
   for (const { c, line } of decorated) {
-    parts.push(renderOne(c, line, sourcePathRelative));
+    parts.push(renderOne(c, line, sourcePathRelative, lastEventTs));
     parts.push("");
     parts.push("---");
     parts.push("");
@@ -20121,19 +20128,31 @@ function renderCommentsMarkdown(state, sourcePathRelative, sourceText) {
   while (parts.length && (parts[parts.length - 1] === "" || parts[parts.length - 1] === "---")) {
     parts.pop();
   }
+  const sourceFilename = sourcePathRelative.replace(/.*[\\/]/, "");
+  parts.push("");
+  parts.push("---");
+  parts.push("");
+  parts.push(`_Generated from the sibling \`.${sourceFilename}.annot\` by [md-reader](https://github.com/manup-dev/themarkdownreader). Re-run the workflow to refresh._`);
   return parts.join("\n") + "\n";
 }
-function renderOne(c, line, sourcePath) {
+function renderOne(c, line, sourcePath, referenceMs) {
   const valid = line !== null && line > 0;
-  const lineLabel = valid ? `Line ${line}` : "Unanchored";
+  const sectionPrefix = (() => {
+    const raw = c.anchor.section ?? c.sectionId ?? "";
+    if (!raw) return "";
+    const human = raw.replace(/[-_]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+    return `${human} \xB7 `;
+  })();
+  const lineLabel = valid ? `${sectionPrefix}Line ${line}` : `${sectionPrefix || ""}Unanchored`;
   const link = valid ? `[Open in source](${sourcePath}#L${line})` : `[Open in source](${sourcePath})`;
   const quote = quoteSnippet(c.selectedText);
-  const stamp = formatDate(c.createdAt);
+  const stamp = formatRelativeStamp(c.createdAt, referenceMs);
   const body = (c.body ?? "").trim();
   if (c.resolved) {
     return [
+      `<a id="mdr-${c.id}"></a>`,
       "<details>",
-      `<summary>Resolved \xB7 ${lineLabel} \u2014 ${quote}</summary>`,
+      `<summary>Resolved \xB7 ${lineLabel} by ${escapeMd(c.author)} \u2014 ${quote}</summary>`,
       "",
       `**${escapeMd(c.author)}** \xB7 ${stamp}`,
       "",
@@ -20144,6 +20163,7 @@ function renderOne(c, line, sourcePath) {
     ].join("\n");
   }
   return [
+    `<a id="mdr-${c.id}"></a>`,
     `### ${lineLabel} \u2014 ${quote}`,
     "",
     `**${escapeMd(c.author)}** \xB7 ${stamp}`,
@@ -20157,7 +20177,7 @@ function quoteSnippet(text) {
   const trimmed = (text ?? "").trim().replace(/\s+/g, " ");
   const max = 120;
   const truncated = trimmed.length > max ? trimmed.slice(0, max - 1) + "\u2026" : trimmed;
-  return `\u201C${truncated}\u201D`;
+  return `"${truncated}"`;
 }
 function escapeMd(s) {
   return s.replace(/[*_`[\]<>]/g, (m) => "\\" + m);
@@ -20169,20 +20189,43 @@ function formatDate(ms) {
   const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+function formatRelativeStamp(ms, nowMs) {
+  const iso = formatDate(ms);
+  const diffSec = Math.max(0, Math.floor((nowMs - ms) / 1e3));
+  const rel = relativeFromSeconds(diffSec);
+  return rel ? `${iso} (${rel})` : iso;
+}
+function relativeFromSeconds(s) {
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} minute${m === 1 ? "" : "s"} ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} hour${h === 1 ? "" : "s"} ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d} day${d === 1 ? "" : "s"} ago`;
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `${mo} month${mo === 1 ? "" : "s"} ago`;
+  return null;
+}
 
 // src/apply.ts
 var import_promises2 = require("node:fs/promises");
 var import_node_path2 = require("node:path");
+var HEADER_MARKER = "<!-- generated by md-reader github-integration";
 async function writeOutputsIfChanged(outputs) {
   const changed = [];
   for (const { path, content } of outputs) {
     const existing = await readSafely(path);
     if (content === "") {
-      if (existing !== null) {
+      if (existing !== null && existing.startsWith(HEADER_MARKER)) {
         await (0, import_promises2.unlink)(path);
         changed.push(path);
+      } else if (existing !== null) {
       }
       continue;
+    }
+    if (existing !== null && !existing.startsWith(HEADER_MARKER)) {
+      throw new Error(`refusing to overwrite ${path}: existing file lacks the md-reader generation marker. Move or delete it to regenerate.`);
     }
     if (existing === content) continue;
     await (0, import_promises2.mkdir)((0, import_node_path2.dirname)(path), { recursive: true });
@@ -20207,7 +20250,7 @@ async function runPipeline(opts) {
     throw new Error(`invalid suffix: ${JSON.stringify(suffix)} \u2014 must be a plain filename suffix without separators or ".."`);
   }
   const pairs = await findSidecars(opts.workspace);
-  const outputs = [];
+  const allChanged = [];
   let skipped = 0;
   for (const { sourcePath, sidecarPath } of pairs) {
     try {
@@ -20219,7 +20262,9 @@ async function runPipeline(opts) {
       const state = materialize(events);
       const sourceRel = (0, import_node_path3.relative)((0, import_node_path3.dirname)(sourcePath), sourcePath);
       const rendered = renderCommentsMarkdown(state, sourceRel, sourceText);
-      outputs.push({ path: sourcePath + opts.suffix, content: rendered });
+      const companion = sourcePath + opts.suffix;
+      const changed = await writeOutputsIfChanged([{ path: companion, content: rendered }]);
+      allChanged.push(...changed);
     } catch (err) {
       skipped++;
       const msg = err instanceof Error ? err.message : String(err);
@@ -20227,8 +20272,7 @@ async function runPipeline(opts) {
       core.warning(`md-reader: skipped sidecar=${sidecarPath} companion=${companion}: ${msg}`);
     }
   }
-  const changed = await writeOutputsIfChanged(outputs);
-  return { processed: pairs.length, changed, skipped };
+  return { processed: pairs.length, changed: allChanged, skipped };
 }
 async function run() {
   const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
@@ -20238,7 +20282,9 @@ async function run() {
   core.setOutput("changed", result.changed.join("\n"));
   core.setOutput("changed_count", String(result.changed.length));
   core.setOutput("skipped", String(result.skipped));
-  core.info(`md-reader: processed ${result.processed} sidecar(s), ${result.changed.length} file(s) changed, ${result.skipped} skipped.`);
+  core.notice(
+    `md-reader: ${result.processed} sidecar${result.processed === 1 ? "" : "s"} \xB7 ${result.changed.length} changed \xB7 ${result.skipped} skipped`
+  );
 }
 if (process.env.GITHUB_ACTIONS === "true") {
   run().catch((err) => {
