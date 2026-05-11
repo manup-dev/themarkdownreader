@@ -1,10 +1,12 @@
-import { useEffect, useRef, useCallback, useState, useMemo } from 'react'
+import { lazy, Suspense, useEffect, useRef, useCallback, useState, useMemo } from 'react'
 import { ArrowUp } from 'lucide-react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import { useStore } from '../store/useStore'
 import ScrollMinimap from './ScrollMinimap'
+
+const MermaidBlock = lazy(() => import('./MermaidBlock').then((m) => ({ default: m.MermaidBlock })))
 import { extractToc, wordCount, estimateDifficulty, slugify } from '../lib/markdown'
 import { useAdapter } from '../provider/hooks'
 import type { Comment, Highlight } from '../types/storage-adapter'
@@ -64,6 +66,17 @@ function CodeBlockRenderer({ children, className, ...props }: React.HTMLAttribut
     return <code className={className} {...props}>{children}</code>
   }
 
+  const language = className?.match(/language-(\w+)/)?.[1] ?? null
+
+  if (language === 'mermaid') {
+    const code = typeof children === 'string' ? children : childrenToText(children)
+    return (
+      <Suspense fallback={<div className="my-4 p-3 text-xs text-gray-500 italic">Rendering diagram…</div>}>
+        <MermaidBlock code={code.trim()} />
+      </Suspense>
+    )
+  }
+
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation()
     const codeEl = document.querySelector('code.hljs:hover, pre:hover code') as HTMLElement | null
@@ -72,8 +85,6 @@ function CodeBlockRenderer({ children, className, ...props }: React.HTMLAttribut
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
-
-  const language = className?.match(/language-(\w+)/)?.[1] ?? null
 
   return (
     <div className="relative group">
@@ -169,7 +180,18 @@ const markdownComponents = {
     }
     return <a href={href} {...(isExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})} {...props}>{children}</a>
   },
-  pre: ({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) => <pre {...props} className="relative group">{children}</pre>,
+  pre: ({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) => {
+    // Unwrap <pre> when the only child is a fenced mermaid block — MermaidBlock
+    // renders an SVG inside a <div>, which doesn't belong inside <pre>.
+    const onlyChild = Array.isArray(children) ? children[0] : children
+    const childProps = (onlyChild && typeof onlyChild === 'object' && 'props' in onlyChild)
+      ? (onlyChild as React.ReactElement<{ className?: string }>).props
+      : null
+    if (childProps?.className?.includes('language-mermaid')) {
+      return <>{children}</>
+    }
+    return <pre {...props} className="relative group">{children}</pre>
+  },
   code: CodeBlockRenderer as never,
   img: ImageRenderer as never,
 }
