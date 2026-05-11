@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="description" content="Turn any document into a podcast, mind map, or tutor — running 100% on your machine. Open source, no API keys, no signup." />
+    <meta property="og:title" content="md-reader — Turn any document into a podcast, mind map, or tutor" />
+    <meta property="og:description" content="Drop a doc. Get an AI podcast, a mind map, and a personal tutor — running 100% on your machine." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="md-reader" />
+    <meta name="twitter:description" content="Turn any document into a podcast, mind map, or tutor — 100% local." />
+    <meta name="twitter:image" content="/og-card.png" />
+    <title>md-reader — Turn any document into a podcast, mind map, or tutor</title>
+    <style>
+      :root {
+        --bg: #0a0a0f;
+        --bg-2: #12121a;
+        --surface: #1a1a24;
+        --border: #24242f;
+        --text: #f5f5fa;
+        --text-dim: #a0a0b0;
+        --text-mute: #60606a;
+        --blue: #3b82f6;
+        --purple: #a855f7;
+        --emerald: #10b981;
+        --amber: #f59e0b;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html { scroll-behavior: smooth; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+      }
+      a { color: inherit; text-decoration: none; }
+      .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+      /* ── Nav ───────────────────────────────────────── */
+      nav {
+        position: sticky; top: 0; z-index: 50;
+        backdrop-filter: blur(12px);
+        background: rgba(10, 10, 15, 0.7);
+        border-bottom: 1px solid var(--border);
+      }
+      nav .container {
+        display: flex; align-items: center; justify-content: space-between;
+        height: 64px;
+      }
+      .logo {
+        font-weight: 700; font-size: 18px;
+        letter-spacing: -0.02em;
+      }
+      .logo-dot {
+        display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--blue), var(--purple));
+        margin-right: 8px; vertical-align: middle;
+      }
+      nav a.cta {
+        padding: 8px 16px;
+        background: var(--text);
+        color: var(--bg);
+        border-radius: 8px;
+        font-weight: 600; font-size: 14px;
+        transition: transform 0.15s;
+      }
+      nav a.cta:hover { transform: translateY(-1px); }
+
+      /* ── Hero ──────────────────────────────────────── */
+      .hero {
+        padding: 100px 0 80px;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+      }
+      .hero::before {
+        content: '';
+        position: absolute;
+        top: -40%; left: 50%; transform: translateX(-50%);
+        width: 1000px; height: 1000px;
+        background: radial-gradient(circle, rgba(59,130,246,0.15), transparent 60%);
+        pointer-events: none;
+      }
+      .hero-badge {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 6px 14px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        font-size: 13px; color: var(--text-dim);
+        margin-bottom: 32px;
+      }
+      .hero-badge .dot {
+        width: 6px; height: 6px; border-radius: 50%;
+        background: var(--emerald);
+        box-shadow: 0 0 8px var(--emerald);
+      }
+      h1.hero-title {
+        font-size: clamp(40px, 6vw, 76px);
+        font-weight: 800;
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+        margin-bottom: 24px;
+        max-width: 900px;
+        margin-left: auto; margin-right: auto;
+      }
+      .gradient-text {
+        background: linear-gradient(135deg, var(--blue), var(--purple), var(--emerald));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .hero-sub {
+        font-size: 20px;
+        color: var(--text-dim);
+        max-width: 640px;
+        margin: 0 auto 40px;
+      }
+      .hero-cta {
+        display: flex; gap: 12px; justify-content: center;
+        flex-wrap: wrap;
+      }
+      .btn {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 14px 24px;
+        border-radius: 10px;
+        font-weight: 600; font-size: 15px;
+        transition: all 0.15s;
+        border: 1px solid transparent;
+      }
+      .btn-primary {
+        background: linear-gradient(135deg, var(--blue), var(--purple));
+        color: white;
+      }
+      .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 30px -10px var(--purple); }
+      .btn-secondary {
+        background: var(--surface);
+        color: var(--text);
+        border-color: var(--border);
+      }
+      .btn-secondary:hover { background: var(--border); }
+
+      /* ── Hero visual ───────────────────────────────── */
+      .hero-visual {
+        margin-top: 64px;
+        padding: 0 24px;
+        position: relative;
+      }
+      .hero-frame {
+        max-width: 960px;
+        margin: 0 auto;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 12px;
+        box-shadow: 0 40px 80px -20px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.02);
+      }
+      .hero-frame-inner {
+        background: var(--bg);
+        border-radius: 10px;
+        aspect-ratio: 16/10;
+        display: flex; align-items: center; justify-content: center;
+        color: var(--text-mute);
+        font-size: 14px;
+        position: relative;
+        overflow: hidden;
+        background-image:
+          linear-gradient(90deg, transparent 49.5%, rgba(255,255,255,0.03) 50%, transparent 50.5%),
+          linear-gradient(0deg, transparent 49.5%, rgba(255,255,255,0.03) 50%, transparent 50.5%);
+        background-size: 40px 40px;
+      }
+      .hero-frame-inner::before {
+        content: '▶  hero-podcast.mp4';
+        padding: 10px 18px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        font-size: 13px;
+        color: var(--text-dim);
+      }
+
+      /* ── Section ───────────────────────────────────── */
+      section.features {
+        padding: 120px 0;
+      }
+      .section-label {
+        text-align: center;
+        font-size: 13px; font-weight: 600;
+        letter-spacing: 0.15em; text-transform: uppercase;
+        color: var(--text-mute);
+        margin-bottom: 12px;
+      }
+      .section-title {
+        text-align: center;
+        font-size: clamp(32px, 4vw, 48px);
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        margin-bottom: 64px;
+        max-width: 760px;
+        margin-left: auto; margin-right: auto;
+      }
+      .artifact-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px;
+      }
+      .artifact {
+        padding: 32px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        transition: all 0.2s;
+        position: relative;
+        overflow: hidden;
+      }
+      .artifact::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: var(--accent-glow);
+        opacity: 0;
+        transition: opacity 0.3s;
+        pointer-events: none;
+      }
+      .artifact:hover { transform: translateY(-4px); border-color: var(--accent); }
+      .artifact:hover::before { opacity: 0.08; }
+      .artifact[data-color="blue"]   { --accent: var(--blue);    --accent-glow: radial-gradient(circle at top, var(--blue), transparent 60%); }
+      .artifact[data-color="purple"] { --accent: var(--purple);  --accent-glow: radial-gradient(circle at top, var(--purple), transparent 60%); }
+      .artifact[data-color="emerald"]{ --accent: var(--emerald); --accent-glow: radial-gradient(circle at top, var(--emerald), transparent 60%); }
+      .artifact-icon {
+        width: 48px; height: 48px;
+        display: flex; align-items: center; justify-content: center;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        margin-bottom: 20px;
+        color: var(--accent);
+        font-size: 22px;
+      }
+      .artifact h3 {
+        font-size: 20px; font-weight: 700;
+        margin-bottom: 8px;
+        letter-spacing: -0.01em;
+      }
+      .artifact p {
+        color: var(--text-dim);
+        font-size: 15px;
+      }
+
+      /* ── Local AI story ───────────────────────────── */
+      .local-story {
+        padding: 120px 0;
+        background: linear-gradient(180deg, transparent, rgba(59,130,246,0.04), transparent);
+      }
+      .story-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 24px;
+        margin-top: 48px;
+      }
+      .story-card {
+        padding: 24px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+      }
+      .story-card .icon {
+        font-size: 24px;
+        margin-bottom: 12px;
+      }
+      .story-card h4 {
+        font-size: 16px; font-weight: 700;
+        margin-bottom: 6px;
+      }
+      .story-card p {
+        font-size: 14px; color: var(--text-dim);
+      }
+
+      /* ── Claude Code section ───────────────────────── */
+      .claude-section {
+        padding: 120px 0;
+        background: linear-gradient(180deg, transparent, rgba(168,85,247,0.05), transparent);
+      }
+      .claude-flow {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+        margin-top: 56px;
+        position: relative;
+      }
+      .flow-step {
+        padding: 24px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        position: relative;
+      }
+      .flow-step .num {
+        position: absolute;
+        top: 16px; right: 16px;
+        width: 28px; height: 28px;
+        display: flex; align-items: center; justify-content: center;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 50%;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text-mute);
+      }
+      .flow-step .ico {
+        font-size: 28px;
+        margin-bottom: 14px;
+      }
+      .flow-step h4 {
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 6px;
+        letter-spacing: -0.01em;
+      }
+      .flow-step p {
+        font-size: 13px;
+        color: var(--text-dim);
+        line-height: 1.55;
+      }
+      .code-demo {
+        max-width: 720px;
+        margin: 64px auto 0;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        overflow: hidden;
+      }
+      .code-demo .bar {
+        display: flex; align-items: center; gap: 8px;
+        padding: 12px 16px;
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--text-mute);
+        font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+      }
+      .code-demo .bar .dot-red { background: #ff5f57; }
+      .code-demo .bar .dot-yel { background: #febc2e; }
+      .code-demo .bar .dot-grn { background: #28c840; }
+      .code-demo .bar .dot-red, .code-demo .bar .dot-yel, .code-demo .bar .dot-grn {
+        width: 12px; height: 12px; border-radius: 50%;
+      }
+      .code-demo .bar .label { margin-left: 12px; }
+      .code-demo pre {
+        padding: 24px;
+        margin: 0;
+        font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+        font-size: 13px;
+        line-height: 1.7;
+        color: var(--text-dim);
+        overflow-x: auto;
+        white-space: pre;
+      }
+      .code-demo .hi-blue   { color: #60a5fa; }
+      .code-demo .hi-purple { color: #c084fc; }
+      .code-demo .hi-emerald{ color: #34d399; }
+      .code-demo .hi-comment{ color: var(--text-mute); }
+      .code-demo .hi-text   { color: var(--text); }
+
+      /* ── ROI loops ─────────────────────────────────── */
+      .roi {
+        padding: 120px 0;
+      }
+      .roi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+        margin-top: 56px;
+      }
+      .roi-card {
+        padding: 32px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+      }
+      .roi-card .tag {
+        display: inline-block;
+        align-self: flex-start;
+        padding: 4px 10px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-mute);
+        margin-bottom: 16px;
+      }
+      .roi-card h3 {
+        font-size: 22px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        margin-bottom: 12px;
+      }
+      .roi-card .loop {
+        font-size: 14px;
+        color: var(--text-dim);
+        line-height: 1.6;
+        margin-bottom: 20px;
+        flex: 1;
+      }
+      .roi-card .meta {
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+        font-size: 13px;
+      }
+      .roi-card .meta .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .roi-card .meta .label {
+        color: var(--text-mute);
+      }
+      .roi-card .meta .val {
+        color: var(--text);
+        font-weight: 600;
+        text-align: right;
+      }
+      .roi-card .savings {
+        margin-top: 8px;
+        padding: 12px 14px;
+        background: linear-gradient(135deg, rgba(16,185,129,0.12), rgba(59,130,246,0.12));
+        border: 1px solid rgba(16,185,129,0.3);
+        border-radius: 10px;
+        font-size: 13px;
+        color: var(--emerald);
+        font-weight: 600;
+      }
+
+      /* ── Compare ──────────────────────────────────── */
+      .compare {
+        padding: 120px 0;
+      }
+      .compare-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .compare-table th, .compare-table td {
+        padding: 14px 16px;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+      }
+      .compare-table th {
+        background: var(--bg-2);
+        font-weight: 600;
+        color: var(--text-dim);
+        font-size: 13px;
+      }
+      .compare-table th.us {
+        color: var(--text);
+        background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(168,85,247,0.12));
+      }
+      .compare-table tr:last-child td { border-bottom: none; }
+      .compare-table .yes { color: var(--emerald); font-weight: 600; }
+      .compare-table .no  { color: var(--text-mute); }
+      .compare-table .warn { color: var(--amber); }
+
+      /* ── Install ──────────────────────────────────── */
+      .install {
+        padding: 120px 0;
+        background: var(--bg-2);
+      }
+      .install-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 20px;
+      }
+      .install-card {
+        padding: 28px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+      }
+      .install-card h3 {
+        font-size: 17px; font-weight: 700;
+        margin-bottom: 6px;
+      }
+      .install-card p {
+        font-size: 13px; color: var(--text-mute);
+        margin-bottom: 16px;
+      }
+      .install-card code {
+        display: block;
+        font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+        font-size: 13px;
+        background: var(--bg);
+        color: var(--emerald);
+        padding: 12px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        overflow-x: auto;
+      }
+
+      /* ── Proof ───────────────────────────────────── */
+      .proof {
+        padding: 80px 0;
+        text-align: center;
+      }
+      .proof-stats {
+        display: flex;
+        gap: 48px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 40px;
+      }
+      .stat {
+        text-align: center;
+      }
+      .stat-num {
+        font-size: 48px; font-weight: 800;
+        letter-spacing: -0.03em;
+        background: linear-gradient(135deg, var(--blue), var(--purple));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .stat-label {
+        font-size: 13px;
+        color: var(--text-mute);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-top: 4px;
+      }
+
+      /* ── Footer CTA ───────────────────────────────── */
+      .footer-cta {
+        padding: 140px 0;
+        text-align: center;
+        background: radial-gradient(ellipse at center, rgba(168,85,247,0.08), transparent 60%);
+      }
+      .footer-cta h2 {
+        font-size: clamp(36px, 5vw, 60px);
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        margin-bottom: 24px;
+      }
+      .footer-cta p {
+        font-size: 18px;
+        color: var(--text-dim);
+        margin-bottom: 32px;
+      }
+
+      footer {
+        padding: 40px 0;
+        border-top: 1px solid var(--border);
+        text-align: center;
+        color: var(--text-mute);
+        font-size: 13px;
+      }
+      footer a:hover { color: var(--text); }
+
+      @media (max-width: 640px) {
+        .hero { padding: 60px 0 40px; }
+        section.features, .compare, .install, .local-story { padding: 80px 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <div class="container">
+        <a href="/" class="logo"><span class="logo-dot"></span>md-reader</a>
+        <a href="https://github.com/manup-dev/themarkdownreader" class="cta">Star on GitHub ★</a>
+      </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+      <div class="container">
+        <div class="hero-badge">
+          <span class="dot"></span>
+          <span>100% local · No API keys · Open source (MIT)</span>
+        </div>
+        <h1 class="hero-title">
+          Turn any document<br/>
+          into a <span class="gradient-text">podcast, mind map, or tutor</span>
+        </h1>
+        <p class="hero-sub">
+          Drop a doc. Get two AI voices discussing it, an auto-generated mind map, and a personal tutor that quizzes you — all running on your machine. No API keys. No signup. No data leaves your device.
+        </p>
+        <div class="hero-cta">
+          <a href="/?demo=true" class="btn btn-primary">Try it in your browser →</a>
+          <a href="https://github.com/manup-dev/themarkdownreader" class="btn btn-secondary">★ Star on GitHub</a>
+        </div>
+      </div>
+
+      <div class="hero-visual">
+        <div class="hero-frame">
+          <div class="hero-frame-inner"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 Artifacts -->
+    <section class="features">
+      <div class="container">
+        <div class="section-label">The three artifacts</div>
+        <h2 class="section-title">One document. Three ways to understand it.</h2>
+
+        <div class="artifact-grid">
+          <div class="artifact" data-color="blue">
+            <div class="artifact-icon">🎙️</div>
+            <h3>AI Podcast</h3>
+            <p>Two AI voices (Kokoro-82M, running on your GPU) discussing your document in natural conversation. 2-minute quick take or 10-minute deep dive. Works offline.</p>
+          </div>
+          <div class="artifact" data-color="purple">
+            <div class="artifact-icon">🧠</div>
+            <h3>Mind Map</h3>
+            <p>Instant visual outline of your document's structure. Zoom, pan, and click any node to jump to that section. Great for getting the lay of the land before diving in.</p>
+          </div>
+          <div class="artifact" data-color="emerald">
+            <div class="artifact-icon">🎓</div>
+            <h3>AI Tutor</h3>
+            <p>A personal coach that explains each section, quizzes your comprehension, and remembers what you struggle with. Like a 24/7 tutor for any document you drop in.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Why local -->
+    <section class="local-story">
+      <div class="container">
+        <div class="section-label">Why we built this offline</div>
+        <h2 class="section-title">Your documents never leave your machine.</h2>
+        <p style="text-align:center; color: var(--text-dim); font-size: 17px; max-width: 700px; margin: 0 auto;">
+          NotebookLM is amazing, but it's Google-gated, cloud-only, and every document you upload is sent somewhere else. For research, contracts, and client work, that's a non-starter. md-reader is the open-source alternative that runs entirely on your machine.
+        </p>
+        <div class="story-grid">
+          <div class="story-card">
+            <div class="icon">🔒</div>
+            <h4>Private by default</h4>
+            <p>No data sent anywhere. No telemetry by default. Works on a plane.</p>
+          </div>
+          <div class="story-card">
+            <div class="icon">💸</div>
+            <h4>Free forever</h4>
+            <p>No API keys, no subscription, no rate limits. MIT licensed.</p>
+          </div>
+          <div class="story-card">
+            <div class="icon">⚡</div>
+            <h4>Fast on your GPU</h4>
+            <p>Ollama + WebLLM + WebGPU. Faster than cloud round-trips once loaded.</p>
+          </div>
+          <div class="story-card">
+            <div class="icon">🔧</div>
+            <h4>Hackable</h4>
+            <p>Fork it. Modify it. Swap models. Open source from day one.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Built for Claude Code users -->
+    <section class="claude-section">
+      <div class="container">
+        <div class="section-label">For developers using Claude Code, Cursor & Copilot</div>
+        <h2 class="section-title">Read the spec. Ship the prompt.</h2>
+        <p style="text-align:center; color: var(--text-dim); font-size: 17px; max-width: 720px; margin: 0 auto;">
+          md-reader is where your reading loop meets your coding loop. Select any passage in a spec, RFC, or design doc → leave a comment → one-click generate a Claude-ready prompt with accurate line references → one-click send it to your VS Code terminal where <code style="background:var(--bg); padding:2px 8px; border-radius:4px; color: var(--emerald); font-family:'JetBrains Mono',monospace;">claude</code> is already running.
+        </p>
+
+        <div class="claude-flow">
+          <div class="flow-step">
+            <div class="num">1</div>
+            <div class="ico">✍️</div>
+            <h4>Select</h4>
+            <p>Highlight any passage in the doc — a requirement, a snippet, an acceptance criterion.</p>
+          </div>
+          <div class="flow-step">
+            <div class="num">2</div>
+            <div class="ico">💬</div>
+            <h4>Comment</h4>
+            <p>Leave an annotation describing what you want changed, reviewed, or implemented.</p>
+          </div>
+          <div class="flow-step">
+            <div class="num">3</div>
+            <div class="ico">✨</div>
+            <h4>Generate</h4>
+            <p>Pick a format: <strong>Claude Code</strong>, <strong>Codex</strong>, or generic markdown. Line numbers included.</p>
+          </div>
+          <div class="flow-step">
+            <div class="num">4</div>
+            <div class="ico">⚡</div>
+            <h4>Ship</h4>
+            <p>One click sends the prompt straight to your VS Code terminal — or copies it for claude.ai.</p>
+          </div>
+        </div>
+
+        <div class="code-demo">
+          <div class="bar">
+            <span class="dot-red"></span><span class="dot-yel"></span><span class="dot-grn"></span>
+            <span class="label">prompt.md · claude-code format</span>
+          </div>
+<pre>
+<span class="hi-comment"># Generated by md-reader</span>
+
+In the file <span class="hi-emerald">`spec-v2.md`</span>:
+
+<span class="hi-purple">## Requested changes</span>
+
+<span class="hi-blue">### Section: "Token refresh flow" (L142)</span>
+<span class="hi-comment">&gt; "The client MUST retry with exponential backoff</span>
+<span class="hi-comment">&gt;  up to 5 attempts before surfacing an error..."</span>
+
+<span class="hi-text">**Change:** Implement the retry helper in src/auth/refresh.ts.</span>
+<span class="hi-text">Use the existing withRetry() util. Add a test for the 5th-attempt</span>
+<span class="hi-text">failure path. Don't swallow the error after the final retry.</span>
+</pre>
+        </div>
+
+        <p style="text-align:center; color: var(--text-mute); font-size: 14px; margin-top: 32px;">
+          Works in the web app, the VS Code extension, and via the Chrome extension on any GitHub .md file.
+        </p>
+      </div>
+    </section>
+
+    <!-- ROI loops -->
+    <section class="roi">
+      <div class="container">
+        <div class="section-label">What you'll actually save</div>
+        <h2 class="section-title">Not another AI gadget. A line item on your time.</h2>
+        <p style="text-align:center; color: var(--text-dim); font-size: 17px; max-width: 700px; margin: 0 auto;">
+          Three loops md-reader closes end-to-end — with a dollar sign or an hour count attached.
+        </p>
+
+        <div class="roi-grid">
+          <!-- Card 1: PRD / RFC review -->
+          <div class="roi-card">
+            <span class="tag">For PMs &amp; staff engineers</span>
+            <h3>Walk into the meeting prepared.</h3>
+            <p class="loop">
+              A 30-page PRD lands in Slack 15 min before standup. Drag it into md-reader on your phone → 2-minute podcast on your walk → walk in knowing what the debate actually is.
+            </p>
+            <div class="meta">
+              <div class="row"><span class="label">The loop</span><span class="val">Drop → podcast → meeting</span></div>
+              <div class="row"><span class="label">Replaces</span><span class="val">Skimming while "listening"</span></div>
+              <div class="row"><span class="label">Saved</span><span class="val">45 min × 50 docs / yr</span></div>
+            </div>
+            <div class="savings">≈ 37 hours/year per PM · 1 avoided bad call pays for itself 100×</div>
+          </div>
+
+          <!-- Card 2: Client deliverable -->
+          <div class="roi-card">
+            <span class="tag">For consultants &amp; freelancers</span>
+            <h3>Show up sounding like an insider.</h3>
+            <p class="loop">
+              Client sends a 200-page data room before the kickoff. Overnight batch: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:var(--emerald);font-size:12px;">for f in data-room/*.md; do npx md-reader "$f"; done</code> → podcast + mind map + tutor quiz per doc → you arrive prepped.
+            </p>
+            <div class="meta">
+              <div class="row"><span class="label">The loop</span><span class="val">Batch → commute-listen → call</span></div>
+              <div class="row"><span class="label">Replaces</span><span class="val">8 hrs of unpaid prep</span></div>
+              <div class="row"><span class="label">Saved</span><span class="val">$1,600 per engagement *</span></div>
+            </div>
+            <div class="savings">* @ $200/hr billable · pays for itself on the first client</div>
+          </div>
+
+          <!-- Card 3: Replace subs -->
+          <div class="roi-card">
+            <span class="tag">For everyone paying for AI</span>
+            <h3>Kill your AI subscription stack.</h3>
+            <p class="loop">
+              ChatGPT Plus ($20) + Notion AI ($10) + Readwise Reader ($10) + Reflect ($15). md-reader replaces all of them — locally. Same features. Faster. Plus your proprietary docs stop leaving your laptop.
+            </p>
+            <div class="meta">
+              <div class="row"><span class="label">The loop</span><span class="val">One tool, four jobs</span></div>
+              <div class="row"><span class="label">Replaces</span><span class="val">$55/mo in SaaS</span></div>
+              <div class="row"><span class="label">Saved</span><span class="val">$660/year, forever</span></div>
+            </div>
+            <div class="savings">Open source · MIT · Your data never leaves your machine</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Compare -->
+    <section class="compare">
+      <div class="container">
+        <div class="section-label">The honest comparison</div>
+        <h2 class="section-title">How md-reader stacks up</h2>
+        <div style="overflow-x: auto;">
+          <table class="compare-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th class="us">md-reader</th>
+                <th>NotebookLM</th>
+                <th>Obsidian</th>
+                <th>Reflect</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Podcast generation</td><td class="yes">✓ Local</td><td class="warn">Cloud only</td><td class="no">—</td><td class="no">—</td></tr>
+              <tr><td>Mind maps</td><td class="yes">✓ Auto</td><td class="no">—</td><td class="warn">Plugin</td><td class="no">—</td></tr>
+              <tr><td>AI tutor</td><td class="yes">✓</td><td class="warn">Chat only</td><td class="warn">Plugin</td><td class="warn">Chat only</td></tr>
+              <tr><td>Knowledge graph</td><td class="yes">✓ AI-extracted</td><td class="no">—</td><td class="warn">Link-based</td><td class="warn">Link-based</td></tr>
+              <tr><td>Works offline</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓ (no AI)</td><td class="no">—</td></tr>
+              <tr><td>No account needed</td><td class="yes">✓</td><td class="no">Google login</td><td class="yes">✓</td><td class="no">Account</td></tr>
+              <tr><td>Open source</td><td class="yes">✓ MIT</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+              <tr><td>Rate limits</td><td class="yes">None</td><td class="warn">Google quotas</td><td class="yes">N/A</td><td class="warn">Plan-based</td></tr>
+              <tr><td>Price</td><td class="yes">Free forever</td><td class="warn">Freemium</td><td class="warn">Freemium</td><td class="warn">$10/mo</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Install -->
+    <section class="install">
+      <div class="container">
+        <div class="section-label">Four ways to run it</div>
+        <h2 class="section-title">Install in seconds. Works everywhere.</h2>
+        <div class="install-grid">
+          <div class="install-card">
+            <h3>⚡ CLI</h3>
+            <p>Zero config. Auto-opens in your browser.</p>
+            <code>npx md-reader README.md</code>
+          </div>
+          <div class="install-card">
+            <h3>🌐 Web app</h3>
+            <p>No install. Runs in your browser with WebLLM.</p>
+            <code>manup-dev.github.io/<br/>themarkdownreader/?demo=true</code>
+          </div>
+          <div class="install-card">
+            <h3>💻 VS Code extension</h3>
+            <p>CodeLens, outline view, AI features inside your editor.</p>
+            <code>ext install md-reader</code>
+          </div>
+          <div class="install-card">
+            <h3>🦊 Chrome extension</h3>
+            <p>"Read in md-reader" button on every GitHub .md file.</p>
+            <code>github.com/manup-dev/<br/>themarkdownreader</code>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Proof -->
+    <section class="proof">
+      <div class="container">
+        <div class="section-label">Built right, measured honestly</div>
+        <h2 class="section-title">Not a weekend project.</h2>
+        <p style="color: var(--text-dim); font-size: 16px; max-width: 640px; margin: 0 auto;">
+          md-reader ships with a Karpathy-style eval loop that runs on every change. If a prompt refactor drops the score, we revert. Open source from day one. 146 unit tests. Four distribution surfaces.
+        </p>
+        <div class="proof-stats">
+          <div class="stat">
+            <div class="stat-num">96</div>
+            <div class="stat-label">Eval score / 100</div>
+          </div>
+          <div class="stat">
+            <div class="stat-num">146</div>
+            <div class="stat-label">Unit tests</div>
+          </div>
+          <div class="stat">
+            <div class="stat-num">220+</div>
+            <div class="stat-label">Polished features</div>
+          </div>
+          <div class="stat">
+            <div class="stat-num">4</div>
+            <div class="stat-label">Distribution surfaces</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer CTA -->
+    <section class="footer-cta">
+      <div class="container">
+        <h2>Ready to actually understand<br/>what you're reading?</h2>
+        <p>Try it in your browser. No signup. No API keys. Open source forever.</p>
+        <div class="hero-cta">
+          <a href="/?demo=true" class="btn btn-primary">Try it in your browser →</a>
+          <a href="https://github.com/manup-dev/themarkdownreader" class="btn btn-secondary">★ Star on GitHub</a>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="container">
+        <p>
+          MIT licensed ·
+          <a href="https://github.com/manup-dev/themarkdownreader">GitHub</a> ·
+          <a href="/">Web app</a> ·
+          Built for readers, by a reader
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>
