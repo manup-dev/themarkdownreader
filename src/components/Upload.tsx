@@ -49,8 +49,8 @@ export function Upload() {
   const loadFile = useCallback(
     (file: File) => {
       setError(null)
-      if (!file.name.endsWith('.md') && !file.name.endsWith('.markdown') && !file.name.endsWith('.txt')) {
-        setError('Please upload a .md, .markdown, or .txt file')
+      if (!file.name.endsWith('.md') && !file.name.endsWith('.markdown') && !file.name.endsWith('.txt') && !file.name.endsWith('.excalidraw')) {
+        setError('Please upload a .md, .markdown, .txt, or .excalidraw file')
         return
       }
       if (file.size > 10 * 1024 * 1024) {
@@ -158,7 +158,7 @@ export function Upload() {
 
   const handleMultipleFiles = useCallback(async (files: FileList) => {
     for (const file of Array.from(files)) {
-      if (!file.name.match(/\.(md|markdown|txt)$/)) continue
+      if (!file.name.match(/\.(md|markdown|txt|excalidraw)$/)) continue
       const text = await file.text()
       await adapter.addDocument(file.name, text)
     }
@@ -334,12 +334,12 @@ export function Upload() {
             Drop a markdown file here or click to upload
           </p>
           <p className="text-sm text-gray-400 mt-1">
-            {isFirstVisit ? 'Drop a file, paste with Ctrl+V, or click to browse' : '.md, .markdown, or .txt'}
+            {isFirstVisit ? 'Drop a file, paste with Ctrl+V, or click to browse' : '.md, .markdown, .txt, or .excalidraw'}
           </p>
           <input
             ref={fileRef}
             type="file"
-            accept=".md,.markdown,.txt"
+            accept=".md,.markdown,.txt,.excalidraw"
             multiple
             className="hidden"
             onChange={(e) => {
