@@ -36,7 +36,6 @@ export function MermaidBlock({ code }: { code: string }) {
 
   useEffect(() => {
     let cancelled = false
-    setError(null)
     loadMermaid(theme)
       .then((mermaid) => mermaid.render(safeId + '-svg', code))
       .then(({ svg, bindFunctions }) => {
@@ -49,6 +48,7 @@ export function MermaidBlock({ code }: { code: string }) {
           svgEl.style.height = 'auto'
         }
         bindFunctions?.(containerRef.current)
+        setError(null)
       })
       .catch((err: unknown) => {
         if (cancelled) return
