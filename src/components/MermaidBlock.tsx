@@ -59,7 +59,11 @@ export function MermaidBlock({ code }: { code: string }) {
   }, [code, theme, safeId])
 
   return (
-    <div className="my-4 rounded-lg border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white dark:bg-gray-900 sepia:bg-sepia-50 overflow-hidden">
+    <div
+      data-testid="mermaid-diagram"
+      data-mermaid-state={error ? 'error' : 'ok'}
+      className="my-4 rounded-lg border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white dark:bg-gray-900 sepia:bg-sepia-50 overflow-hidden"
+    >
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-200 dark:border-gray-800 sepia:border-sepia-200 text-xs text-gray-500 dark:text-gray-400 sepia:text-sepia-700">
         <span className="font-mono">mermaid</span>
         <button
@@ -76,7 +80,7 @@ export function MermaidBlock({ code }: { code: string }) {
           <pre className="text-xs overflow-auto bg-gray-50 dark:bg-gray-950 sepia:bg-sepia-100 p-2 rounded"><code>{code}</code></pre>
         </div>
       ) : (
-        <div ref={containerRef} data-testid="mermaid-diagram" className="p-3 overflow-auto flex justify-center" />
+        <div ref={containerRef} data-testid="mermaid-svg-host" className="p-3 overflow-auto flex justify-center" />
       )}
       {showSource && !error && (
         <pre className="text-xs overflow-auto bg-gray-50 dark:bg-gray-950 sepia:bg-sepia-100 p-2 border-t border-gray-200 dark:border-gray-800 sepia:border-sepia-200"><code>{code}</code></pre>
