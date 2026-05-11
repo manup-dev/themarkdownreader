@@ -4,6 +4,7 @@ import { useStore, type ViewMode } from './store/useStore'
 import { useAdapter } from './provider/hooks'
 import { SAMPLE_MARKDOWN } from './lib/sample-doc'
 import { extractToc } from './lib/markdown'
+import { isExcalidrawFile } from './lib/remark-excalidraw'
 import { Upload } from './components/Upload'
 import { Reader } from './components/Reader'
 import { Toolbar } from './components/Toolbar'
@@ -92,6 +93,7 @@ const KnowledgeGraphView = lazy(() => import('./components/KnowledgeGraph').then
 const CoachView = lazy(() => import('./components/Coach').then((m) => ({ default: m.CoachView })))
 const PodcastPlayer = lazy(() => import('./components/PodcastPlayer').then(m => ({ default: m.PodcastPlayer })))
 const DiagramGenerator = lazy(() => import('./components/DiagramGenerator').then(m => ({ default: m.DiagramGenerator })))
+const ExcalidrawViewer = lazy(() => import('./components/ExcalidrawViewer').then(m => ({ default: m.ExcalidrawViewer })))
 const Workspace = lazy(() => import('./components/Workspace').then((m) => ({ default: m.Workspace })))
 const CrossDocGraph = lazy(() => import('./components/CrossDocGraph').then((m) => ({ default: m.CrossDocGraph })))
 const CorrelationView = lazy(() => import('./components/CorrelationView').then((m) => ({ default: m.CorrelationView })))
@@ -114,6 +116,7 @@ function AppContent() {
   // Track whether a state change came from popstate (back/forward) to avoid re-pushing
   const isPopStateRef = useRef(false)
   const markdown = useStore((s) => s.markdown)
+  const fileName = useStore((s) => s.fileName)
   const theme = useStore((s) => s.theme)
   const viewMode = useStore((s) => s.viewMode)
   const workspaceMode = useStore((s) => s.workspaceMode)
@@ -659,6 +662,15 @@ function AppContent() {
 
               {/* Reading modes (single-file OR active file within a folder) */}
               {viewMode !== 'workspace' && viewMode !== 'cross-doc-graph' && viewMode !== 'correlation' && viewMode !== 'similarity-map' && viewMode !== 'collection' && markdown && (
+                isExcalidrawFile(fileName ?? '') ? (
+                  <ErrorBoundary name="Excalidraw">
+                    <Suspense fallback={<LazyFallback />}>
+                      <div className="flex-1 min-h-0">
+                        <ExcalidrawViewer content={markdown} fileName={fileName ?? undefined} />
+                      </div>
+                    </Suspense>
+                  </ErrorBoundary>
+                ) : (
                 <>
                   {viewMode === 'read' && <ErrorBoundary name="Reader"><Reader /></ErrorBoundary>}
                   {viewMode === 'mindmap' && <ErrorBoundary name="Mind Map"><MindMapView /></ErrorBoundary>}
@@ -675,6 +687,7 @@ function AppContent() {
                     </ErrorBoundary>
                   )}
                 </>
+                )
               )}
             </Suspense>
           </div>
