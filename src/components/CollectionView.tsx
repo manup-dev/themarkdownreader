@@ -85,6 +85,9 @@ export function CollectionView() {
         return `# ${f.name}\n\n${content}`
       })
       .join('\n\n---\n\n')
+    // Mark origin so the toolbar shows a "Back to collection" arrow on the
+    // merged document — otherwise users get stranded in read mode.
+    try { sessionStorage.setItem('md-reader-from-collection', '1') } catch { /* ignore */ }
     setMarkdown(merged, `${orderedFiles.length} files merged`)
     setViewMode('read')
   }, [orderedFiles, folderFileContents, setMarkdown, setViewMode])

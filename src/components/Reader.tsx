@@ -276,10 +276,12 @@ export function Reader() {
     setToc(entries)
   }, [markdown, setToc])
 
-  // Feature 17: Parse URL hash on load and scroll to section
+  // Feature 17: Parse URL hash on load and scroll to section.
+  // The hash may also carry a folder file ref like `#read?f=docs/api.md`,
+  // so the section pattern accepts either form (path-style or query-style).
   useEffect(() => {
     const hash = window.location.hash
-    const match = hash.match(/#read\/section=(.+)/)
+    const match = hash.match(/#read[?/]section=([^&]+)/) ?? hash.match(/[?&]section=([^&]+)/)
     if (match) {
       const sectionId = decodeURIComponent(match[1])
       requestAnimationFrame(() => {
@@ -289,10 +291,17 @@ export function Reader() {
     }
   }, [markdown])
 
-  // Feature 17: Update URL hash as user reads
+  // Feature 17: Update URL hash as user reads. Preserve any existing query
+  // string (e.g. the folder file ref `?f=<path>`) so section scrolling
+  // doesn't clobber the file the user is reading inside a folder.
   useEffect(() => {
     if (activeSection) {
-      const newHash = `#read/section=${encodeURIComponent(activeSection)}`
+      const current = window.location.hash
+      const qIdx = current.indexOf('?')
+      const existingQuery = qIdx === -1 ? '' : current.slice(qIdx + 1)
+      const params = new URLSearchParams(existingQuery)
+      params.set('section', encodeURIComponent(activeSection))
+      const newHash = `#read?${params.toString()}`
       if (window.location.hash !== newHash) {
         window.history.replaceState(null, '', newHash)
       }

@@ -421,7 +421,37 @@ export function Upload() {
             <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Library</span>
           </button>
           <button
-            onClick={() => { setWorkspaceMode(true); setViewMode('collection') }}
+            onClick={async () => {
+              const { openDirectory, hasDirectoryAccess } = await import('../lib/fs-access')
+              const { saveCollectionCache } = await import('../lib/docstore')
+              if (!hasDirectoryAccess()) {
+                // Browsers without showDirectoryPicker (e.g. Firefox) — fall back to
+                // the Library view, which offers a webkitdirectory file-input.
+                setWorkspaceMode(true)
+                setViewMode('collection')
+                return
+              }
+              try {
+                const result = await openDirectory()
+                if (!result) return
+                if (result.files.length === 0) {
+                  setError('No markdown files in that folder.')
+                  return
+                }
+                const rawFiles = result.files.map((f) => ({ path: f.path, content: f.content }))
+                await saveCollectionCache(result.name, rawFiles, 0)
+                const files = result.files.map((f) => ({
+                  path: f.path,
+                  name: f.path.split('/').pop() ?? f.path,
+                  content: f.content,
+                  lastModified: f.lastModified,
+                }))
+                useStore.getState().setFolderSession(result.handle ?? null, files)
+                setViewMode('collection')
+              } catch (e) {
+                setError(e instanceof Error ? e.message : 'Failed to open folder')
+              }
+            }}
             className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-amber-400 dark:hover:border-amber-600 hover:shadow-sm transition-all text-center"
           >
             <FolderOpen className="h-5 w-5 text-amber-500" />
