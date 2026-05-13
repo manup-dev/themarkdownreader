@@ -556,6 +556,17 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       merged.activeSection = null
       merged.activeDocId = null
     }
+    // Deep-link into a folder file (`#read?f=…`): clear the persisted single-doc
+    // markdown/fileName so folder hydration + URL-driven file restoration can
+    // populate them, instead of being overridden by a stale "View all as one"
+    // merged doc that happened to be cached.
+    if (/[?&]f=/.test(hash)) {
+      merged.markdown = ''
+      merged.fileName = null
+      merged.toc = []
+      merged.readingProgress = 0
+      merged.activeSection = null
+    }
     // If persisted viewMode is behind a disabled feature flag, reset to 'read'
     if (merged.viewMode) {
       const gatedFlag = isViewModeGated(merged.viewMode as ViewMode)
