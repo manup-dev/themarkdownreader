@@ -115,12 +115,25 @@ function AppContent() {
   const adapter = useAdapter()
   // Track whether a state change came from popstate (back/forward) to avoid re-pushing
   const isPopStateRef = useRef(false)
+  // Capture the `?f=<path>` query from the URL at component mount, before any
+  // effect (notably the history-sync effect below) gets a chance to overwrite
+  // the hash with the persisted active file. Without this, deep-linking to a
+  // specific file via the URL is clobbered by the persisted-state hash rewrite.
+  const initialFolderFileRef = useRef<string | null>((() => {
+    if (typeof window === 'undefined') return null
+    const hash = window.location.hash
+    const qIdx = hash.indexOf('?')
+    if (qIdx === -1) return null
+    const params = new URLSearchParams(hash.slice(qIdx + 1))
+    return params.get('f')
+  })())
   const markdown = useStore((s) => s.markdown)
   const fileName = useStore((s) => s.fileName)
   const theme = useStore((s) => s.theme)
   const viewMode = useStore((s) => s.viewMode)
   const workspaceMode = useStore((s) => s.workspaceMode)
   const folderFiles = useStore((s) => s.folderFiles)
+  const activeFilePath = useStore((s) => s.activeFilePath)
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const chatWidth = useStore((s) => s.chatWidth)
@@ -447,18 +460,27 @@ function AppContent() {
   useEffect(() => { setMobileTocOpen(false) }, [viewMode]) // Intentional: reset on view switch
 
   // ─── Browser history integration ────────────────────────────────────
-  // Push to history when view changes so back/forward navigates between views
+  // Push to history when view OR active folder file changes so back/forward
+  // navigates between views and folder files, and the URL hash carries a
+  // human-readable reference to the open file (e.g. `#read?f=docs/api.md`).
+  // The single-letter `f=` param avoids colliding with the MCP `file=` hash.
   useEffect(() => {
     if (isPopStateRef.current) { isPopStateRef.current = false; return }
-    const state = { viewMode, workspaceMode, fileName: useStore.getState().fileName }
-    const url = `#${viewMode}`
-    // Replace on first load, push on subsequent changes
+    const folderActiveFile = folderFiles && activeFilePath ? activeFilePath : null
+    const state = { viewMode, workspaceMode, fileName: useStore.getState().fileName, activeFilePath: folderActiveFile }
+    const url = folderActiveFile
+      ? `#${viewMode}?f=${encodeURIComponent(folderActiveFile)}`
+      : `#${viewMode}`
     if (!window.history.state?.viewMode) {
       window.history.replaceState(state, '', url)
-    } else if (window.history.state.viewMode !== viewMode || window.history.state.workspaceMode !== workspaceMode) {
+    } else if (
+      window.history.state.viewMode !== viewMode
+      || window.history.state.workspaceMode !== workspaceMode
+      || window.history.state.activeFilePath !== folderActiveFile
+    ) {
       window.history.pushState(state, '', url)
     }
-  }, [viewMode, workspaceMode])
+  }, [viewMode, workspaceMode, folderFiles, activeFilePath])
 
   // Listen for back/forward button
   useEffect(() => {
@@ -472,10 +494,32 @@ function AppContent() {
       if (e.state.viewMode !== s.viewMode) {
         s.setViewMode(e.state.viewMode)
       }
+      // Restore active folder file from history state (only meaningful when
+      // a folder is loaded — otherwise the f= param is stale and ignored).
+      if (e.state.activeFilePath
+          && s.folderFiles
+          && e.state.activeFilePath !== s.activeFilePath) {
+        s.setActiveFile(e.state.activeFilePath)
+      }
     }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
+
+  // On initial folder hydration, restore the active file from the URL hash
+  // captured at mount (initialFolderFileRef). Runs once when folderFiles
+  // transitions from null → populated. Consumes the ref so subsequent folder
+  // loads (e.g. user opens a different folder) don't replay the original URL.
+  useEffect(() => {
+    if (!folderFiles) return
+    const target = initialFolderFileRef.current
+    if (!target) return
+    initialFolderFileRef.current = null
+    const s = useStore.getState()
+    if (folderFiles.some((f) => f.path === target) && target !== s.activeFilePath) {
+      s.setActiveFile(target)
+    }
+  }, [folderFiles])
 
   // Apply theme class before paint to prevent flash of wrong theme on code blocks
   useLayoutEffect(() => {

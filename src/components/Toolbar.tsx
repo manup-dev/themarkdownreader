@@ -26,6 +26,8 @@ export function Toolbar() {
   const workspaceMode = useStore((s) => s.workspaceMode)
   const markdown = useStore((s) => s.markdown)
   const folderFiles = useStore((s) => s.folderFiles)
+  const folderHandle = useStore((s) => s.folderHandle)
+  const activeFilePath = useStore((s) => s.activeFilePath)
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const activeDocId = useStore((s) => s.activeDocId)
@@ -215,7 +217,8 @@ export function Toolbar() {
             </button>
           )}
 
-          {/* Editable filename */}
+          {/* Editable filename — folder mode shows a breadcrumb (folder/path/file)
+              so users always know which directory and file they're viewing. */}
           {editingName ? (
             <input
               type="text"
@@ -226,7 +229,30 @@ export function Toolbar() {
               className="text-sm font-medium px-2 py-0.5 rounded border border-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none w-48"
               autoFocus
             />
-          ) : (
+          ) : folderFiles && !isWorkspaceView ? (() => {
+            // Detect "View all as one" merged doc: fileName is set by
+            // CollectionView to "<N> files merged" and doesn't match the
+            // basename of the previously-active file. In that case show
+            // the merged label rather than a stale file path.
+            const activeBasename = activeFilePath ? activeFilePath.split('/').pop() : null
+            const isMerged = !!fileName && activeBasename !== null && fileName !== activeBasename
+            const pathLabel = isMerged ? fileName : activeFilePath
+            return (
+              <span
+                className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate max-w-[28rem] flex items-center gap-1"
+                title={`${folderHandle?.name ?? 'folder'}${pathLabel ? '/' + pathLabel : ''}`}
+              >
+                <FolderOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                <span className="text-gray-500 dark:text-gray-400 shrink-0">{folderHandle?.name ?? 'folder'}</span>
+                {pathLabel && (
+                  <>
+                    <span className="text-gray-300 dark:text-gray-600 shrink-0">/</span>
+                    <span className={'truncate' + (isMerged ? ' italic text-gray-500 dark:text-gray-400' : '')}>{pathLabel}</span>
+                  </>
+                )}
+              </span>
+            )
+          })() : (
             <button
               onClick={() => { setNameInput(fileName ?? 'untitled.md'); setEditingName(true) }}
               className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate max-w-48 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
