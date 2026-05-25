@@ -5,6 +5,7 @@ import { resolveEnabledFeatures, enableFeature, disableFeature, isViewModeGated 
 import type { PodcastScript } from '../lib/podcast'
 import type { DiagramDSL } from '../lib/excalidraw-converter'
 import type { AnnotationEvent } from '../lib/annotation-events'
+import { emptyTab, type Tab, type TabPayload } from '../lib/tabs-types'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -147,6 +148,15 @@ export interface DocumentState {
   navigateToPath: (relOrAbsPath: string) => boolean
   hydrateFolderFromCache: () => Promise<void>
   refreshFolder: () => Promise<{ ok: true; added: number; changed: number; removed: number } | { ok: false; reason: string }>
+
+  // Tabs
+  tabs: Tab[]
+  activeTabId: string | null
+  newEmptyTab: () => string
+  closeTab: (id: string) => void
+  switchTab: (id: string) => void
+  openInCurrentTab: (payload: TabPayload) => void
+  openInNewTab: (payload: TabPayload) => void
 
   // Remote-share state — set when the app loads a #url=… share. Drives
   // the RemoteBanner and the Fork action. Null when the open document
@@ -299,6 +309,8 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   folderFiles: null,
   folderFileContents: null,
   activeFilePath: null,
+  tabs: [],
+  activeTabId: null,
   sidebarCollapsed: (typeof localStorage !== 'undefined'
     && localStorage.getItem('md-reader-sidebar-collapsed') === 'true'),
   sidebarExpandedFile: null,
@@ -345,6 +357,32 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       } catch { /* quota exceeded — non-fatal */ }
     }
   },
+
+  newEmptyTab: () => {
+    const t = emptyTab()
+    set((s) => ({ tabs: [...s.tabs, t], activeTabId: t.id }))
+    return t.id
+  },
+  closeTab: (id) => {
+    const { tabs, activeTabId } = get()
+    const idx = tabs.findIndex((t) => t.id === id)
+    if (idx < 0) return
+    const next = tabs.slice(0, idx).concat(tabs.slice(idx + 1))
+    let newActive = activeTabId
+    if (activeTabId === id) {
+      const neighbor = next[idx] ?? next[idx - 1] ?? null
+      newActive = neighbor?.id ?? null
+    }
+    if (next.length === 0) {
+      const fresh = emptyTab()
+      set({ tabs: [fresh], activeTabId: fresh.id })
+      return
+    }
+    set({ tabs: next, activeTabId: newActive })
+  },
+  switchTab: (_id) => { /* implemented in Task 8 */ },
+  openInCurrentTab: (_p) => { /* implemented in Task 8 */ },
+  openInNewTab: (_p) => { /* implemented in Task 8 */ },
 
   setActiveFile: (path) => {
     if (path === null) {
@@ -531,7 +569,33 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   setRemoteShare: (value) => set({ remoteShare: value }),
 }), {
   name: 'md-reader-session',
-  storage: {
+  // In iframe mode (e.g. JupyterLab embedding), disable persistence entirely:
+  //   * the host re-pushes the active document via SET_MARKDOWN on every
+  //     panel construction, so caching `markdown`/`fileName`/`toc` to IDB
+  //     just creates a stale-state hazard;
+  //   * a single user opening the same `.md` file in two JL tabs would
+  //     otherwise clobber a single IDB row in last-writer-wins fashion;
+  //   * chat history, view mode, and reading progress are all doc-scoped,
+  //     and we'd rather they reset on reload than restore against the
+  //     wrong doc.
+  // The standalone site keeps full IDB persistence — only the iframe path
+  // routes through the noop adapter.
+  //
+  // Security: this runtime check is defense-in-depth, NOT the primary trust
+  // boundary. The real iframe-vs-host guarantee comes from origin pinning
+  // in `src/lib/iframe-bridge.ts` (`parentOrigin` check at onWindowMessage)
+  // — a hostile parent that suppressed this noop adapter still couldn't
+  // post messages without passing the origin pin first.
+  storage: (typeof window !== 'undefined' && window.parent !== window)
+    ? {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      getItem: async (_name) => null,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      setItem: async (_name, _value) => { /* noop in iframe mode */ },
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      removeItem: async (_name) => { /* noop in iframe mode */ },
+    }
+    : {
     getItem: async (name) => {
       const val = await idbStorage.getItem(name)
       return val ? JSON.parse(val) : null
@@ -546,6 +610,30 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   // If opened via browser extension (#url=...), clear rehydrated markdown so the extension handler loads fresh content
   merge: (persisted, current) => {
     const merged = { ...current, ...(persisted as Partial<DocumentState>) }
+    // When running embedded in a host iframe (e.g. JupyterLab), the host
+    // pushes the active document via SET_MARKDOWN. The persisted store
+    // from a *prior* iframe session belongs to a *prior* document — keeping
+    // it lets the iframe render the wrong file. Trust `current` (the live
+    // in-memory state) over `persisted` for doc-shaped fields: `current` is
+    // either empty (host hasn't sent yet) or already set by the SET_MARKDOWN
+    // handler in main.tsx if its postMessage raced ahead of hydration.
+    const isIframe = typeof window !== 'undefined' && window.parent !== window
+    if (isIframe) {
+      // Defence-in-depth: even though the noop storage adapter above means
+      // `merge` should never see a persisted iframe state in practice, if
+      // persistence is ever partially re-enabled (e.g. settings-only) we
+      // still want to refuse to restore doc-scoped fields. Chat messages
+      // are doc-scoped too — restoring a prior doc's chat against a freshly
+      // pushed SET_MARKDOWN would attribute the old conversation to the
+      // wrong file.
+      merged.markdown = current.markdown
+      merged.fileName = current.fileName
+      merged.toc = current.toc
+      merged.readingProgress = current.readingProgress
+      merged.activeSection = current.activeSection
+      merged.activeDocId = current.activeDocId
+      merged.chatMessages = []
+    }
     // When opened via browser extension, clear cached content so fresh content loads
     const hash = typeof window !== 'undefined' ? window.location.hash : ''
     if (hash.startsWith('#md=') || hash.startsWith('#url=') || hash === '#ext-pending') {
