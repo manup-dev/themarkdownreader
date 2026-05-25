@@ -298,3 +298,38 @@ describe('useStore — recents persistence on open', () => {
     expect(all).toHaveLength(1)
   })
 })
+
+describe('useStore — closeTab cleanup', () => {
+  beforeEach(async () => {
+    // Drain any in-flight persistPayload writes from prior tests
+    await new Promise((r) => setTimeout(r, 20))
+    await db.recents.clear()
+    await db.tabContent.clear()
+    useStore.setState({
+      tabs: [], activeTabId: null,
+      markdown: '', fileName: null,
+      folderHandle: null, folderFiles: null, folderFileContents: null, activeFilePath: null,
+      viewMode: 'read',
+    })
+  })
+
+  it('deletes tabContent for a file tab on close', async () => {
+    useStore.getState().openSmart({ kind: 'file', fileName: 'x.md', content: '#' })
+    await new Promise((r) => setTimeout(r, 20))
+    const tab = useStore.getState().tabs[0]
+    const contentKey = tab.contentKey!
+    useStore.getState().closeTab(tab.id)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(await db.tabContent.get(contentKey)).toBeUndefined()
+  })
+
+  it('leaves the recents entry intact after a file tab is closed', async () => {
+    useStore.getState().openSmart({ kind: 'file', fileName: 'x.md', content: '#' })
+    await new Promise((r) => setTimeout(r, 20))
+    const tab = useStore.getState().tabs[0]
+    useStore.getState().closeTab(tab.id)
+    await new Promise((r) => setTimeout(r, 20))
+    const recents = await db.recents.toArray()
+    expect(recents).toHaveLength(1)
+  })
+})

@@ -8,7 +8,7 @@ import type { AnnotationEvent } from '../lib/annotation-events'
 import { emptyTab, newTabId, type Tab, type TabPayload } from '../lib/tabs-types'
 import { decideOpen } from '../lib/smart-open'
 import { addOrTouchRecent } from '../lib/recents'
-import { putTabContent } from '../lib/tabContent'
+import { putTabContent, deleteTabContent } from '../lib/tabContent'
 import { putHandle } from '../lib/handleStore'
 
 export interface ChatMessage {
@@ -543,11 +543,17 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     const { tabs, activeTabId } = get()
     const idx = tabs.findIndex((t) => t.id === id)
     if (idx < 0) return
+    const closing = tabs[idx]
     const next = tabs.slice(0, idx).concat(tabs.slice(idx + 1))
     let newActive = activeTabId
     if (activeTabId === id) {
       const neighbor = next[idx] ?? next[idx - 1] ?? null
       newActive = neighbor?.id ?? null
+    }
+    // Side effect: clean per-tab caches. Handle + recents intentionally kept
+    // so re-opening from recents is fast.
+    if (closing.kind === 'file' && closing.contentKey) {
+      void deleteTabContent(closing.contentKey)
     }
     folderBodyCache.delete(id)
     fileBodyCache.delete(id)
@@ -557,6 +563,11 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       return
     }
     set({ tabs: next, activeTabId: newActive })
+    // If we're activating a different tab, hydrate its singulars
+    if (newActive && newActive !== activeTabId) {
+      const target = next.find((t) => t.id === newActive)
+      if (target) set(hydrateFromTab(target))
+    }
   },
   switchTab: (id) => {
     const { tabs, activeTabId } = get()
