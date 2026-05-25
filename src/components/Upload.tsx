@@ -2,8 +2,8 @@ import { useCallback, useRef, useState, useEffect } from 'react'
 import { Upload as UploadIcon, Link, FileText, Library, PenLine, ArrowRight, Clock, FolderOpen, Chrome, Code2, Shield, Mic, Network, GraduationCap } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { useAdapter } from '../provider/hooks'
-import type { StoredDocument } from '../types/storage-adapter'
 import { SAMPLE_MARKDOWN } from '../lib/sample-doc'
+import { RecentsList } from './RecentsList'
 
 type Mode = 'home' | 'editor'
 
@@ -11,18 +11,10 @@ export function Upload() {
   const setMarkdown = useStore((s) => s.setMarkdown)
   const setWorkspaceMode = useStore((s) => s.setWorkspaceMode)
   const setViewMode = useStore((s) => s.setViewMode)
-  const openDocument = useStore((s) => s.openDocument)
   const adapter = useAdapter()
   const [mode, setMode] = useState<Mode>('home')
   const [url, setUrl] = useState('')
   const [fetching, setFetching] = useState(false)
-  const [recentDocs, setRecentDocs] = useState<StoredDocument[]>([])
-
-  // Delight #35: Load recent documents from IndexedDB
-  useEffect(() => {
-    adapter.getAllDocuments().then((docs) => setRecentDocs(docs.slice(0, 3))).catch(() => {})
-  }, [])
-
   // Browser extension support: handle #url= hash and postMessage from extension
   useEffect(() => {
     // Note: #url= hash handling is done in App.tsx so it works even when Upload isn't mounted
@@ -377,25 +369,6 @@ export function Upload() {
           </button>
         </div>
 
-        {/* Continue Reading CTA for last unfinished doc */}
-        {recentDocs.length > 0 && (() => {
-          const lastDoc = recentDocs[0]
-          const progress = parseFloat(localStorage.getItem(`md-reader-scroll-${lastDoc.id}`) ?? '0')
-          return progress > 5 && progress < 95 ? (
-            <button
-              onClick={() => openDocument(lastDoc.markdown, lastDoc.fileName, lastDoc.id!)}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-all text-left"
-            >
-              <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center shrink-0">
-                <span className="text-blue-600 dark:text-blue-400 text-xs font-bold">{Math.round(progress)}%</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-blue-700 dark:text-blue-300">Continue reading</p>
-                <p className="text-xs text-blue-500 dark:text-blue-400 truncate">{lastDoc.fileName}</p>
-              </div>
-            </button>
-          ) : null
-        })()}
 
         {/* Action buttons */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -502,40 +475,10 @@ export function Upload() {
         {/* ── Below the fold — subtle secondary content ──────────── */}
 
         {/* Recent documents (subtle) */}
-        {recentDocs.length > 0 && (
-          <div className="space-y-1.5 opacity-70 hover:opacity-100 transition-opacity">
-            <p className="text-xs text-gray-400 flex items-center gap-1"><Clock className="h-3 w-3" /> Recent</p>
-            {recentDocs.map((doc) => {
-              const progress = parseFloat(localStorage.getItem(`md-reader-scroll-${doc.id}`) ?? '0')
-              const minsLeft = Math.max(1, Math.ceil((doc.wordCount / 230) * (1 - progress / 100)))
-              return (
-                <button
-                  key={doc.id}
-                  onClick={() => openDocument(doc.markdown, doc.fileName, doc.id!)}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-sm transition-all text-left"
-                >
-                  <FileText className="h-4 w-4 text-gray-400 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
-                      {doc.fileName}
-                      <span className="text-[9px] text-gray-400 font-normal ml-1">
-                        {(() => { const m = Math.floor((Date.now() - doc.addedAt) / 60000); return m < 60 ? `${m}m ago` : m < 1440 ? `${Math.floor(m/60)}h ago` : `${Math.floor(m/1440)}d ago` })()}
-                      </span>
-                    </p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <div className="flex-1 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${progress >= 99 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, progress)}%` }} />
-                      </div>
-                      <span className="text-[10px] text-gray-400 shrink-0 tabular-nums">
-                        {progress >= 99 ? '\u2713 Done' : `${Math.round(progress)}% \u00b7 ${minsLeft}m left`}
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        )}
+        <div className="space-y-1.5 opacity-70 hover:opacity-100 transition-opacity">
+          <p className="text-xs text-gray-400 flex items-center gap-1"><Clock className="h-3 w-3" /> Recent</p>
+          <RecentsList onOpened={() => {}} limit={6} />
+        </div>
 
         {error && (
           <p className="text-center text-red-500 text-sm">{error}</p>
