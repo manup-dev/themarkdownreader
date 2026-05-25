@@ -162,6 +162,23 @@ export interface StoredAnnotationCheckpoint {
   event: CheckpointEvent
 }
 
+export interface StoredRecent {
+  id?: number
+  kind: 'folder' | 'file'
+  name: string
+  handleKey?: string
+  contentKey?: string
+  addedAt: number
+  lastAccessedAt: number
+}
+
+export interface StoredTabContent {
+  id: string  // uuid; matches Tab.contentKey
+  name: string
+  body: string
+  savedAt: number
+}
+
 class MdReaderDB extends Dexie {
   documents!: Table<StoredDocument>
   chunks!: Table<StoredChunk>
@@ -176,6 +193,8 @@ class MdReaderDB extends Dexie {
   audioCache!: Table<CachedAudio>
   annotationLog!: Table<StoredAnnotationEvent>
   annotationCheckpoint!: Table<StoredAnnotationCheckpoint>
+  recents!: Table<StoredRecent>
+  tabContent!: Table<StoredTabContent>
 
   constructor() {
     super('md-reader')
@@ -217,6 +236,12 @@ class MdReaderDB extends Dexie {
     this.version(9).stores({
       annotationLog: '++seq, docKey, ts, op, [docKey+seq]',
       annotationCheckpoint: 'docKey, ts',
+    })
+    // v10: tabs + recents support. New tables only — no changes to prior
+    // tables, so existing data is preserved verbatim.
+    this.version(10).stores({
+      recents: '++id, kind, lastAccessedAt',
+      tabContent: 'id, savedAt',
     })
   }
 }

@@ -103,3 +103,27 @@ describe('cosineSimilarity', () => {
     expect(cosineSimilarity(empty, some)).toBe(0)
   })
 })
+
+import 'fake-indexeddb/auto'
+import { db } from '../lib/docstore'
+
+describe('docstore v10 — recents + tabContent', () => {
+  it('has a recents table with the expected schema', async () => {
+    const id = await db.recents.add({
+      kind: 'folder',
+      name: 'My Notes',
+      handleKey: 'h1',
+      addedAt: 1,
+      lastAccessedAt: 1,
+    } as never)
+    const row = await db.recents.get(id)
+    expect(row?.name).toBe('My Notes')
+    expect(row?.kind).toBe('folder')
+  })
+
+  it('has a tabContent table that stores a body by string id', async () => {
+    await db.tabContent.put({ id: 't1', name: 'README.md', body: '# Hi', savedAt: 1 })
+    const row = await db.tabContent.get('t1')
+    expect(row?.body).toBe('# Hi')
+  })
+})
