@@ -78,6 +78,7 @@ function AppContent() {
   const activeFilePath = useStore((s) => s.activeFilePath)
   const activeTabId = useStore((s) => s.activeTabId)
   const switchTab = useStore((s) => s.switchTab)
+  const openInNewTab = useStore((s) => s.openInNewTab)
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const chatWidth = useStore((s) => s.chatWidth)
@@ -167,7 +168,7 @@ function AppContent() {
       try {
         const json = decodeURIComponent(escape(atob(encoded)))
         const { markdown: md, fileName } = JSON.parse(json)
-        if (md) setMarkdown(md, fileName || 'document.md')
+        if (md) openInNewTab({ kind: 'file', fileName: fileName || 'document.md', content: md })
       } catch (err) {
         console.error('md-reader: Failed to decode extension payload:', err)
       }
@@ -201,10 +202,11 @@ function AppContent() {
           }
           // setActiveDocId so downstream consumers (CommentsPanel, highlight
           // rendering, analysis lookups) query the right Dexie row. Must
-          // fire before setMarkdown — setMarkdown resets viewMode to 'read'
-          // which some effects key off, and those effects read activeDocId.
+          // fire before openInNewTab — setMarkdown (called internally) resets
+          // viewMode to 'read' which some effects key off, and those effects
+          // read activeDocId.
           useStore.getState().setActiveDocId(result.docId)
-          setMarkdown(result.markdown, result.fileName)
+          openInNewTab({ kind: 'file', fileName: result.fileName, content: result.markdown })
           useStore.getState().setRemoteShare(result.banner)
         } catch (err) {
           console.error('md-reader: Failed to load share URL:', err)
@@ -222,12 +224,12 @@ function AppContent() {
     // Listen for postMessage from extension (large file fallback)
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'md-reader-load' && event.data.markdown) {
-        setMarkdown(event.data.markdown, event.data.fileName || 'document.md')
+        openInNewTab({ kind: 'file', fileName: event.data.fileName || 'document.md', content: event.data.markdown })
       }
     }
     window.addEventListener('message', handleMessage)
     return () => window.removeEventListener('message', handleMessage)
-  }, [setMarkdown])
+  }, [openInNewTab])
 
   // Demo mode: ?demo=true loads sample document for first-time visitors
   // CLI mode: ?cli=true fetches content served by `npx md-reader file.md`
@@ -285,7 +287,7 @@ function AppContent() {
           return res.text()
         })
         .then((md) => {
-          setMarkdown(md, fileName)
+          openInNewTab({ kind: 'file', fileName, content: md })
           useStore.getState().setViewMode(view)
 
           // Compute TOC locally — the store's toc is populated by Reader's
@@ -325,7 +327,7 @@ function AppContent() {
     handleMcpHash()
     window.addEventListener('hashchange', handleMcpHash)
     return () => window.removeEventListener('hashchange', handleMcpHash)
-  }, [setMarkdown])
+  }, [openInNewTab])
 
   // Trigger onboarding on first document load
   useEffect(() => {
