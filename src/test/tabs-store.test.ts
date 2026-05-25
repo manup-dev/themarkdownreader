@@ -334,3 +334,91 @@ describe('useStore — closeTab cleanup', () => {
     expect(recents).toHaveLength(1)
   })
 })
+
+describe('useStore — drift fixes (review-driven)', () => {
+  beforeEach(async () => {
+    await new Promise((r) => setTimeout(r, 100))
+    await db.recents.clear()
+    await db.tabContent.clear()
+    useStore.setState({
+      tabs: [], activeTabId: null,
+      markdown: '', fileName: null,
+      folderHandle: null, folderFiles: null, folderFileContents: null, activeFilePath: null,
+      viewMode: 'read',
+    })
+  })
+
+  it('openDocument routes through tabs', () => {
+    useStore.getState().openDocument('# Doc', 'doc.md', 42)
+    const s = useStore.getState()
+    expect(s.tabs).toHaveLength(1)
+    expect(s.tabs[0].kind).toBe('file')
+    expect(s.tabs[0].fileName).toBe('doc.md')
+    expect(s.activeDocId).toBe(42)
+  })
+
+  it('reset wipes all tabs and creates one fresh empty tab', () => {
+    useStore.getState().openInNewTab({ kind: 'file', fileName: 'a.md', content: '#' })
+    useStore.getState().openInNewTab({ kind: 'file', fileName: 'b.md', content: '#' })
+    expect(useStore.getState().tabs).toHaveLength(2)
+    useStore.getState().reset()
+    const s = useStore.getState()
+    expect(s.tabs).toHaveLength(1)
+    expect(s.tabs[0].kind).toBe('empty')
+    expect(s.activeTabId).toBe(s.tabs[0].id)
+    expect(s.markdown).toBe('')
+  })
+
+  it('backToWorkspace preserves the current tab and doc', () => {
+    useStore.getState().openInNewTab({ kind: 'file', fileName: 'a.md', content: '# A' })
+    useStore.getState().backToWorkspace()
+    const s = useStore.getState()
+    expect(s.viewMode).toBe('workspace')
+    expect(s.tabs).toHaveLength(1)
+    expect(s.markdown).toBe('# A')
+    expect(s.fileName).toBe('a.md')
+  })
+
+  it('setActiveFile updates the active tab record', () => {
+    useStore.getState().openInNewTab({
+      kind: 'folder', folderName: 'F', handle: null,
+      files: [
+        { path: 'a.md', name: 'a.md', content: '# A' },
+        { path: 'b.md', name: 'b.md', content: '# B' },
+      ],
+    })
+    const tabId = useStore.getState().activeTabId!
+    useStore.getState().setActiveFile('b.md')
+    const tab = useStore.getState().tabs.find((t) => t.id === tabId)!
+    expect(tab.activeFilePath).toBe('b.md')
+  })
+
+  it('round-trip: open A → switch B → setActiveFile in A → switch B → switch back A', () => {
+    useStore.getState().openInNewTab({
+      kind: 'folder', folderName: 'A', handle: null,
+      files: [
+        { path: 'a1.md', name: 'a1.md', content: '# A1' },
+        { path: 'a2.md', name: 'a2.md', content: '# A2' },
+      ],
+    })
+    const tabA = useStore.getState().activeTabId!
+    useStore.getState().setActiveFile('a2.md')
+    useStore.getState().openInNewTab({
+      kind: 'file', fileName: 'b.md', content: '# B',
+    })
+    useStore.getState().switchTab(tabA)
+    expect(useStore.getState().activeFilePath).toBe('a2.md')
+    expect(useStore.getState().markdown).toBe('# A2')
+  })
+
+  it('concurrent addOrTouchRecent for same (kind, name) does not double-row', async () => {
+    const { addOrTouchRecent } = await import('../lib/recents')
+    await Promise.all([
+      addOrTouchRecent({ kind: 'folder', name: 'Same' }),
+      addOrTouchRecent({ kind: 'folder', name: 'Same' }),
+      addOrTouchRecent({ kind: 'folder', name: 'Same' }),
+    ])
+    const all = await db.recents.where({ kind: 'folder', name: 'Same' }).toArray()
+    expect(all).toHaveLength(1)
+  })
+})

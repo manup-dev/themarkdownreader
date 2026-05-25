@@ -6,25 +6,28 @@ export async function addOrTouchRecent(
   entry: { kind: 'folder' | 'file'; name: string; handleKey?: string; contentKey?: string },
 ): Promise<number> {
   const now = Date.now()
-  const existing = await db.recents.where({ kind: entry.kind, name: entry.name }).first()
-  if (existing && existing.id !== undefined) {
-    await db.recents.update(existing.id, {
+  const id = await db.transaction('rw', db.recents, async () => {
+    const existing = await db.recents.where({ kind: entry.kind, name: entry.name }).first()
+    if (existing && existing.id !== undefined) {
+      await db.recents.update(existing.id, {
+        lastAccessedAt: now,
+        handleKey: entry.handleKey ?? existing.handleKey,
+        contentKey: entry.contentKey ?? existing.contentKey,
+      })
+      return existing.id
+    }
+    const newId = await db.recents.add({
+      kind: entry.kind,
+      name: entry.name,
+      handleKey: entry.handleKey,
+      contentKey: entry.contentKey,
+      addedAt: now,
       lastAccessedAt: now,
-      handleKey: entry.handleKey ?? existing.handleKey,
-      contentKey: entry.contentKey ?? existing.contentKey,
     })
-    return existing.id
-  }
-  const id = await db.recents.add({
-    kind: entry.kind,
-    name: entry.name,
-    handleKey: entry.handleKey,
-    contentKey: entry.contentKey,
-    addedAt: now,
-    lastAccessedAt: now,
+    return newId as number
   })
   await enforceCap()
-  return id as number
+  return id
 }
 
 export async function listRecents(): Promise<StoredRecent[]> {

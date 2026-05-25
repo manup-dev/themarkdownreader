@@ -466,18 +466,24 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   refreshFeatureFlags: () => {
     set({ enabledFeatures: resolveEnabledFeatures() })
   },
-  openDocument: (md, fileName, docId) => set({
-    markdown: md,
-    fileName,
-    activeDocId: docId,
-    readingProgress: 0,
-    activeSection: null,
-    viewMode: 'read',
-    chatMessages: [], // fresh conversation for a freshly opened document
-  }),
-  reset: () => set({ markdown: '', fileName: null, toc: [], readingProgress: 0, activeSection: null, viewMode: 'read', ttsPlaying: false, ttsSectionIndex: 0, activeDocId: null, workspaceMode: false, readScrollTop: 0, podcastScript: null, diagramDsl: null, chatMessages: [] }),
-  backToWorkspace: () => set({ markdown: '', fileName: null, toc: [], viewMode: 'workspace', activeDocId: null }),
-  backToCollection: () => set({ markdown: '', fileName: null, toc: [], viewMode: 'collection', activeDocId: null }),
+  openDocument: (md, fileName, docId) => {
+    get().openSmart({ kind: 'file', fileName, content: md })
+    set({ activeDocId: docId, chatMessages: [] })
+  },
+  reset: () => {
+    folderBodyCache.clear()
+    fileBodyCache.clear()
+    const fresh = emptyTab()
+    set({
+      markdown: '', fileName: null, toc: [], readingProgress: 0, activeSection: null,
+      viewMode: 'read', ttsPlaying: false, ttsSectionIndex: 0, activeDocId: null,
+      workspaceMode: false, readScrollTop: 0, podcastScript: null, diagramDsl: null,
+      chatMessages: [],
+      tabs: [fresh], activeTabId: fresh.id,
+    })
+  },
+  backToWorkspace: () => set({ viewMode: 'workspace' }),
+  backToCollection: () => set({ viewMode: 'collection' }),
 
   // Unified view state
   folderHandle: null,
@@ -661,16 +667,30 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
 
   setActiveFile: (path) => {
     if (path === null) {
-      set({ activeFilePath: null, markdown: '', fileName: null })
+      const { tabs: curTabs, activeTabId } = get()
+      set({
+        activeFilePath: null, markdown: '', fileName: null,
+        tabs: curTabs.map((t) =>
+          t.id === activeTabId && t.kind === 'folder'
+            ? { ...t, activeFilePath: null }
+            : t,
+        ),
+      })
       return
     }
     const contents = get().folderFileContents
     if (!contents?.has(path)) return  // no-op for unknown path
     const file = get().folderFiles?.find(f => f.path === path)
+    const { tabs: curTabs, activeTabId } = get()
     set({
       activeFilePath: path,
       markdown: contents.get(path) ?? '',
       fileName: file?.name ?? path,
+      tabs: curTabs.map((t) =>
+        t.id === activeTabId && t.kind === 'folder'
+          ? { ...t, activeFilePath: path }
+          : t,
+      ),
     })
     // Persist scoped by folder name so a reload restores the last-viewed file.
     // Also mark this file as viewed for the collection-completion banner.
