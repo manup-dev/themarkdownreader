@@ -240,9 +240,9 @@ describe('useStore — tabs persistence + legacy hydration', () => {
 
 describe('useStore — recents persistence on open', () => {
   beforeEach(async () => {
-    // Drain any fire-and-forget persistPayload writes from prior describes
-    // that may still be inflight, then clear.
-    await new Promise((r) => setTimeout(r, 20))
+    // Drain any in-flight persistPayload writes from prior describes' openSmart calls.
+    // 100ms is empirically enough; 20ms was occasionally racy.
+    await new Promise((r) => setTimeout(r, 100))
     await db.recents.clear()
     await db.tabContent.clear()
     useStore.setState({
@@ -259,7 +259,7 @@ describe('useStore — recents persistence on open', () => {
       files: [{ path: 'a.md', name: 'a.md', content: '#' }],
     })
     // recents is written asynchronously; await microtask
-    await new Promise((r) => setTimeout(r, 10))
+    await new Promise((r) => setTimeout(r, 50))
     const all = await db.recents.toArray()
     expect(all).toHaveLength(1)
     expect(all[0].name).toBe('My Notes')
@@ -270,7 +270,7 @@ describe('useStore — recents persistence on open', () => {
     useStore.getState().openSmart({
       kind: 'file', fileName: 'note.md', content: '# Hi',
     })
-    await new Promise((r) => setTimeout(r, 10))
+    await new Promise((r) => setTimeout(r, 50))
     const recents = await db.recents.toArray()
     expect(recents).toHaveLength(1)
     expect(recents[0].name).toBe('note.md')
@@ -285,7 +285,7 @@ describe('useStore — recents persistence on open', () => {
       kind: 'folder', folderName: 'A', handle: null,
       files: [{ path: 'a.md', name: 'a.md', content: '#' }],
     })
-    await new Promise((r) => setTimeout(r, 10))
+    await new Promise((r) => setTimeout(r, 50))
     // Close it
     useStore.getState().closeTab(useStore.getState().activeTabId!)
     // Re-open
@@ -293,7 +293,7 @@ describe('useStore — recents persistence on open', () => {
       kind: 'folder', folderName: 'A', handle: null,
       files: [{ path: 'a.md', name: 'a.md', content: '#' }],
     })
-    await new Promise((r) => setTimeout(r, 10))
+    await new Promise((r) => setTimeout(r, 50))
     const all = await db.recents.toArray()
     expect(all).toHaveLength(1)
   })
@@ -301,8 +301,9 @@ describe('useStore — recents persistence on open', () => {
 
 describe('useStore — closeTab cleanup', () => {
   beforeEach(async () => {
-    // Drain any in-flight persistPayload writes from prior tests
-    await new Promise((r) => setTimeout(r, 20))
+    // Drain any in-flight persistPayload writes from prior describes' openSmart calls.
+    // 100ms is empirically enough; 20ms was occasionally racy.
+    await new Promise((r) => setTimeout(r, 100))
     await db.recents.clear()
     await db.tabContent.clear()
     useStore.setState({
@@ -315,20 +316,20 @@ describe('useStore — closeTab cleanup', () => {
 
   it('deletes tabContent for a file tab on close', async () => {
     useStore.getState().openSmart({ kind: 'file', fileName: 'x.md', content: '#' })
-    await new Promise((r) => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 50))
     const tab = useStore.getState().tabs[0]
     const contentKey = tab.contentKey!
     useStore.getState().closeTab(tab.id)
-    await new Promise((r) => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 50))
     expect(await db.tabContent.get(contentKey)).toBeUndefined()
   })
 
   it('leaves the recents entry intact after a file tab is closed', async () => {
     useStore.getState().openSmart({ kind: 'file', fileName: 'x.md', content: '#' })
-    await new Promise((r) => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 50))
     const tab = useStore.getState().tabs[0]
     useStore.getState().closeTab(tab.id)
-    await new Promise((r) => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 50))
     const recents = await db.recents.toArray()
     expect(recents).toHaveLength(1)
   })

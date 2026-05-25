@@ -21,6 +21,7 @@ export function RecentsList({ onOpened, limit }: Props) {
     setItems(limit ? all.slice(0, limit) : all)
   }, [limit])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- legitimate mount-time fetch from IDB
   useEffect(() => { void reload() }, [reload])
 
   const handleOpen = useCallback(async (r: StoredRecent) => {

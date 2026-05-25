@@ -407,7 +407,7 @@ function AppContent() {
     }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, [])
+  }, [switchTab])
 
   // On initial folder hydration, restore the active file from the URL hash
   // captured at mount (initialFolderFileRef). Runs once when folderFiles
