@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { TabBar } from '../components/TabBar'
 import { useStore } from '../store/useStore'
 import { db } from '../lib/docstore'
@@ -85,6 +85,16 @@ describe('TabBar — + dropdown', () => {
   it('renders a + button when at least one tab exists', () => {
     render(<TabBar />)
     expect(screen.getByRole('button', { name: /new tab|open/i })).toBeInTheDocument()
+  })
+
+  it('closes the + dropdown on Escape', async () => {
+    render(<TabBar />)
+    fireEvent.click(screen.getByRole('button', { name: /new tab|open/i }))
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => {
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    })
   })
 
   it('opening the dropdown shows recents', async () => {

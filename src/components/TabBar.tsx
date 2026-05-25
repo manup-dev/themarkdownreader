@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/useStore'
 import { Folder, FileText, X, Plus } from 'lucide-react'
 import { RecentsList } from './RecentsList'
@@ -27,9 +27,22 @@ export function TabBar() {
               role="tab"
               aria-selected={isActive}
               aria-label={tab.title}
+              tabIndex={isActive ? 0 : -1}
               onClick={() => switchTab(tab.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                  e.preventDefault()
+                  const idx = tabs.findIndex((t) => t.id === tab.id)
+                  const dir = e.key === 'ArrowRight' ? 1 : -1
+                  const nextIdx = (idx + dir + tabs.length) % tabs.length
+                  switchTab(tabs[nextIdx].id)
+                } else if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  switchTab(tab.id)
+                }
+              }}
               className={[
-                'group flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer border-r border-gray-200 dark:border-gray-800 sepia:border-sepia-200 min-w-0 max-w-[200px]',
+                'group flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer border-r border-gray-200 dark:border-gray-800 sepia:border-sepia-200 min-w-0 max-w-[200px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
                 isActive
                   ? 'bg-white dark:bg-gray-950 sepia:bg-sepia-50 text-gray-900 dark:text-gray-100 sepia:text-sepia-900'
                   : 'text-gray-600 dark:text-gray-400 sepia:text-sepia-700 hover:bg-gray-100 dark:hover:bg-gray-800 sepia:hover:bg-sepia-100',
@@ -59,11 +72,39 @@ export function TabBar() {
 function NewTabMenu() {
   const [open, setOpen] = useState(false)
   const newEmptyTab = useStore((s) => s.newEmptyTab)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+    const onPointer = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (popoverRef.current?.contains(target)) return
+      if (triggerRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('mousedown', onPointer)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('mousedown', onPointer)
+    }
+  }, [open])
+
   return (
     <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
-        aria-label="Open recent files"
+        aria-label="New tab or open recent"
+        aria-haspopup="menu"
+        aria-expanded={open}
         title="New tab"
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1 px-2 py-1 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
@@ -72,8 +113,9 @@ function NewTabMenu() {
       </button>
       {open && (
         <div
+          ref={popoverRef}
+          role="menu"
           className="absolute right-0 top-full mt-1 z-20 min-w-[240px] max-w-[360px] bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-lg overflow-hidden"
-          onMouseLeave={() => setOpen(false)}
         >
           <button
             type="button"

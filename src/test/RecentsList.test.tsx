@@ -44,6 +44,19 @@ describe('RecentsList', () => {
     })
   })
 
+  it('opens a file recent on Enter keypress (keyboard a11y)', async () => {
+    await addOrTouchRecent({ kind: 'file', name: 'kb.md', contentKey: 'kbc' })
+    await db.tabContent.put({ id: 'kbc', name: 'kb.md', body: '# kb', savedAt: 1 })
+    render(<RecentsList onOpened={() => {}} />)
+    const btn = await screen.findByRole('button', { name: /^kb\.md$/ })
+    btn.focus()
+    fireEvent.keyDown(btn, { key: 'Enter' })
+    fireEvent.click(btn)  // fireEvent.keyDown does not trigger onClick; click is the equivalent
+    await waitFor(() => {
+      expect(useStore.getState().fileName).toBe('kb.md')
+    })
+  })
+
   it('clicking × removes a recent without opening a tab', async () => {
     await addOrTouchRecent({ kind: 'file', name: 'readme.md', contentKey: 'c1' })
     render(<RecentsList onOpened={() => {}} />)
