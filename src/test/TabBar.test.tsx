@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { TabBar } from '../components/TabBar'
-import { useStore } from '../store/useStore'
+import { useStore, persistSettled } from '../store/useStore'
 import { db } from '../lib/docstore'
 import { addOrTouchRecent } from '../lib/recents'
 
@@ -64,7 +64,7 @@ describe('TabBar', () => {
 
 describe('TabBar — + dropdown', () => {
   beforeEach(async () => {
-    await new Promise((r) => setTimeout(r, 20))  // drain any in-flight writes
+    await persistSettled()  // drain any in-flight writes deterministically
     await db.recents.clear()
     await db.tabContent.clear()
     useStore.setState({
@@ -77,7 +77,7 @@ describe('TabBar — + dropdown', () => {
   })
 
   afterEach(async () => {
-    await new Promise((r) => setTimeout(r, 20))  // drain any in-flight writes
+    await persistSettled()  // drain any in-flight writes deterministically
     await db.recents.clear()
     await db.tabContent.clear()
   })

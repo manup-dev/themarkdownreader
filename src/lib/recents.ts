@@ -1,4 +1,5 @@
 import { db, type StoredRecent } from './docstore'
+import { deleteTabContent } from './tabContent'
 
 export const RECENTS_CAP = 20
 
@@ -36,12 +37,21 @@ export async function listRecents(): Promise<StoredRecent[]> {
 }
 
 export async function removeRecent(id: number): Promise<void> {
+  const row = await db.recents.get(id)
   await db.recents.delete(id)
+  if (row?.contentKey) {
+    await deleteTabContent(row.contentKey)
+  }
 }
 
 async function enforceCap(): Promise<void> {
   const count = await db.recents.count()
   if (count <= RECENTS_CAP) return
   const toDrop = await db.recents.orderBy('lastAccessedAt').limit(count - RECENTS_CAP).toArray()
-  await db.recents.bulkDelete(toDrop.map((r) => r.id!).filter((x) => x !== undefined))
+  // Collect contentKeys so we can clean up tabContent rows too — the orphan
+  // would otherwise persist forever (closeTab no longer reaps it).
+  const keysToDelete = toDrop.map((r) => r.id!).filter((x) => x !== undefined)
+  const contentKeysToDelete = toDrop.map((r) => r.contentKey).filter((k): k is string => !!k)
+  await db.recents.bulkDelete(keysToDelete)
+  for (const k of contentKeysToDelete) await deleteTabContent(k)
 }

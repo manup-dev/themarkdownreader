@@ -8,7 +8,7 @@ import type { AnnotationEvent } from '../lib/annotation-events'
 import { emptyTab, newTabId, type Tab, type TabPayload } from '../lib/tabs-types'
 import { decideOpen } from '../lib/smart-open'
 import { addOrTouchRecent } from '../lib/recents'
-import { putTabContent, deleteTabContent } from '../lib/tabContent'
+import { putTabContent } from '../lib/tabContent'
 import { putHandle } from '../lib/handleStore'
 
 export interface ChatMessage {
@@ -203,30 +203,45 @@ function applyPayloadToTab(tab: Tab, payload: TabPayload): Tab {
   }
 }
 
+// Track in-flight persistence writes so tests can deterministically await
+// them instead of sleeping. Internal — exposed via the persistSettled() helper.
+// Writes are chained so order matches the call sequence and a single await
+// drains everything queued up to that point.
+let _persistInflight: Promise<void> = Promise.resolve()
+
+export function persistSettled(): Promise<void> {
+  return _persistInflight
+}
+
 async function persistPayload(tab: Tab, payload: TabPayload): Promise<void> {
-  try {
-    if (payload.kind === 'folder') {
-      if (payload.handle && tab.handleKey) {
-        await putHandle(tab.handleKey, payload.handle)
-      }
-      await addOrTouchRecent({
-        kind: 'folder',
-        name: payload.folderName,
-        handleKey: tab.handleKey,
-      })
-    } else {
-      if (tab.contentKey) {
-        await putTabContent(tab.contentKey, payload.fileName, payload.content)
+  const run = async (): Promise<void> => {
+    try {
+      if (payload.kind === 'folder') {
+        if (payload.handle && tab.handleKey) {
+          await putHandle(tab.handleKey, payload.handle)
+        }
         await addOrTouchRecent({
-          kind: 'file',
-          name: payload.fileName,
-          contentKey: tab.contentKey,
+          kind: 'folder',
+          name: payload.folderName,
+          handleKey: tab.handleKey,
         })
+      } else {
+        if (tab.contentKey) {
+          await putTabContent(tab.contentKey, payload.fileName, payload.content)
+          await addOrTouchRecent({
+            kind: 'file',
+            name: payload.fileName,
+            contentKey: tab.contentKey,
+          })
+        }
       }
+    } catch (e) {
+      if (import.meta.env.DEV) console.warn('persistPayload failed', e)
     }
-  } catch (e) {
-    if (import.meta.env.DEV) console.warn('persistPayload failed', e)
   }
+  // Chain to keep ordering + observability for tests.
+  _persistInflight = _persistInflight.then(run)
+  return _persistInflight
 }
 
 export type Theme = 'light' | 'dark' | 'sepia' | 'high-contrast'
@@ -549,18 +564,16 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     const { tabs, activeTabId } = get()
     const idx = tabs.findIndex((t) => t.id === id)
     if (idx < 0) return
-    const closing = tabs[idx]
     const next = tabs.slice(0, idx).concat(tabs.slice(idx + 1))
     let newActive = activeTabId
     if (activeTabId === id) {
       const neighbor = next[idx] ?? next[idx - 1] ?? null
       newActive = neighbor?.id ?? null
     }
-    // Side effect: clean per-tab caches. Handle + recents intentionally kept
-    // so re-opening from recents is fast.
-    if (closing.kind === 'file' && closing.contentKey) {
-      void deleteTabContent(closing.contentKey)
-    }
+    // Side effect: clean per-tab in-session body caches only. tabContent +
+    // recents are intentionally kept — re-opening from recents must stay fast.
+    // tabContent is reaped when its recents entry is removed or LRU-evicted
+    // (see src/lib/recents.ts).
     folderBodyCache.delete(id)
     fileBodyCache.delete(id)
     if (next.length === 0) {
@@ -779,6 +792,22 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   },
 
   hydrateFolderFromCache: async () => {
+    // Guard against clobbering an explicit deeplink (extension push, share URL,
+    // MCP file route, or repo browser). Deeplink handlers in App.tsx will
+    // populate the active tab with the user's intended target — silently
+    // hydrating a cached folder on top would race them.
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash
+      if (
+        hash.startsWith('#md=') ||
+        hash.startsWith('#url=') ||
+        hash.startsWith('#repo=') ||
+        hash.startsWith('#file=') ||
+        hash === '#ext-pending'
+      ) {
+        return
+      }
+    }
     if (get().folderFiles !== null) return  // already hydrated
     const { getCollectionCache } = await import('../lib/docstore')
     const cache = await getCollectionCache()

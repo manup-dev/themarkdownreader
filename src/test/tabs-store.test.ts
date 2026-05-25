@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useStore } from '../store/useStore'
+import { useStore, persistSettled, type DocumentState } from '../store/useStore'
 import { db } from '../lib/docstore'
 
 describe('useStore — tabs basics', () => {
@@ -236,13 +236,32 @@ describe('useStore — tabs persistence + legacy hydration', () => {
     expect(persisted).toHaveProperty('tabs')
     expect(persisted).toHaveProperty('activeTabId')
   })
+
+  it('merge synthesizes a file tab when persisted state has markdown + fileName but no tabs', () => {
+    // Inspect the persist middleware's merge function — exercise it directly.
+    // This guards the upgrade path from pre-tabs persisted state: a user with
+    // a cached doc but no `tabs` array must still see at least one tab.
+    const persistApi = (useStore as unknown as {
+      persist?: { getOptions: () => { merge: (p: unknown, c: DocumentState) => DocumentState } }
+    }).persist
+    expect(persistApi).toBeDefined()
+    const current = useStore.getState()
+    const persisted = {
+      markdown: '# Legacy', fileName: 'legacy.md', viewMode: 'read' as const,
+      tabs: undefined, activeTabId: null,
+    }
+    const merged = persistApi!.getOptions().merge(persisted, current)
+    expect(merged.tabs).toHaveLength(1)
+    expect(merged.tabs[0].kind).toBe('file')
+    expect(merged.tabs[0].fileName).toBe('legacy.md')
+    expect(merged.activeTabId).toBe(merged.tabs[0].id)
+  })
 })
 
 describe('useStore — recents persistence on open', () => {
   beforeEach(async () => {
     // Drain any in-flight persistPayload writes from prior describes' openSmart calls.
-    // 100ms is empirically enough; 20ms was occasionally racy.
-    await new Promise((r) => setTimeout(r, 100))
+    await persistSettled()
     await db.recents.clear()
     await db.tabContent.clear()
     useStore.setState({
@@ -258,8 +277,7 @@ describe('useStore — recents persistence on open', () => {
       kind: 'folder', folderName: 'My Notes', handle: null,
       files: [{ path: 'a.md', name: 'a.md', content: '#' }],
     })
-    // recents is written asynchronously; await microtask
-    await new Promise((r) => setTimeout(r, 50))
+    await persistSettled()
     const all = await db.recents.toArray()
     expect(all).toHaveLength(1)
     expect(all[0].name).toBe('My Notes')
@@ -270,7 +288,7 @@ describe('useStore — recents persistence on open', () => {
     useStore.getState().openSmart({
       kind: 'file', fileName: 'note.md', content: '# Hi',
     })
-    await new Promise((r) => setTimeout(r, 50))
+    await persistSettled()
     const recents = await db.recents.toArray()
     expect(recents).toHaveLength(1)
     expect(recents[0].name).toBe('note.md')
@@ -285,7 +303,7 @@ describe('useStore — recents persistence on open', () => {
       kind: 'folder', folderName: 'A', handle: null,
       files: [{ path: 'a.md', name: 'a.md', content: '#' }],
     })
-    await new Promise((r) => setTimeout(r, 50))
+    await persistSettled()
     // Close it
     useStore.getState().closeTab(useStore.getState().activeTabId!)
     // Re-open
@@ -293,7 +311,7 @@ describe('useStore — recents persistence on open', () => {
       kind: 'folder', folderName: 'A', handle: null,
       files: [{ path: 'a.md', name: 'a.md', content: '#' }],
     })
-    await new Promise((r) => setTimeout(r, 50))
+    await persistSettled()
     const all = await db.recents.toArray()
     expect(all).toHaveLength(1)
   })
@@ -302,8 +320,7 @@ describe('useStore — recents persistence on open', () => {
 describe('useStore — closeTab cleanup', () => {
   beforeEach(async () => {
     // Drain any in-flight persistPayload writes from prior describes' openSmart calls.
-    // 100ms is empirically enough; 20ms was occasionally racy.
-    await new Promise((r) => setTimeout(r, 100))
+    await persistSettled()
     await db.recents.clear()
     await db.tabContent.clear()
     useStore.setState({
@@ -314,22 +331,33 @@ describe('useStore — closeTab cleanup', () => {
     })
   })
 
-  it('deletes tabContent for a file tab on close', async () => {
+  it('keeps tabContent after a file tab is closed (re-opening from recents stays fast)', async () => {
     useStore.getState().openSmart({ kind: 'file', fileName: 'x.md', content: '#' })
-    await new Promise((r) => setTimeout(r, 50))
+    await persistSettled()
     const tab = useStore.getState().tabs[0]
     const contentKey = tab.contentKey!
     useStore.getState().closeTab(tab.id)
-    await new Promise((r) => setTimeout(r, 50))
+    await persistSettled()
+    const row = await db.tabContent.get(contentKey)
+    expect(row?.body).toBe('#')
+  })
+
+  it('deletes tabContent when its recents entry is removed', async () => {
+    const { removeRecent } = await import('../lib/recents')
+    useStore.getState().openSmart({ kind: 'file', fileName: 'y.md', content: '#' })
+    await persistSettled()
+    const recent = (await db.recents.toArray())[0]
+    const contentKey = recent.contentKey!
+    await removeRecent(recent.id!)
     expect(await db.tabContent.get(contentKey)).toBeUndefined()
   })
 
   it('leaves the recents entry intact after a file tab is closed', async () => {
     useStore.getState().openSmart({ kind: 'file', fileName: 'x.md', content: '#' })
-    await new Promise((r) => setTimeout(r, 50))
+    await persistSettled()
     const tab = useStore.getState().tabs[0]
     useStore.getState().closeTab(tab.id)
-    await new Promise((r) => setTimeout(r, 50))
+    await persistSettled()
     const recents = await db.recents.toArray()
     expect(recents).toHaveLength(1)
   })
@@ -337,7 +365,7 @@ describe('useStore — closeTab cleanup', () => {
 
 describe('useStore — drift fixes (review-driven)', () => {
   beforeEach(async () => {
-    await new Promise((r) => setTimeout(r, 100))
+    await persistSettled()
     await db.recents.clear()
     await db.tabContent.clear()
     useStore.setState({

@@ -4,11 +4,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { RecentsList } from '../components/RecentsList'
 import { db } from '../lib/docstore'
 import { addOrTouchRecent } from '../lib/recents'
-import { useStore } from '../store/useStore'
+import { useStore, persistSettled } from '../store/useStore'
 
 describe('RecentsList', () => {
   beforeEach(async () => {
-    await new Promise((r) => setTimeout(r, 20))  // drain prior persistPayload writes
+    await persistSettled()  // drain prior persistPayload writes deterministically
     await db.recents.clear()
     await db.tabContent.clear()
     useStore.setState({
