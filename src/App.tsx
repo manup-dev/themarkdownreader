@@ -76,6 +76,8 @@ function AppContent() {
   const workspaceMode = useStore((s) => s.workspaceMode)
   const folderFiles = useStore((s) => s.folderFiles)
   const activeFilePath = useStore((s) => s.activeFilePath)
+  const activeTabId = useStore((s) => s.activeTabId)
+  const switchTab = useStore((s) => s.switchTab)
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const chatWidth = useStore((s) => s.chatWidth)
@@ -358,20 +360,22 @@ function AppContent() {
   useEffect(() => {
     if (isPopStateRef.current) { isPopStateRef.current = false; return }
     const folderActiveFile = folderFiles && activeFilePath ? activeFilePath : null
-    const state = { viewMode, workspaceMode, fileName: useStore.getState().fileName, activeFilePath: folderActiveFile }
-    const url = folderActiveFile
-      ? `#${viewMode}?f=${encodeURIComponent(folderActiveFile)}`
-      : `#${viewMode}`
+    const state = { viewMode, workspaceMode, fileName: useStore.getState().fileName, activeFilePath: folderActiveFile, activeTabId }
+    const params: string[] = []
+    if (!isIframe && activeTabId) params.push(`tab=${encodeURIComponent(activeTabId)}`)
+    if (folderActiveFile) params.push(`f=${encodeURIComponent(folderActiveFile)}`)
+    const url = params.length ? `#${viewMode}?${params.join('&')}` : `#${viewMode}`
     if (!window.history.state?.viewMode) {
       window.history.replaceState(state, '', url)
     } else if (
       window.history.state.viewMode !== viewMode
       || window.history.state.workspaceMode !== workspaceMode
       || window.history.state.activeFilePath !== folderActiveFile
+      || window.history.state.activeTabId !== activeTabId
     ) {
       window.history.pushState(state, '', url)
     }
-  }, [viewMode, workspaceMode, folderFiles, activeFilePath])
+  }, [viewMode, workspaceMode, folderFiles, activeFilePath, activeTabId, isIframe])
 
   // Listen for back/forward button
   useEffect(() => {
@@ -391,6 +395,12 @@ function AppContent() {
           && s.folderFiles
           && e.state.activeFilePath !== s.activeFilePath) {
         s.setActiveFile(e.state.activeFilePath)
+      }
+      // Restore active tab from history state.
+      if (e.state.activeTabId
+          && e.state.activeTabId !== s.activeTabId
+          && s.tabs.some((t) => t.id === e.state.activeTabId)) {
+        switchTab(e.state.activeTabId)
       }
     }
     window.addEventListener('popstate', handlePopState)
