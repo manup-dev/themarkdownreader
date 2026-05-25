@@ -1,5 +1,7 @@
+import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useStore } from '../store/useStore'
+import { db } from '../lib/docstore'
 
 describe('useStore — tabs basics', () => {
   beforeEach(() => {
@@ -233,5 +235,66 @@ describe('useStore — tabs persistence + legacy hydration', () => {
     const persisted = persistApi!.getOptions().partialize(useStore.getState())
     expect(persisted).toHaveProperty('tabs')
     expect(persisted).toHaveProperty('activeTabId')
+  })
+})
+
+describe('useStore — recents persistence on open', () => {
+  beforeEach(async () => {
+    // Drain any fire-and-forget persistPayload writes from prior describes
+    // that may still be inflight, then clear.
+    await new Promise((r) => setTimeout(r, 20))
+    await db.recents.clear()
+    await db.tabContent.clear()
+    useStore.setState({
+      tabs: [], activeTabId: null,
+      markdown: '', fileName: null,
+      folderHandle: null, folderFiles: null, folderFileContents: null, activeFilePath: null,
+      viewMode: 'read',
+    })
+  })
+
+  it('records a folder in recents when openSmart is called with a folder payload', async () => {
+    useStore.getState().openSmart({
+      kind: 'folder', folderName: 'My Notes', handle: null,
+      files: [{ path: 'a.md', name: 'a.md', content: '#' }],
+    })
+    // recents is written asynchronously; await microtask
+    await new Promise((r) => setTimeout(r, 10))
+    const all = await db.recents.toArray()
+    expect(all).toHaveLength(1)
+    expect(all[0].name).toBe('My Notes')
+    expect(all[0].kind).toBe('folder')
+  })
+
+  it('records a file in recents and persists its body to tabContent', async () => {
+    useStore.getState().openSmart({
+      kind: 'file', fileName: 'note.md', content: '# Hi',
+    })
+    await new Promise((r) => setTimeout(r, 10))
+    const recents = await db.recents.toArray()
+    expect(recents).toHaveLength(1)
+    expect(recents[0].name).toBe('note.md')
+    const contentKey = recents[0].contentKey!
+    expect(contentKey).toBeTruthy()
+    const body = await db.tabContent.get(contentKey)
+    expect(body?.body).toBe('# Hi')
+  })
+
+  it('touches an existing folder recent on re-open instead of duplicating', async () => {
+    useStore.getState().openSmart({
+      kind: 'folder', folderName: 'A', handle: null,
+      files: [{ path: 'a.md', name: 'a.md', content: '#' }],
+    })
+    await new Promise((r) => setTimeout(r, 10))
+    // Close it
+    useStore.getState().closeTab(useStore.getState().activeTabId!)
+    // Re-open
+    useStore.getState().openSmart({
+      kind: 'folder', folderName: 'A', handle: null,
+      files: [{ path: 'a.md', name: 'a.md', content: '#' }],
+    })
+    await new Promise((r) => setTimeout(r, 10))
+    const all = await db.recents.toArray()
+    expect(all).toHaveLength(1)
   })
 })

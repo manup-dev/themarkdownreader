@@ -5,8 +5,11 @@ import { resolveEnabledFeatures, enableFeature, disableFeature, isViewModeGated 
 import type { PodcastScript } from '../lib/podcast'
 import type { DiagramDSL } from '../lib/excalidraw-converter'
 import type { AnnotationEvent } from '../lib/annotation-events'
-import { emptyTab, type Tab, type TabPayload } from '../lib/tabs-types'
+import { emptyTab, newTabId, type Tab, type TabPayload } from '../lib/tabs-types'
 import { decideOpen } from '../lib/smart-open'
+import { addOrTouchRecent } from '../lib/recents'
+import { putTabContent } from '../lib/tabContent'
+import { putHandle } from '../lib/handleStore'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -173,26 +176,56 @@ function payloadToSingulars(payload: TabPayload): Partial<DocumentState> {
 function applyPayloadToTab(tab: Tab, payload: TabPayload): Tab {
   const now = Date.now()
   if (payload.kind === 'folder') {
+    const handleKey = payload.handle ? (tab.handleKey ?? newTabId()) : undefined
     return {
       ...tab,
       kind: 'folder',
       title: payload.folderName,
       folderName: payload.folderName,
+      handleKey,
       activeFilePath: payload.files[0]?.path ?? null,
       fileName: undefined,
       contentKey: undefined,
       lastAccessedAt: now,
     }
   }
+  const contentKey = tab.contentKey ?? newTabId()
   return {
     ...tab,
     kind: 'file',
     title: payload.fileName,
     fileName: payload.fileName,
+    contentKey,
     folderName: undefined,
     handleKey: undefined,
     activeFilePath: undefined,
     lastAccessedAt: now,
+  }
+}
+
+async function persistPayload(tab: Tab, payload: TabPayload): Promise<void> {
+  try {
+    if (payload.kind === 'folder') {
+      if (payload.handle && tab.handleKey) {
+        await putHandle(tab.handleKey, payload.handle)
+      }
+      await addOrTouchRecent({
+        kind: 'folder',
+        name: payload.folderName,
+        handleKey: tab.handleKey,
+      })
+    } else {
+      if (tab.contentKey) {
+        await putTabContent(tab.contentKey, payload.fileName, payload.content)
+        await addOrTouchRecent({
+          kind: 'file',
+          name: payload.fileName,
+          contentKey: tab.contentKey,
+        })
+      }
+    }
+  } catch (e) {
+    if (import.meta.env.DEV) console.warn('persistPayload failed', e)
   }
 }
 
@@ -564,6 +597,7 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       fileBodyCache.set(updated.id, payload.content)
       folderBodyCache.delete(updated.id)
     }
+    void persistPayload(updated, payload)
   },
 
   openInNewTab: (payload) => {
@@ -591,6 +625,7 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     } else {
       fileBodyCache.set(populated.id, payload.content)
     }
+    void persistPayload(populated, payload)
   },
 
   openSmart: (payload) => {

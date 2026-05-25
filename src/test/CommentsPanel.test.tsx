@@ -27,9 +27,14 @@ const sampleComment: Comment = {
   resolved: false,
 }
 
-const getCommentsMock = vi.fn<(docId: number) => Promise<Comment[]>>(async () => [sampleComment])
-const updateCommentMock = vi.fn()
-const removeCommentMock = vi.fn()
+// Hoisted so the vi.mock() factory below can reference them safely — the
+// factory runs before module-level `const` initializers (including when
+// useStore's transitive imports trigger the docstore mock chain).
+const { getCommentsMock, updateCommentMock, removeCommentMock } = vi.hoisted(() => ({
+  getCommentsMock: vi.fn<(docId: number) => Promise<Comment[]>>(async () => [sampleComment]),
+  updateCommentMock: vi.fn(),
+  removeCommentMock: vi.fn(),
+}))
 
 const mockAdapter = {
   getComments: (docId: number) => getCommentsMock(docId),
