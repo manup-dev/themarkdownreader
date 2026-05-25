@@ -115,7 +115,7 @@ function NewTabMenu() {
         <div
           ref={popoverRef}
           role="menu"
-          className="absolute right-0 top-full mt-1 z-20 min-w-[240px] max-w-[360px] bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-lg overflow-hidden"
+          className="absolute right-0 top-full mt-1 z-50 min-w-[240px] max-w-[360px] bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-lg shadow-lg overflow-hidden"
         >
           <button
             type="button"

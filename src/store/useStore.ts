@@ -8,7 +8,7 @@ import type { AnnotationEvent } from '../lib/annotation-events'
 import { emptyTab, newTabId, type Tab, type TabPayload } from '../lib/tabs-types'
 import { decideOpen } from '../lib/smart-open'
 import { addOrTouchRecent } from '../lib/recents'
-import { putTabContent } from '../lib/tabContent'
+import { putTabContent, getTabContent } from '../lib/tabContent'
 import { putHandle } from '../lib/handleStore'
 
 export interface ChatMessage {
@@ -557,7 +557,25 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
 
   newEmptyTab: () => {
     const t = emptyTab()
-    set((s) => ({ tabs: [...s.tabs, t], activeTabId: t.id }))
+    const { tabs, activeTabId } = get()
+    // Snapshot the leaving tab so its body survives the switch — otherwise
+    // legacy-synthesized tabs (whose caches were never primed) lose their
+    // markdown when the user opens a new empty tab and then switches back.
+    const updatedExisting = tabs.map((existing) =>
+      existing.id === activeTabId ? snapshotIntoTab(existing, get()) : existing,
+    )
+    set({
+      tabs: [...updatedExisting, t],
+      activeTabId: t.id,
+      markdown: '',
+      fileName: null,
+      activeFilePath: null,
+      folderFiles: null,
+      folderFileContents: null,
+      folderHandle: null,
+      viewMode: 'read',
+      readingProgress: 0,
+    })
     return t.id
   },
   closeTab: (id) => {
@@ -585,7 +603,18 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     // If we're activating a different tab, hydrate its singulars
     if (newActive && newActive !== activeTabId) {
       const target = next.find((t) => t.id === newActive)
-      if (target) set(hydrateFromTab(target))
+      if (target) {
+        set(hydrateFromTab(target))
+        // Same cross-reload fallback as switchTab.
+        if (target.kind === 'file' && target.contentKey && !fileBodyCache.has(target.id)) {
+          void getTabContent(target.contentKey).then((row) => {
+            if (row && get().activeTabId === target.id) {
+              fileBodyCache.set(target.id, row.body)
+              set({ markdown: row.body })
+            }
+          })
+        }
+      }
     }
   },
   switchTab: (id) => {
@@ -604,6 +633,16 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       activeTabId: id,
       ...hydrateFromTab(target),
     })
+    // 3. File-kind cross-reload restoration: in-memory fileBodyCache is empty
+    // after a hard reload. Fall back to the persisted tabContent row.
+    if (target.kind === 'file' && target.contentKey && !fileBodyCache.has(id)) {
+      void getTabContent(target.contentKey).then((row) => {
+        if (row && get().activeTabId === id) {
+          fileBodyCache.set(id, row.body)
+          set({ markdown: row.body })
+        }
+      })
+    }
   },
 
   openInCurrentTab: (payload) => {
