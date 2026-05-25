@@ -18,6 +18,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { OnboardingOverlay } from './components/OnboardingOverlay'
 import { TelemetryBanner } from './components/TelemetryBanner'
 import { Sidebar } from './components/Sidebar'
+import { TabBar } from './components/TabBar'
 import { FEATURE_FLAGS, resolveEnabledFeatures, enableFeature as enableFeatureFlag, disableFeature as disableFeatureFlag, resetFeatures } from './lib/feature-flags'
 import { MdReaderProvider } from './provider'
 import { DexieAdapter } from './adapters/dexie-adapter'
@@ -537,6 +538,7 @@ function AppContent() {
 
   const themeClasses: Record<string, string> = { light: 'bg-gray-50', dark: 'bg-gray-950', sepia: 'bg-sepia-100', 'high-contrast': 'bg-black' }
   // Library-level modes render full-width without the unified sidebar.
+  const isIframe = typeof window !== 'undefined' && window.parent !== window
   const isLibraryView = viewMode === 'workspace' || viewMode === 'cross-doc-graph' || viewMode === 'correlation' || viewMode === 'similarity-map'
   // Modes that participate in the unified shell (Sidebar + main pane).
   const isUnifiedShellView = !isLibraryView
@@ -561,6 +563,7 @@ function AppContent() {
 
       {/* Main content */}
       <div id="main-content" className="flex-1 flex flex-col min-w-0" role="main">
+        {!isIframe && <TabBar />}
         <Toolbar />
         <Suspense fallback={null}>
           <RemoteBanner />
