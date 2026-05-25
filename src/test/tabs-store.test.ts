@@ -215,3 +215,23 @@ describe('useStore — legacy actions route through tabs', () => {
     expect(useStore.getState().tabs).toHaveLength(0)
   })
 })
+
+describe('useStore — tabs persistence + legacy hydration', () => {
+  beforeEach(() => {
+    useStore.setState({
+      tabs: [], activeTabId: null,
+      markdown: '', fileName: null,
+      folderHandle: null, folderFiles: null, folderFileContents: null, activeFilePath: null,
+      viewMode: 'read',
+    })
+  })
+
+  it('partialize includes tabs and activeTabId', () => {
+    // Inspect the persist middleware's options via Zustand's persist API
+    const persistApi = (useStore as unknown as { persist?: { getOptions: () => { partialize: (s: unknown) => Record<string, unknown> } } }).persist
+    expect(persistApi).toBeDefined()
+    const persisted = persistApi!.getOptions().partialize(useStore.getState())
+    expect(persisted).toHaveProperty('tabs')
+    expect(persisted).toHaveProperty('activeTabId')
+  })
+})

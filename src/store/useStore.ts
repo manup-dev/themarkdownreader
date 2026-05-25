@@ -884,6 +884,19 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       merged.readingProgress = 0
       merged.activeSection = null
     }
+    // Legacy hydration: if persisted state has no tabs array but does have
+    // a document loaded, synthesize a single file tab so the UI always has
+    // at least one tab to render after upgrading from a pre-tabs version.
+    const mergedAny = merged as unknown as DocumentState
+    if ((!mergedAny.tabs || mergedAny.tabs.length === 0) && mergedAny.markdown && mergedAny.fileName) {
+      const synth = emptyTab()
+      synth.kind = 'file'
+      synth.title = mergedAny.fileName
+      synth.fileName = mergedAny.fileName
+      synth.viewMode = mergedAny.viewMode ?? 'read'
+      mergedAny.tabs = [synth]
+      mergedAny.activeTabId = synth.id
+    }
     // If persisted viewMode is behind a disabled feature flag, reset to 'read'
     if (merged.viewMode) {
       const gatedFlag = isViewModeGated(merged.viewMode as ViewMode)
@@ -903,6 +916,8 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     workspaceMode: state.workspaceMode,
     activeDocId: state.activeDocId,
     chatMessages: state.chatMessages, // persist conversation across reloads within the same doc
+    tabs: state.tabs,
+    activeTabId: state.activeTabId,
   }) as unknown as DocumentState, // Safe: persist only serializes these fields; missing fields use defaults on rehydration
 }), { name: 'md-reader', enabled: import.meta.env.DEV }))
 
