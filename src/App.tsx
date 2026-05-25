@@ -72,6 +72,7 @@ function AppContent() {
   const markdown = useStore((s) => s.markdown)
   const fileName = useStore((s) => s.fileName)
   const theme = useStore((s) => s.theme)
+  const isIframe = typeof window !== 'undefined' && window.parent !== window
   const viewMode = useStore((s) => s.viewMode)
   const workspaceMode = useStore((s) => s.workspaceMode)
   const folderFiles = useStore((s) => s.folderFiles)
@@ -550,7 +551,6 @@ function AppContent() {
 
   const themeClasses: Record<string, string> = { light: 'bg-gray-50', dark: 'bg-gray-950', sepia: 'bg-sepia-100', 'high-contrast': 'bg-black' }
   // Library-level modes render full-width without the unified sidebar.
-  const isIframe = typeof window !== 'undefined' && window.parent !== window
   const isLibraryView = viewMode === 'workspace' || viewMode === 'cross-doc-graph' || viewMode === 'correlation' || viewMode === 'similarity-map'
   // Modes that participate in the unified shell (Sidebar + main pane).
   const isUnifiedShellView = !isLibraryView
