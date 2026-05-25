@@ -6,6 +6,7 @@ import type { PodcastScript } from '../lib/podcast'
 import type { DiagramDSL } from '../lib/excalidraw-converter'
 import type { AnnotationEvent } from '../lib/annotation-events'
 import { emptyTab, type Tab, type TabPayload } from '../lib/tabs-types'
+import { decideOpen } from '../lib/smart-open'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -60,6 +61,139 @@ const idbStorage: StateStorage = {
       await new Promise<void>((resolve) => { tx.oncomplete = () => resolve() })
     } catch { /* swallow */ }
   },
+}
+
+// In-session caches bridging tab snapshots to folder/file bodies that don't
+// belong on the Tab record itself. Persistence across reload is wired by a
+// later task (tabContent table). These maps live at module scope so they're
+// shared by all snapshot/hydrate calls in a single session.
+const folderBodyCache = new Map<string, {
+  folderFiles: DocumentState['folderFiles']
+  folderFileContents: DocumentState['folderFileContents']
+}>()
+const fileBodyCache = new Map<string, string>()
+
+// Tab snapshot / hydrate helpers — pure functions over the state shape,
+// plus the module-scope body caches above (which act as an in-session bridge
+// for per-tab folder/file content that doesn't live on the Tab record).
+function snapshotIntoTab(tab: Tab, state: DocumentState): Tab {
+  const now = Date.now()
+  if (tab.kind === 'folder') {
+    folderBodyCache.set(tab.id, {
+      folderFiles: state.folderFiles,
+      folderFileContents: state.folderFileContents,
+    })
+    return {
+      ...tab,
+      activeFilePath: state.activeFilePath ?? tab.activeFilePath ?? null,
+      viewMode: state.viewMode,
+      scrollProgress: state.readingProgress,
+      lastAccessedAt: now,
+    }
+  }
+  if (tab.kind === 'file') {
+    fileBodyCache.set(tab.id, state.markdown)
+    return {
+      ...tab,
+      viewMode: state.viewMode,
+      scrollProgress: state.readingProgress,
+      lastAccessedAt: now,
+    }
+  }
+  return { ...tab, lastAccessedAt: now }
+}
+
+function hydrateFromTab(tab: Tab): Partial<DocumentState> {
+  if (tab.kind === 'folder') {
+    const cached = folderBodyCache.get(tab.id)
+    const contents = cached?.folderFileContents ?? null
+    const body = (tab.activeFilePath && contents?.get(tab.activeFilePath)) || ''
+    return {
+      folderFiles: cached?.folderFiles ?? null,
+      folderFileContents: contents,
+      // handle is per-session, won't survive switch — task 11 wires re-permission
+      folderHandle: null,
+      activeFilePath: tab.activeFilePath ?? null,
+      viewMode: tab.viewMode,
+      readingProgress: tab.scrollProgress,
+      markdown: body,
+      fileName: tab.activeFilePath
+        ? (tab.activeFilePath.split('/').pop() ?? null)
+        : null,
+    }
+  }
+  if (tab.kind === 'file') {
+    const body = fileBodyCache.get(tab.id) ?? ''
+    return {
+      viewMode: tab.viewMode,
+      readingProgress: tab.scrollProgress,
+      fileName: tab.fileName ?? null,
+      activeFilePath: null,
+      folderFiles: null,
+      folderFileContents: null,
+      folderHandle: null,
+      markdown: body,
+    }
+  }
+  // empty
+  return {
+    markdown: '', fileName: null, activeFilePath: null,
+    folderFiles: null, folderFileContents: null, folderHandle: null,
+    viewMode: 'read', readingProgress: 0,
+  }
+}
+
+function payloadToSingulars(payload: TabPayload): Partial<DocumentState> {
+  if (payload.kind === 'folder') {
+    const ordered = payload.files.map((f) => ({
+      path: f.path, name: f.name, lastModified: f.lastModified ?? 0,
+    }))
+    const contents = new Map<string, string>()
+    payload.files.forEach((f) => contents.set(f.path, f.content))
+    const first = payload.files[0]
+    return {
+      folderHandle: payload.handle,
+      folderFiles: ordered,
+      folderFileContents: contents,
+      activeFilePath: first?.path ?? null,
+      markdown: first?.content ?? '',
+      fileName: first?.name ?? null,
+    }
+  }
+  return {
+    markdown: payload.content,
+    fileName: payload.fileName,
+    folderHandle: null,
+    folderFiles: null,
+    folderFileContents: null,
+    activeFilePath: null,
+  }
+}
+
+function applyPayloadToTab(tab: Tab, payload: TabPayload): Tab {
+  const now = Date.now()
+  if (payload.kind === 'folder') {
+    return {
+      ...tab,
+      kind: 'folder',
+      title: payload.folderName,
+      folderName: payload.folderName,
+      activeFilePath: payload.files[0]?.path ?? null,
+      fileName: undefined,
+      contentKey: undefined,
+      lastAccessedAt: now,
+    }
+  }
+  return {
+    ...tab,
+    kind: 'file',
+    title: payload.fileName,
+    fileName: payload.fileName,
+    folderName: undefined,
+    handleKey: undefined,
+    activeFilePath: undefined,
+    lastAccessedAt: now,
+  }
 }
 
 export type Theme = 'light' | 'dark' | 'sepia' | 'high-contrast'
@@ -157,6 +291,7 @@ export interface DocumentState {
   switchTab: (id: string) => void
   openInCurrentTab: (payload: TabPayload) => void
   openInNewTab: (payload: TabPayload) => void
+  openSmart: (payload: TabPayload) => void
 
   // Remote-share state — set when the app loads a #url=… share. Drives
   // the RemoteBanner and the Fork action. Null when the open document
@@ -373,6 +508,8 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       const neighbor = next[idx] ?? next[idx - 1] ?? null
       newActive = neighbor?.id ?? null
     }
+    folderBodyCache.delete(id)
+    fileBodyCache.delete(id)
     if (next.length === 0) {
       const fresh = emptyTab()
       set({ tabs: [fresh], activeTabId: fresh.id })
@@ -380,9 +517,88 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     }
     set({ tabs: next, activeTabId: newActive })
   },
-  switchTab: (_id) => { /* implemented in Task 8 */ },
-  openInCurrentTab: (_p) => { /* implemented in Task 8 */ },
-  openInNewTab: (_p) => { /* implemented in Task 8 */ },
+  switchTab: (id) => {
+    const { tabs, activeTabId } = get()
+    if (id === activeTabId) return
+    const target = tabs.find((t) => t.id === id)
+    if (!target) return
+    // 1. Snapshot current singulars into the leaving tab
+    const updatedTabs = tabs.map((t) => {
+      if (t.id !== activeTabId) return t
+      return snapshotIntoTab(t, get())
+    })
+    // 2. Hydrate the target's snapshot into singulars
+    set({
+      tabs: updatedTabs.map((t) => t.id === id ? { ...t, lastAccessedAt: Date.now() } : t),
+      activeTabId: id,
+      ...hydrateFromTab(target),
+    })
+  },
+
+  openInCurrentTab: (payload) => {
+    const { tabs, activeTabId } = get()
+    const idx = tabs.findIndex((t) => t.id === activeTabId)
+    if (idx < 0) { get().openInNewTab(payload); return }
+    const updated = applyPayloadToTab(tabs[idx], payload)
+    const nextTabs = tabs.slice()
+    nextTabs[idx] = updated
+    const extras = payloadToSingulars(payload)
+    set({ tabs: nextTabs, ...extras })
+    // Sync the in-session body caches so a subsequent switch-away/back round-trip
+    // can hydrate without losing content.
+    if (payload.kind === 'folder') {
+      folderBodyCache.set(updated.id, {
+        folderFiles: extras.folderFiles ?? null,
+        folderFileContents: extras.folderFileContents ?? null,
+      })
+      fileBodyCache.delete(updated.id)
+    } else {
+      fileBodyCache.set(updated.id, payload.content)
+      folderBodyCache.delete(updated.id)
+    }
+  },
+
+  openInNewTab: (payload) => {
+    const { tabs, activeTabId } = get()
+    const fresh = emptyTab()
+    const populated = applyPayloadToTab(fresh, payload)
+    // Snapshot current active tab before switching
+    const updatedExisting = tabs.map((t) => t.id === activeTabId
+      ? snapshotIntoTab(t, get())
+      : t,
+    )
+    const extras = payloadToSingulars(payload)
+    set({
+      tabs: [...updatedExisting, populated],
+      activeTabId: populated.id,
+      ...extras,
+    })
+    // Prime the in-session body caches for the new tab so a later
+    // snapshot/hydrate round-trip recovers what the user is seeing now.
+    if (payload.kind === 'folder') {
+      folderBodyCache.set(populated.id, {
+        folderFiles: extras.folderFiles ?? null,
+        folderFileContents: extras.folderFileContents ?? null,
+      })
+    } else {
+      fileBodyCache.set(populated.id, payload.content)
+    }
+  },
+
+  openSmart: (payload) => {
+    const { tabs, activeTabId } = get()
+    const decision = decideOpen(tabs, activeTabId, payload)
+    if (decision.action === 'focus') {
+      get().switchTab(decision.tabId)
+      return
+    }
+    if (decision.action === 'fill') {
+      if (decision.tabId !== activeTabId) get().switchTab(decision.tabId)
+      get().openInCurrentTab(payload)
+      return
+    }
+    get().openInNewTab(payload)
+  },
 
   setActiveFile: (path) => {
     if (path === null) {
