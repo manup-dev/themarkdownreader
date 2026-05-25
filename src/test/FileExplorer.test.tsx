@@ -24,6 +24,8 @@ describe('<FileExplorer>', () => {
       markdown: '',
       fileName: null,
       toc: [],
+      tabs: [],
+      activeTabId: null,
     })
   })
 

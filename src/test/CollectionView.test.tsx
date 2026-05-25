@@ -21,6 +21,8 @@ describe('<CollectionView>', () => {
       markdown: '',
       fileName: null,
       viewMode: 'collection',
+      tabs: [],
+      activeTabId: null,
     })
   })
 

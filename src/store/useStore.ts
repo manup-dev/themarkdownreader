@@ -361,13 +361,20 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   enabledFeatures: resolveEnabledFeatures(),
 
   setMarkdown: (md, fileName) => {
-    // Only count genuinely new document opens, not re-opens of the same content
+    // Telemetry (unchanged)
     const prev = useStore.getState().markdown
     const isNewDoc = md && md.length > 0 && prev !== md
     if (isNewDoc) {
       const count = parseInt(localStorage.getItem('md-reader-docs-read') ?? '0')
       localStorage.setItem('md-reader-docs-read', String(count + 1))
       trackEvent('doc_opened')
+    }
+    // Tab routing: only when this looks like a "real document open" — both
+    // body and fileName provided. Transient updates (empty md, fileName-less
+    // pushes from chat/preview) bypass the tab system.
+    if (md && md.length > 0 && fileName) {
+      get().openSmart({ kind: 'file', fileName, content: md })
+      return
     }
     set({
       markdown: md,
@@ -454,42 +461,43 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     || 'name-asc',
 
   setFolderSession: (handle, files) => {
-    const ordered = files.map(f => ({ path: f.path, name: f.name, lastModified: f.lastModified ?? 0 }))
-    const contents = new Map<string, string>()
-    files.forEach(f => contents.set(f.path, f.content))
-
-    // Try to restore the last-active file for this folder (scoped by folder name).
-    // Fall back to README.md (case-insensitive) else first file.
-    const folderKey = handle?.name ?? '__cache__'
+    const folderName = handle?.name ?? '__cache__'
+    // Determine chosen file using the same logic as before:
+    // persisted active-file, then README, then first.
     const persisted = typeof localStorage !== 'undefined'
-      ? localStorage.getItem(`md-reader-active-file:${folderKey}`)
+      ? localStorage.getItem(`md-reader-active-file:${folderName}`)
       : null
-    let chosenFile = persisted ? files.find(f => f.path === persisted) : undefined
+    let chosenFile = persisted ? files.find((f) => f.path === persisted) : undefined
     if (!chosenFile) {
-      chosenFile = files.find(f => /^readme\.md$/i.test(f.name)) ?? files[0]
+      chosenFile = files.find((f) => /^readme\.md$/i.test(f.name)) ?? files[0]
     }
-
-    set({
-      folderHandle: handle,
-      folderFiles: ordered,
-      folderFileContents: contents,
-      activeFilePath: chosenFile?.path ?? null,
-      markdown: chosenFile?.content ?? '',
-      fileName: chosenFile?.name ?? null,
-    })
-    // Mark the auto-selected file as viewed, mirroring setActiveFile's
-    // tracking. Without this, the collection-complete banner under-counts
-    // the initially-displayed file.
-    if (chosenFile && typeof localStorage !== 'undefined') {
-      try {
-        const viewedKey = `md-reader-viewed-files:${folderKey}`
-        let viewed: Record<string, boolean> = {}
-        try { viewed = JSON.parse(localStorage.getItem(viewedKey) ?? '{}') } catch { /* ignore */ }
-        if (!viewed[chosenFile.path]) {
-          viewed[chosenFile.path] = true
-          localStorage.setItem(viewedKey, JSON.stringify(viewed))
-        }
-      } catch { /* quota exceeded — non-fatal */ }
+    // Route through smart-open — this handles tab creation/focus/fill.
+    get().openSmart({ kind: 'folder', folderName, handle, files })
+    // After openSmart, override activeFilePath to the chosen file (openSmart
+    // defaults to files[0]).
+    if (chosenFile) {
+      const { tabs: curTabs, activeTabId } = get()
+      set({
+        activeFilePath: chosenFile.path,
+        markdown: chosenFile.content,
+        fileName: chosenFile.name,
+        tabs: curTabs.map((t) => t.id === activeTabId
+          ? { ...t, activeFilePath: chosenFile!.path }
+          : t,
+        ),
+      })
+      // Mark chosen as viewed (mirror prior behavior)
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const viewedKey = `md-reader-viewed-files:${folderName}`
+          let viewed: Record<string, boolean> = {}
+          try { viewed = JSON.parse(localStorage.getItem(viewedKey) ?? '{}') } catch { /* ignore */ }
+          if (!viewed[chosenFile.path]) {
+            viewed[chosenFile.path] = true
+            localStorage.setItem(viewedKey, JSON.stringify(viewed))
+          }
+        } catch { /* quota — non-fatal */ }
+      }
     }
   },
 
@@ -589,7 +597,12 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     const { tabs, activeTabId } = get()
     const decision = decideOpen(tabs, activeTabId, payload)
     if (decision.action === 'focus') {
-      get().switchTab(decision.tabId)
+      if (decision.tabId !== activeTabId) {
+        get().switchTab(decision.tabId)
+      } else {
+        // Already on the matching tab — refresh its content in place.
+        get().openInCurrentTab(payload)
+      }
       return
     }
     if (decision.action === 'fill') {

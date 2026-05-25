@@ -22,6 +22,8 @@ describe('hydrateFolderFromCache', () => {
       activeFilePath: null,
       markdown: '',
       fileName: null,
+      tabs: [],
+      activeTabId: null,
     })
     vi.clearAllMocks()
     // Clear any viewedFiles state

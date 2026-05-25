@@ -22,6 +22,8 @@ describe('<Sidebar>', () => {
       markdown: '# Test',
       fileName: 'test.md',
       toc: [{ id: 'test', text: 'Test', level: 1 }],
+      tabs: [],
+      activeTabId: null,
     })
   })
 

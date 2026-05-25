@@ -47,6 +47,8 @@ describe('<Toolbar> — back-to-upload navigation', () => {
       activeDocId: null,
       viewMode: 'read',
       readingProgress: 0,
+      tabs: [],
+      activeTabId: null,
     })
     // jsdom doesn't drive location.hash on assignment cleanups; reset explicitly
     window.location.hash = ''

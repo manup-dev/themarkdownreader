@@ -19,6 +19,8 @@ describe('useStore — unified view state', () => {
       markdown: '',
       fileName: null,
       viewMode: 'read',
+      tabs: [],
+      activeTabId: null,
     })
     // Clear persisted active-file + viewed-files keys so tests don't leak state across each other
     if (typeof localStorage !== 'undefined') {

@@ -180,3 +180,38 @@ describe('useStore — smart open routing', () => {
     expect(useStore.getState().fileName).toBe('b.md')
   })
 })
+
+describe('useStore — legacy actions route through tabs', () => {
+  beforeEach(() => {
+    useStore.setState({
+      tabs: [], activeTabId: null,
+      markdown: '', fileName: null,
+      folderHandle: null, folderFiles: null, folderFileContents: null, activeFilePath: null,
+      viewMode: 'read',
+    })
+  })
+
+  it('setFolderSession creates a folder tab', () => {
+    useStore.getState().setFolderSession(null, [
+      { path: 'a.md', name: 'a.md', content: '# A' },
+    ])
+    const s = useStore.getState()
+    expect(s.tabs).toHaveLength(1)
+    expect(s.tabs[0].kind).toBe('folder')
+    expect(s.markdown).toBe('# A')
+  })
+
+  it('setMarkdown creates a file tab', () => {
+    useStore.getState().setMarkdown('# Hi', 'hi.md')
+    const s = useStore.getState()
+    expect(s.tabs).toHaveLength(1)
+    expect(s.tabs[0].kind).toBe('file')
+    expect(s.tabs[0].fileName).toBe('hi.md')
+  })
+
+  it('setMarkdown without a fileName does not create a tab (chat/preview use)', () => {
+    // Some call sites pass empty markdown or transient updates — those should not spawn tabs.
+    useStore.getState().setMarkdown('', undefined)
+    expect(useStore.getState().tabs).toHaveLength(0)
+  })
+})
