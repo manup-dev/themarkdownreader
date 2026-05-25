@@ -1,7 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import 'fake-indexeddb/auto'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { TabBar } from '../components/TabBar'
 import { useStore } from '../store/useStore'
+import { db } from '../lib/docstore'
+import { addOrTouchRecent } from '../lib/recents'
 
 describe('TabBar', () => {
   beforeEach(() => {
@@ -56,5 +59,39 @@ describe('TabBar', () => {
     // Closing the only tab synthesizes a fresh empty tab
     expect(useStore.getState().tabs).toHaveLength(1)
     expect(useStore.getState().tabs[0].kind).toBe('empty')
+  })
+})
+
+describe('TabBar — + dropdown', () => {
+  beforeEach(async () => {
+    await new Promise((r) => setTimeout(r, 20))  // drain any in-flight writes
+    await db.recents.clear()
+    await db.tabContent.clear()
+    useStore.setState({
+      tabs: [], activeTabId: null,
+      markdown: '', fileName: null,
+      folderHandle: null, folderFiles: null, folderFileContents: null, activeFilePath: null,
+      viewMode: 'read',
+    })
+    useStore.getState().newEmptyTab()
+  })
+
+  afterEach(async () => {
+    await new Promise((r) => setTimeout(r, 20))  // drain any in-flight writes
+    await db.recents.clear()
+    await db.tabContent.clear()
+  })
+
+  it('renders a + button when at least one tab exists', () => {
+    render(<TabBar />)
+    expect(screen.getByRole('button', { name: /new tab|open/i })).toBeInTheDocument()
+  })
+
+  it('opening the dropdown shows recents', async () => {
+    await addOrTouchRecent({ kind: 'file', name: 'r.md', contentKey: 'k1' })
+    await db.tabContent.put({ id: 'k1', name: 'r.md', body: '#', savedAt: 1 })
+    render(<TabBar />)
+    fireEvent.click(screen.getByRole('button', { name: /new tab|open/i }))
+    await screen.findByText('r.md')
   })
 })

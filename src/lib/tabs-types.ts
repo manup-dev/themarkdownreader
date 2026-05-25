@@ -41,7 +41,7 @@ export function emptyTab(): Tab {
   return {
     id: newTabId(),
     kind: 'empty',
-    title: 'New tab',
+    title: 'Untitled',
     viewMode: 'read',
     scrollProgress: 0,
     createdAt: now,
