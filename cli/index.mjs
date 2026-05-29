@@ -28,11 +28,11 @@ if (flags.help) {
   console.log(`
   md-reader v${VERSION} — AI-native markdown reader
 
-  Usage:
-    md-reader [file.md]           Open a markdown file
-    md-reader --port 8080         Use a custom port
-    cat README.md | md-reader     Pipe markdown via stdin
-    md-reader                     Open empty (drag & drop)
+  Usage (mdr is a short alias for md-reader):
+    mdr [file.md]                 Open a markdown file
+    mdr --port 8080               Use a custom port
+    claude -p "..." | mdr         Pipe an agent's markdown via stdin
+    mdr                           Open empty (drag & drop)
 
   Options:
     -p, --port <n>   Port to serve on (default: 4173)

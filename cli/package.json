@@ -14,7 +14,8 @@
     "knowledge-graph", "tts", "cli", "webllm"
   ],
   "bin": {
-    "md-reader": "./index.mjs"
+    "md-reader": "./index.mjs",
+    "mdr": "./index.mjs"
   },
   "files": [
     "index.mjs",
