@@ -5,6 +5,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
+import os from 'node:os'
+import crypto from 'node:crypto'
 import { decideOpen } from './decide.mjs'
 
 const BASE_URL = process.env.MD_READER_URL || 'http://localhost:5183'
@@ -37,6 +39,14 @@ async function isReachable(url) {
   } catch { return false }
 }
 
+// Dedup state lives in the OS temp dir, keyed by project path — never in the
+// repo (avoids colliding with the reserved .md-reader-trigger.json) and needs
+// no .gitignore entry. Best-effort: if temp is cleared, a doc may reopen once.
+function stateFileFor(cwd) {
+  const key = crypto.createHash('sha256').update(cwd).digest('hex').slice(0, 16)
+  return path.join(os.tmpdir(), `md-reader-hook-${key}.json`)
+}
+
 async function main() {
   let event
   try {
@@ -49,7 +59,7 @@ async function main() {
     }
   } catch { process.exit(0) } // malformed input → no-op
 
-  const statePath = path.join(event.cwd, '.md-reader-trigger.json')
+  const statePath = stateFileFor(event.cwd)
   let state = { opened: {} }
   try { state = JSON.parse(fs.readFileSync(statePath, 'utf8')) } catch { /* fresh */ }
   if (!state.opened) state.opened = {}
