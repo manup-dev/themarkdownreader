@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import fs from 'fs'
 import path from 'path'
 import { z } from 'zod'
+import { buildReaderUrl } from './url'
 
 const PROJECT_ROOT = process.cwd()
 const MD_READER_URL = process.env.MD_READER_URL || 'http://localhost:5183'
@@ -60,13 +61,7 @@ async function openView(absPath: string, view: string, extra?: Record<string, st
   // Browser fallback: health check + open in default browser
   await checkHealth()
 
-  const browserParams = new URLSearchParams({
-    file: relativePath,
-    view,
-    ...extra,
-  })
-
-  const url = `${MD_READER_URL}/#${browserParams.toString()}`
+  const url = buildReaderUrl(MD_READER_URL, relativePath, view, extra)
 
   const { default: open } = await import('open')
   await open(url)
@@ -188,11 +183,10 @@ server.tool(
   async ({ path: inputPath, section, type }) => {
     const absPath = validateMdPath(inputPath)
     await checkHealth()
-    const extra = [
-      section ? `section=${encodeURIComponent(section)}` : '',
-      type ? `diagramType=${type}` : '',
-    ].filter(Boolean).join('&')
-    openView(absPath, 'diagram', extra || undefined)
+    const extra: Record<string, string> = {}
+    if (section) extra.section = section
+    if (type) extra.diagramType = type
+    openView(absPath, 'diagram', Object.keys(extra).length ? extra : undefined)
     return {
       content: [
         {
