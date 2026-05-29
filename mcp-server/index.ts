@@ -293,6 +293,19 @@ server.tool(
   }
 )
 
+// ─── Tool 10: open_in_reader ────────────────────────────────────────────────
+
+server.tool(
+  'open_in_reader',
+  "Open a markdown file in md-reader's clean reading view. Use this to surface a plan, spec, research note, README, or any markdown you just wrote so the user can read and act on it without leaving their flow. For specialized views use show_mind_map / show_treemap / show_coach / read_aloud instead.",
+  { path: z.string().describe('Relative path to a .md file, e.g. "docs/plan.md"') },
+  async ({ path: inputPath }) => {
+    const absPath = validateMdPath(inputPath)
+    const url = await openView(absPath, 'read')
+    return { content: [{ type: 'text', text: `Opened ${inputPath} in the reader\n${url}` }] }
+  }
+)
+
 // ─── Helpers (share-specific) ──────────────────────────────────────────────
 
 async function sha256Hex(text: string): Promise<string> {
