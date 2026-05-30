@@ -51,8 +51,10 @@ test.describe('Hosted demo smoke tests', () => {
   test('table of contents shows section links', async ({ page }) => {
     await page.goto(HOSTED_URL, { waitUntil: 'networkidle' })
 
+    // The document outline (TOC) renders section links as <button>s inside
+    // <nav aria-label="Document outline">, not <a> anchors.
     const tocLink = page
-      .locator('nav a, aside a, [aria-label*="contents" i] a')
+      .locator('nav[aria-label="Document outline" i] button, aside button')
       .first()
     await expect(tocLink).toBeVisible({ timeout: 5_000 })
   })

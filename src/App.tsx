@@ -581,7 +581,7 @@ function AppContent() {
         <Suspense fallback={null}>
           <RemoteBanner />
         </Suspense>
-        <div className="flex-1 flex min-h-0">
+        <div className="flex-1 flex min-h-0 min-w-0">
           {/* Sidebar toggle — visible in any unified-shell view so users
               can re-open the sidebar regardless of which reading tab they
               were on when they toggled focus mode. Previously gated on
@@ -599,7 +599,7 @@ function AppContent() {
           )}
 
           {/* Views — fade transition on switch, ErrorBoundary + Suspense for lazy loads */}
-          <div key={viewMode} className={`flex-1 flex min-h-0 ${viewDirection === 'right' ? 'animate-slide-in-right' : viewDirection === 'left' ? 'animate-slide-in-left' : 'animate-scale-in'}`}>
+          <div key={viewMode} className={`flex-1 flex min-h-0 min-w-0 ${viewDirection === 'right' ? 'animate-slide-in-right' : viewDirection === 'left' ? 'animate-slide-in-left' : 'animate-scale-in'}`}>
             <Suspense fallback={<LazyFallback />}>
               {/* Library + cross-doc modes render full-width, no unified sidebar */}
               {viewMode === 'workspace' && <ErrorBoundary name="Workspace"><Workspace /></ErrorBoundary>}

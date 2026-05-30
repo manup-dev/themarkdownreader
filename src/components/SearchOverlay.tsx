@@ -149,7 +149,7 @@ export function SearchOverlay() {
     : []
 
   return (
-    <div className="fixed top-14 right-4 z-40 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 rounded-xl shadow-xl w-80 animate-scale-in">
+    <div role="dialog" aria-modal="true" aria-label="Search document" className="fixed top-14 right-4 z-40 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 rounded-xl shadow-xl w-80 animate-scale-in">
       <div className="p-2 flex items-center gap-2">
         <Search className="h-4 w-4 text-gray-400 shrink-0" />
         <input
