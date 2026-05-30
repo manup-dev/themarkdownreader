@@ -1,10 +1,11 @@
 import { lazy, Suspense, useEffect, useRef, useCallback, useState, useMemo } from 'react'
 import { ArrowUp } from 'lucide-react'
-import Markdown, { defaultUrlTransform } from 'react-markdown'
+import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import { remarkBoxTables } from '../lib/remark-box-tables'
 import { remarkCitations } from '../lib/remark-cite'
+import { markdownUrlTransform } from '../lib/markdown-url-transform'
 import { useStore } from '../store/useStore'
 import { resolveImageBlobUrl } from '../lib/fs-access'
 import ScrollMinimap from './ScrollMinimap'
@@ -108,13 +109,6 @@ function CodeBlockRenderer({ children, className, ...props }: React.HTMLAttribut
   )
 }
 
-// react-markdown's defaultUrlTransform drops anything whose protocol isn't
-// http(s)/mailto/etc., which strips inline `data:image/...` (and `blob:`) image
-// sources to empty. Allow those through; everything else keeps default sanitizing.
-function imageUrlTransform(url: string): string {
-  if (/^data:image\//i.test(url) || /^blob:/i.test(url)) return url
-  return defaultUrlTransform(url)
-}
 
 // Delight #21: Image lazy loading + zoom cursor (lightbox handled by useEffect click handler)
 // Also resolves folder-relative image paths (e.g. `./img/x.png`) against the picked
@@ -460,7 +454,7 @@ export function Reader() {
       remarkPlugins={remarkPluginsMemo}
       rehypePlugins={rehypePlugins}
       components={markdownComponents}
-      urlTransform={imageUrlTransform}
+      urlTransform={markdownUrlTransform}
     >
       {markdown}
     </Markdown>
