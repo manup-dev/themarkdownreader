@@ -1,9 +1,11 @@
 import { lazy, Suspense, useEffect, useRef, useCallback, useState, useMemo } from 'react'
 import { ArrowUp } from 'lucide-react'
-import Markdown from 'react-markdown'
+import Markdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
+import { remarkBoxTables } from '../lib/remark-box-tables'
 import { useStore } from '../store/useStore'
+import { resolveImageBlobUrl } from '../lib/fs-access'
 import ScrollMinimap from './ScrollMinimap'
 
 const MermaidBlock = lazy(() => import('./MermaidBlock').then((m) => ({ default: m.MermaidBlock })))
@@ -104,11 +106,52 @@ function CodeBlockRenderer({ children, className, ...props }: React.HTMLAttribut
   )
 }
 
+// react-markdown's defaultUrlTransform drops anything whose protocol isn't
+// http(s)/mailto/etc., which strips inline `data:image/...` (and `blob:`) image
+// sources to empty. Allow those through; everything else keeps default sanitizing.
+function imageUrlTransform(url: string): string {
+  if (/^data:image\//i.test(url) || /^blob:/i.test(url)) return url
+  return defaultUrlTransform(url)
+}
+
 // Delight #21: Image lazy loading + zoom cursor (lightbox handled by useEffect click handler)
+// Also resolves folder-relative image paths (e.g. `./img/x.png`) against the picked
+// directory handle, since the browser can't load filesystem-relative URLs on its own.
 function ImageRenderer({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) {
+  const folderHandle = useStore((s) => s.folderHandle)
+  const activeFilePath = useStore((s) => s.activeFilePath)
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null)
+
+  const needsResolve =
+    typeof src === 'string' &&
+    !!folderHandle &&
+    !!activeFilePath &&
+    !/^(https?:|data:|blob:)/i.test(src) &&
+    !src.startsWith('//')
+
+  useEffect(() => {
+    if (!needsResolve || !folderHandle || !activeFilePath || typeof src !== 'string') {
+      setResolvedSrc(null)
+      return
+    }
+    let cancelled = false
+    let created: string | null = null
+    resolveImageBlobUrl(folderHandle, activeFilePath, src).then((url) => {
+      if (cancelled) { if (url) URL.revokeObjectURL(url); return }
+      created = url
+      setResolvedSrc(url)
+    })
+    return () => {
+      cancelled = true
+      if (created) URL.revokeObjectURL(created)
+    }
+  }, [src, folderHandle, activeFilePath, needsResolve])
+
+  const finalSrc = needsResolve ? (resolvedSrc ?? undefined) : src
+
   return (
     <img
-      src={src}
+      src={finalSrc}
       alt={alt}
       loading="lazy"
       {...props}
@@ -228,6 +271,8 @@ export function Reader() {
   const theme = useStore((s) => s.theme)
   const fontSize = useStore((s) => s.fontSize)
   const activeDocId = useStore((s) => s.activeDocId)
+  const activeFilePath = useStore((s) => s.activeFilePath)
+  const folderHandle = useStore((s) => s.folderHandle)
   const activeSection = useStore((s) => s.activeSection)
   const dyslexicFont = useStore((s) => s.dyslexicFont)
   const setToc = useStore((s) => s.setToc)
@@ -382,12 +427,13 @@ export function Reader() {
   }, [hasMath, hasCodeBlocks])
 
   // Memoize rendered Markdown — avoids re-parsing on scroll/progress/state changes
-  const remarkPluginsMemo = useMemo(() => [remarkGfm, remarkMath], [])
+  const remarkPluginsMemo = useMemo(() => [remarkGfm, remarkMath, remarkBoxTables], [])
   const renderedMarkdown = useMemo(() => (
     <Markdown
       remarkPlugins={remarkPluginsMemo}
       rehypePlugins={rehypePlugins}
       components={markdownComponents}
+      urlTransform={imageUrlTransform}
     >
       {markdown}
     </Markdown>
@@ -464,47 +510,51 @@ export function Reader() {
     }
   }, [progressBucket]) // Update every 5%
 
-  // Delight #9: Restore scroll position from localStorage
+  // Stable per-document key used to scope scroll position storage. Folder-mode
+  // files don't get an `activeDocId`, so they need their own key derived from
+  // the folder + path. Without this, switching files in the folder view would
+  // keep the previous file's scrollTop because no effect fires on file change.
+  const docKey = useMemo(() => {
+    if (activeFilePath) {
+      const folderKey = folderHandle?.name ?? '__cache__'
+      return `f:${folderKey}:${activeFilePath}`
+    }
+    if (activeDocId != null) return `${activeDocId}`
+    return null
+  }, [activeFilePath, folderHandle, activeDocId])
+
+  // Restore scroll position when the active document changes. If no saved
+  // position exists (first-time read), reset to top — otherwise the previous
+  // doc's scrollTop carries over since the Reader element stays mounted.
   useEffect(() => {
-    if (!activeDocId || !contentRef.current) return
-    const saved = localStorage.getItem(`md-reader-scroll-${activeDocId}`)
-    if (saved) {
-      const pct = parseFloat(saved)
-      if (pct > 5) {
-        requestAnimationFrame(() => {
-          const el = contentRef.current
-          if (!el) return
-          const target = (el.scrollHeight - el.clientHeight) * (pct / 100)
-          el.scrollTo({ top: target })
-          // Find the active section at this scroll position
-          const currentToc = useStore.getState().toc
-          let sectionName = ''
-          for (let i = currentToc.length - 1; i >= 0; i--) {
-            const heading = document.getElementById(currentToc[i].id)
-            if (heading && heading.offsetTop <= target + 100) {
-              sectionName = currentToc[i].text
-              break
-            }
+    if (!docKey || !contentRef.current) return
+    const el = contentRef.current
+    const saved = localStorage.getItem(`md-reader-scroll-${docKey}`)
+    const pct = saved ? parseFloat(saved) : 0
+    if (saved && pct > 5) {
+      requestAnimationFrame(() => {
+        if (!contentRef.current) return
+        const target = (contentRef.current.scrollHeight - contentRef.current.clientHeight) * (pct / 100)
+        contentRef.current.scrollTo({ top: target })
+        const currentToc = useStore.getState().toc
+        let sectionName = ''
+        for (let i = currentToc.length - 1; i >= 0; i--) {
+          const heading = document.getElementById(currentToc[i].id)
+          if (heading && heading.offsetTop <= target + 100) {
+            sectionName = currentToc[i].text
+            break
           }
-          const label = sectionName
-            ? `Resuming at "${sectionName}" (${Math.round(pct)}%)`
-            : `Resuming from ${Math.round(pct)}%`
-          setResumeToast({ text: label, scrollTop: target })
-          setTimeout(() => setResumeToast(null), 4000)
-        })
-      }
+        }
+        const label = sectionName
+          ? `Resuming at "${sectionName}" (${Math.round(pct)}%)`
+          : `Resuming from ${Math.round(pct)}%`
+        setResumeToast({ text: label, scrollTop: target })
+        setTimeout(() => setResumeToast(null), 4000)
+      })
+    } else {
+      el.scrollTop = 0
     }
-  }, [activeDocId])
-
-  // Restore scroll position when returning from another view
-  useEffect(() => {
-    const saved = useStore.getState().readScrollTop
-    if (saved > 0 && contentRef.current) {
-      contentRef.current.scrollTop = saved
-    }
-  }, [])
-
-
+  }, [docKey])
 
   const lastSaveRef = useRef(0)
   const pendingStorageRef = useRef<Record<string, string>>({})
@@ -602,9 +652,9 @@ export function Reader() {
     lastScrollRef.current = { time: now, top: scrollTop }
 
     // Save scroll position for resume (throttled to 2s, batched via idle callback)
-    if (activeDocId && now - lastSaveRef.current > 2000) {
+    if (docKey && now - lastSaveRef.current > 2000) {
       lastSaveRef.current = now
-      queueStorageWrite(`md-reader-scroll-${activeDocId}`, String(progress))
+      queueStorageWrite(`md-reader-scroll-${docKey}`, String(progress))
       // Track daily words read
       const today = new Date().toDateString()
       const todayKey = `md-reader-words-today-${today}`
@@ -612,7 +662,7 @@ export function Reader() {
       const prev = parseInt(localStorage.getItem(todayKey) ?? '0')
       if (wordsRead > prev) queueStorageWrite(todayKey, String(wordsRead))
     }
-  }, [setReadingProgress, words, activeDocId, queueStorageWrite])
+  }, [setReadingProgress, words, docKey, queueStorageWrite])
 
   useEffect(() => {
     const el = contentRef.current

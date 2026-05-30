@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.21", "hatch-jupyter-builder>=0.8.3", "hatch-nodejs-version", "jupyterlab>=4.0.0,<5"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jupyterlab-md-reader"
+dynamic = ["version"]
+description = "Local-first AI-assisted markdown reader for JupyterLab"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [{ name = "Manu Pandit", email = "devmanupandit@gmail.com" }]
+keywords = ["jupyter", "jupyterlab", "jupyterlab-extension", "markdown", "md-reader"]
+classifiers = [
+  "Framework :: Jupyter",
+  "Framework :: Jupyter :: JupyterLab",
+  "Framework :: Jupyter :: JupyterLab :: 4",
+  "Framework :: Jupyter :: JupyterLab :: Extensions :: Prebuilt",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+]
+dependencies = ["jupyter_server>=2.0.1,<3"]
+
+[project.scripts]
+# `jupyter X` resolves to `jupyter-X` on PATH (jupyter_core convention).
+# So `jupyter md-reader doctor` invokes this entrypoint.
+"jupyter-md-reader" = "jupyterlab_md_reader.cli:main"
+
+[tool.hatch.version]
+source = "nodejs"
+
+[tool.hatch.build.targets.wheel.shared-data]
+"jupyterlab_md_reader/labextension" = "share/jupyter/labextensions/@md-reader/jupyterlab"
+"install.json" = "share/jupyter/labextensions/@md-reader/jupyterlab/install.json"
+
+[tool.hatch.build.hooks.jupyter-builder]
+dependencies = ["hatch-jupyter-builder>=0.8.3"]
+build-function = "hatch_jupyter_builder.npm_builder"
+ensured-targets = [
+  "jupyterlab_md_reader/labextension/static/style.js",
+  "jupyterlab_md_reader/labextension/package.json"
+]
+skip-if-exists = [
+  "jupyterlab_md_reader/labextension/static/style.js"
+]
+
+[tool.hatch.build.hooks.jupyter-builder.build-kwargs]
+build_cmd = "build:prod"
+npm = ["jlpm"]

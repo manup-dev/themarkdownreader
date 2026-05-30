@@ -1,0 +1,3 @@
+/* v0.2: only base + minimal companion-panel styles ship with the extension.
+   The iframe app brings its own stylesheet. */
+@import './base.css';

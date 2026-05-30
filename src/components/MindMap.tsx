@@ -107,15 +107,49 @@ export function MindMapView() {
     const textColor = isDark ? '#e5e7eb' : isSepia ? '#3d3122' : '#1f2937'
     const lineColor = isDark ? '#374151' : isSepia ? '#d6c4a8' : '#d1d5db'
 
+    // Markmap renders node content as HTML inside <foreignObject>, so styling
+    // text via the SVG `text` selector alone is not enough — inline `<code>`,
+    // links, etc. inherit color from CSS variables on `.markmap`. Override them
+    // per theme so dark mode doesn't show dark-on-dark or near-white code pills.
+    const vars = isDark
+      ? `--markmap-text-color: #e5e7eb;
+         --markmap-code-bg: rgba(99, 102, 241, 0.2);
+         --markmap-code-color: #c4b5fd;
+         --markmap-a-color: #93c5fd;
+         --markmap-a-hover-color: #bfdbfe;
+         --markmap-circle-open-bg: #1f2937;`
+      : isSepia
+      ? `--markmap-text-color: #3d3122;
+         --markmap-code-bg: rgba(180, 83, 9, 0.12);
+         --markmap-code-color: #9a3412;
+         --markmap-a-color: #b45309;
+         --markmap-a-hover-color: #92400e;
+         --markmap-circle-open-bg: #faf6f1;`
+      : `--markmap-text-color: #1f2937;
+         --markmap-code-bg: rgba(99, 102, 241, 0.08);
+         --markmap-code-color: #6d28d9;
+         --markmap-a-color: #2563eb;
+         --markmap-a-hover-color: #1d4ed8;`
+
+    // Set CSS variables inline on the SVG via setProperty so we don't
+    // clobber React's `style={{ background }}` attribute. Inline styles
+    // win against markmap's own injected <style> block (appended later
+    // in the SVG, which would otherwise override a <style>-based override).
+    for (const decl of vars.split(';')) {
+      const [name, value] = decl.split(':').map(s => s.trim())
+      if (name && value) svgRef.current.style.setProperty(name, value)
+    }
+
     const style = document.createElement('style')
     style.textContent = `
       .markmap-node text { fill: ${textColor} !important; }
       .markmap-node line { stroke: ${lineColor} !important; }
       .markmap-link { stroke: ${lineColor} !important; }
+      .markmap-foreign code { border: 1px solid ${isDark ? 'rgba(129,140,248,0.25)' : isSepia ? 'rgba(180,83,9,0.2)' : 'rgba(99,102,241,0.15)'}; }
       .markmap-node.mm-highlight rect { stroke: #3b82f6 !important; stroke-width: 2px !important; rx: 4; }
       .markmap-node.mm-highlight text { font-weight: bold !important; }
     `
-    svgRef.current.prepend(style)
+    svgRef.current.appendChild(style)
 
     // Ensure fit-to-view after initial render settles
     setTimeout(() => mmRef.current?.fit(), 100)

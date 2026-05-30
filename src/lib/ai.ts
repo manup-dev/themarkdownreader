@@ -205,19 +205,75 @@ export function clearApiKey(): void {
   detectPromise = null
 }
 
+/**
+ * Redact anything that looks like an OpenRouter API key from a string before
+ * it ends up in an Error message, toast, console log, or telemetry payload.
+ *
+ * OpenRouter keys are `sk-or-v1-<hex>` (and historically `sk-or-<hex>`).
+ * We also redact our own currently-loaded key by string match in case an
+ * upstream service ever echoes it verbatim — defense-in-depth against
+ * "Authentication failed for key sk-or-..." style error bodies.
+ *
+ * Keep this cheap: it runs on every OpenRouter error path. The quantifier
+ * is bounded to {8,200} (real keys are ~60 chars) so the engine cannot
+ * grow a match unbounded on long pathological inputs; the surrounding
+ * groups have no overlapping alternatives so backtracking is linear.
+ * The string-replace is O(n).
+ */
+export function redactOpenRouterKey(text: string): string {
+  if (!text) return text
+  let out = text.replace(/sk-or(?:-v\d+)?-[A-Za-z0-9_-]{8,200}/g, 'sk-or-***REDACTED***')
+  try {
+    const live = localStorage.getItem(OPENROUTER_KEY_STORAGE)
+    if (live && live.length >= 12 && out.includes(live)) {
+      out = out.split(live).join('***REDACTED***')
+    }
+  } catch {
+    // localStorage unavailable (SSR, private mode) — pattern redaction
+    // above is still active.
+  }
+  return out
+}
+
 // ─── Preferred backend override ────────────────────────────────────────────
 
 const LS_PREFERRED_BACKEND = 'md-reader-preferred-backend'
+// Iframe-mode variant. We must not share this key with the standalone site
+// (see `src/main.tsx` for the seed): a single browser visiting both the
+// public site and a self-hosted JL extension on the same eTLD+1 would
+// otherwise leak `webllm` from the JL session into the standalone one.
+const LS_PREFERRED_BACKEND_IFRAME = 'md-reader-preferred-backend-iframe'
+
+function isIframedRuntime(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.parent !== window
+  } catch {
+    return true
+  }
+}
 
 export function getPreferredBackend(): string | null {
-  return typeof localStorage !== 'undefined' ? localStorage.getItem(LS_PREFERRED_BACKEND) : null
+  if (typeof localStorage === 'undefined') return null
+  // Read the iframe-scoped key first when we're embedded — it's what the
+  // host (e.g. JL) wrote on first boot. Fall through to the standalone key
+  // for users who already set a preference in the iframe before this split
+  // landed.
+  if (isIframedRuntime()) {
+    const iframePref = localStorage.getItem(LS_PREFERRED_BACKEND_IFRAME)
+    if (iframePref) return iframePref
+  }
+  return localStorage.getItem(LS_PREFERRED_BACKEND)
 }
 
 export function setPreferredBackend(backend: string | null): void {
+  // Mirror the read split: iframe runtimes write the iframe-scoped key only,
+  // standalone runtimes write the canonical key. Either path keeps the two
+  // contexts cleanly isolated.
+  const key = isIframedRuntime() ? LS_PREFERRED_BACKEND_IFRAME : LS_PREFERRED_BACKEND
   if (backend) {
-    localStorage.setItem(LS_PREFERRED_BACKEND, backend)
+    localStorage.setItem(key, backend)
   } else {
-    localStorage.removeItem(LS_PREFERRED_BACKEND)
+    localStorage.removeItem(key)
   }
   backendDetected = false
   detectPromise = null
@@ -531,7 +587,12 @@ async function chatOpenRouterStream(
     })
 
     if (!res.ok) {
-      const body = await res.text().catch(() => '')
+      // Redact the API key from the response body BEFORE it gets serialized
+      // into an Error message — error objects routinely end up in console
+      // logs, toast notifications, and (in a future build) error reporting.
+      // OpenRouter doesn't usually echo the key, but other reverse proxies
+      // or middleware might; redact defensively at the leakage chokepoint.
+      const body = redactOpenRouterKey(await res.text().catch(() => ''))
       // 429 = rate-limited → try next model in chain
       if (res.status === 429 && i < chain.length - 1) {
         const err = new Error(`OpenRouter error 429 (${model}): ${body}`) as Error & { status?: number }

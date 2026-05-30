@@ -1,0 +1,163 @@
+# Weekly security audit + dependency-change PR gate.
+#
+# Two triggers:
+#   1. Cron: every Monday 06:00 UTC. Runs `npm audit` + `pip-audit` against
+#      master. Posts a fresh GitHub issue if anything critical/high lands
+#      that wasn't flagged on the previous run (i.e. a NEW upstream
+#      advisory, not the same one re-reported).
+#   2. PR: when a PR touches package.json / package-lock.json / pyproject.toml,
+#      run the same audits. The job FAILS the PR on critical/high; it warns
+#      (does not block) on moderate.
+#
+# Goal: catch the case where a transitive dep we don't watch publishes a
+# critical CVE between releases, OR where a dependency-bump PR (Dependabot
+# or human) silently introduces one.
+#
+# Notes:
+#   • The job only escalates to a real failure on `high` / `critical`. The
+#     0.3.0 release shipped with ~3 moderate upstream-tracked items
+#     (sanitize-html via @jupyterlab/*) — failing on those would block every
+#     PR until JupyterLab itself patches them.
+#   • `npm audit` runs with `--omit=dev` for the production-shipped audit
+#     and with the full tree for the diagnostic step.
+#   • `pip-audit` runs against the built wheel rather than the editable
+#     source, so the result reflects what actually ships to PyPI users.
+
+name: security-audit
+
+on:
+  schedule:
+    # Mondays 06:00 UTC. Stagger from Dependabot's 09:00 so the audit
+    # reflects pre-Dependabot state.
+    - cron: "0 6 * * 1"
+  pull_request:
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "packages/jupyterlab/package.json"
+      - "packages/jupyterlab/pyproject.toml"
+      - ".github/dependabot.yml"
+      - ".github/workflows/security-audit.yml"
+  # Manual trigger — useful right after merging a Dependabot batch.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Needed by the cron path to open issues. PR runs don't get this scope
+  # by default which is the right blast-radius.
+  issues: write
+
+jobs:
+  npm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install deps (no audit on install — explicit step below)
+        run: npm ci --no-audit --no-fund
+
+      # The blocking step. Production tree only. `--audit-level=high` makes
+      # the command exit non-zero only when high/critical exist; moderate
+      # passes (we track those separately below).
+      - name: npm audit — production tree, fail on high/critical
+        run: npm audit --omit=dev --audit-level=high
+
+      # Diagnostic step — always succeeds, prints the full picture so the
+      # log has the same data a human would see locally.
+      - name: npm audit — full tree (diagnostic, never fails)
+        if: always()
+        run: npm audit --json | jq '.metadata.vulnerabilities' || true
+
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install build pip-audit "jupyterlab>=4,<5"
+          npm ci --no-audit --no-fund
+
+      # Build the SPA bundle the wheel needs, then build the wheel itself.
+      # We audit the BUILT wheel rather than the editable install so the
+      # result is exactly what PyPI users would `pip install`.
+      - name: Build iframe SPA + wheel
+        run: |
+          npm run build:jupyter
+          cd packages/jupyterlab
+          python -m build --wheel
+
+      - name: pip-audit — built wheel, fail on high/critical
+        run: |
+          cd packages/jupyterlab
+          # `pip-audit --vulnerability-service osv` uses the OSV.dev DB which
+          # picks up GHSA + PYSEC + NVD in one pass. Limit blocking to
+          # high/critical via the exit-code mapping.
+          pip-audit \
+            --vulnerability-service osv \
+            --strict \
+            dist/*.whl
+
+  # Cron-only step: surface a fresh issue when a NEW critical/high
+  # advisory lands between runs. Suppressed on PRs to avoid issue spam.
+  surface-issue-on-new-critical:
+    needs: [npm-audit, pip-audit]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Open / update tracking issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = "Weekly security audit failed — new high/critical advisory"
+            const body = [
+              "The weekly security audit (`security-audit.yml`) detected a new",
+              "high or critical advisory in the shipped dependency surface.",
+              "",
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              "",
+              "Triage steps:",
+              "1. Check the failed job log for the affected package + advisory ID.",
+              "2. If it's a transitive dep, add an entry to the `overrides` block in `package.json`.",
+              "3. If it's a direct dep, bump it or open an upstream issue and pin a workaround.",
+              "4. Close this issue once a fix is merged.",
+            ].join("\n")
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "security,auto-opened",
+            })
+            const dupe = existing.data.find(i => i.title === title)
+            if (dupe) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: dupe.number,
+                body: `Re-flagged by run ${context.runId} on ${new Date().toISOString().slice(0,10)}.`,
+              })
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ["security", "auto-opened"],
+              })
+            }

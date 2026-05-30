@@ -1,0 +1,45 @@
+{
+  "name": "@md-reader/react",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "description": "React components and Provider for md-reader (Reader, Toolbar, CommentsPanel, Chat, MindMap, KnowledgeGraph)",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./jupyter": {
+      "types": "./src/jupyter-entry.ts",
+      "import": "./src/jupyter-entry.ts"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "sideEffects": [
+    "*.css"
+  ],
+  "files": [
+    "src",
+    "dist",
+    "scripts",
+    "postcss.config.cjs"
+  ],
+  "scripts": {
+    "build:css": "node scripts/build-css.mjs"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "@md-reader/core": "*"
+  },
+  "devDependencies": {
+    "postcss-prefix-selector": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

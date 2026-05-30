@@ -371,6 +371,12 @@ article h5:hover > span[aria-hidden], article h6:hover > span[aria-hidden] {
   border: 1px solid var(--vscode-keybindingLabel-border, rgba(148, 163, 184, 0.3));
   box-shadow: inset 0 -1px 0 var(--vscode-keybindingLabel-bottomBorder, rgba(0, 0, 0, 0.1));
 }
+/* Box-drawing art (auto-detected from CLI output, e.g. kubectl tables):
+   tighten line-height so the vertical │ bars touch row-to-row and the grid
+   reads as a connected box. Scoped to .box-art so ordinary code keeps its
+   comfortable leading. */
+article pre:has(code.box-art) { line-height: 1.15; }
+article code.box-art { line-height: 1.15; }
 /* Code block borders for better delineation */
 article pre { border: 1px solid #e5e7eb; border-radius: 0.5rem; }
 .dark article pre { border-color: #374151; }
@@ -520,4 +526,6 @@ article table tbody tr:hover { background: rgba(59, 130, 246, 0.05); }
   nav, aside, .fixed, button, .cursor-col-resize { display: none !important; }
   article { max-width: 100% !important; padding: 0 !important; font-size: 12pt !important; }
   .prose pre { white-space: pre-wrap !important; word-break: break-all; }
+  /* …but never wrap box-drawing art — breaking mid-character destroys the grid. */
+  .prose pre:has(code.box-art) { white-space: pre !important; word-break: normal; }
 }

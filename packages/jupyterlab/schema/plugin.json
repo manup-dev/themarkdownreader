@@ -1,0 +1,65 @@
+{
+  "title": "Markdown Reader",
+  "description": "AI-grounded reading + kernel-bound reasoning workstation",
+  "type": "object",
+  "jupyter.lab.setting-icon": "md-reader:icon",
+  "jupyter.lab.setting-icon-label": "Markdown Reader",
+  "jupyter.lab.menus": {
+    "main": [
+      {
+        "id": "jp-mainmenu-view",
+        "items": [
+          { "command": "md-reader:toggle-companion", "rank": 350 }
+        ]
+      }
+    ]
+  },
+  "jupyter.lab.shortcuts": [
+    { "command": "md-reader:open", "keys": ["Accel Shift M"], "selector": "body" },
+    { "command": "md-reader:toggle-companion", "keys": ["Accel Shift ."], "selector": "body" }
+  ],
+  "definitions": {
+    "aiBackend": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["openrouter", "ollama", "webllm", "disabled"],
+          "default": "disabled"
+        },
+        "ollamaUrl": {
+          "type": "string",
+          "format": "uri",
+          "default": "http://localhost:11434"
+        }
+      },
+      "default": {
+        "provider": "disabled",
+        "ollamaUrl": "http://localhost:11434"
+      }
+    }
+  },
+  "properties": {
+    "ai": { "$ref": "#/definitions/aiBackend" },
+    "enabledFeatures": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "toc",
+          "highlights",
+          "comments",
+          "mindmap",
+          "podcast",
+          "knowledgeGraph",
+          "aiChat"
+        ]
+      },
+      "default": ["toc", "highlights", "comments", "mindmap"]
+    },
+    "companionPanel": { "type": "boolean", "default": true },
+    "kernelBridge": { "type": "boolean", "default": true },
+    "telemetry": { "type": "boolean", "default": false }
+  },
+  "additionalProperties": false
+}

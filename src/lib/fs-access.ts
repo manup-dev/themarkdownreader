@@ -133,6 +133,56 @@ export async function watchDirectory(
 }
 
 /**
+ * Resolve a relative image reference (e.g. `./img/diagram.png`, `assets/logo.png`,
+ * `/logo.png`) against a directory handle and return an object URL for the image
+ * file, or null if it can't be found. Used to render images that live alongside
+ * markdown in a picked folder — the browser can't load `file://`-style relatives.
+ *
+ * `currentFilePath` is the folder-relative path of the markdown being viewed; the
+ * image is resolved relative to that file's directory (root-relative `/x` resolves
+ * from the folder root). Caller owns the returned URL and must revokeObjectURL it.
+ */
+export async function resolveImageBlobUrl(
+  handle: FileSystemDirectoryHandle,
+  currentFilePath: string,
+  imgSrc: string,
+): Promise<string | null> {
+  const clean = imgSrc.split('#')[0].split('?')[0]
+  if (!clean) return null
+
+  const fileDir = currentFilePath.includes('/')
+    ? currentFilePath.slice(0, currentFilePath.lastIndexOf('/'))
+    : ''
+  const joined = clean.startsWith('/')
+    ? clean.slice(1)
+    : fileDir ? `${fileDir}/${clean}` : clean
+
+  // Normalize `.`/`..` segments.
+  const segments: string[] = []
+  for (const seg of joined.split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg === '..') { segments.pop(); continue }
+    segments.push(decodeURIComponent(seg))
+  }
+  if (segments.length === 0) return null
+
+  try {
+    let dir = handle as unknown as {
+      getDirectoryHandle(name: string): Promise<FileSystemDirectoryHandle>
+      getFileHandle(name: string): Promise<FileSystemFileHandle>
+    }
+    for (let i = 0; i < segments.length - 1; i++) {
+      dir = (await dir.getDirectoryHandle(segments[i])) as never
+    }
+    const fileHandle = await dir.getFileHandle(segments[segments.length - 1])
+    const file = await fileHandle.getFile()
+    return URL.createObjectURL(file)
+  } catch {
+    return null
+  }
+}
+
+/**
  * Check if File System Access API is supported.
  */
 export function hasDirectoryAccess(): boolean {

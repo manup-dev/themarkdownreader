@@ -1,0 +1,163 @@
+# GitHub Dependabot — automatic dependency tracking.
+#
+# What this does:
+#   • Watches every ecosystem we use (npm + the JL extension's pip wheel)
+#     and opens PRs against `master` when a new release is available.
+#   • Security advisories trigger PRs immediately (any day, ignoring schedule).
+#   • Non-security updates batch weekly, grouped to avoid PR storms.
+#   • Major-version bumps are deliberately gated (open-as-draft) so we
+#     review behavior changes before they merge.
+#
+# What this does NOT do:
+#   • It does not merge anything. Every PR still needs a human review.
+#   • It does not touch the `overrides` block in package.json; if a transitive
+#     pin becomes redundant (because the direct dep ships a clean version
+#     itself), prune it manually after merging the parent update.
+#
+# Editing this file? Re-read GitHub's reference — Dependabot rejects unknown
+# keys: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+
+updates:
+  # ── Root SPA (the iframe app that gets bundled into the JL wheel) ────────
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 8
+    labels:
+      - "deps"
+      - "deps:npm"
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps(dev)"
+      include: "scope"
+    groups:
+      # Batch JL-side packages together — they ALWAYS bump in lockstep, and
+      # mixing them into separate PRs creates merge conflicts.
+      jupyterlab:
+        patterns:
+          - "@jupyterlab/*"
+          - "@lumino/*"
+      # Batch React + react-dom + their types together. Independent bumps
+      # cause peer-dep mismatches mid-PR.
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      # Batch the markdown pipeline — remark/rehype/unified are co-versioned.
+      markdown-pipeline:
+        patterns:
+          - "remark*"
+          - "rehype*"
+          - "unified"
+          - "react-markdown"
+      # Batch all build tooling — vite, tailwind, eslint, typescript ecosystem.
+      build-tools:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "vite-plugin-*"
+          - "@tailwindcss/*"
+          - "tailwindcss"
+          - "eslint*"
+          - "@eslint/*"
+          - "typescript*"
+          - "@vitest/*"
+          - "vitest"
+        update-types:
+          - "minor"
+          - "patch"
+      # Heavy AI runtime deps — webllm + transformers + tts. These can carry
+      # behavior changes worth flagging individually, so we batch only
+      # patches.
+      ai-runtimes:
+        patterns:
+          - "@mlc-ai/*"
+          - "@huggingface/*"
+          - "kokoro-js"
+        update-types:
+          - "patch"
+    ignore:
+      # Major-version bumps land as separate, manually-opened PRs. The auto-
+      # generated PR creates noise that obscures behavior changes.
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+
+  # ── JupyterLab extension workspace (npm side) ────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/packages/jupyterlab"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 4
+    labels:
+      - "deps"
+      - "deps:npm"
+      - "area:jupyterlab"
+    commit-message:
+      prefix: "deps(jupyterlab)"
+      include: "scope"
+    groups:
+      jupyterlab:
+        patterns:
+          - "@jupyterlab/*"
+          - "@lumino/*"
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+
+  # ── JupyterLab extension Python wheel ────────────────────────────────────
+  - package-ecosystem: "pip"
+    directory: "/packages/jupyterlab"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 4
+    labels:
+      - "deps"
+      - "deps:pip"
+      - "area:jupyterlab"
+    commit-message:
+      prefix: "deps(pip)"
+      include: "scope"
+    ignore:
+      # jupyter_server major bumps coincide with JL major bumps; we move
+      # them as a coordinated change, not via auto-PR.
+      - dependency-name: "jupyter_server"
+        update-types:
+          - "version-update:semver-major"
+
+  # ── GitHub Actions themselves ────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 4
+    labels:
+      - "deps"
+      - "deps:gha"
+    commit-message:
+      prefix: "deps(ci)"
+      include: "scope"

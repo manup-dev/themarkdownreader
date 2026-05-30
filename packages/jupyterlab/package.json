@@ -1,0 +1,76 @@
+{
+  "name": "@md-reader/jupyterlab",
+  "version": "0.3.0",
+  "private": true,
+  "description": "JupyterLab extension for md-reader (iframe-embedded full app + companion panel)",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "style": "style/index.css",
+  "files": [
+    "lib/**/*.{js,d.ts,map}",
+    "style/**/*.css",
+    "style/**/*.svg",
+    "schema/*.json"
+  ],
+  "scripts": {
+    "build": "jlpm sync:version && jlpm build:lib && jlpm build:labextension:dev && jlpm bundle:app",
+    "build:prod": "jlpm clean && jlpm sync:version && jlpm build:lib:prod && jlpm build:labextension && jlpm bundle:app",
+    "build:labextension": "jupyter labextension build .",
+    "build:labextension:dev": "jupyter labextension build --development True .",
+    "build:lib": "tsc",
+    "build:lib:prod": "tsc --sourceMap false",
+    "bundle:app": "node scripts/bundle-app.mjs",
+    "sync:version": "node scripts/sync-version.mjs",
+    "clean": "rimraf lib tsconfig.tsbuildinfo src/_version.ts",
+    "watch": "tsc -w"
+  },
+  "dependencies": {
+    "@jupyterlab/application": "^4.5.7",
+    "@jupyterlab/apputils": "^4.6.7",
+    "@jupyterlab/coreutils": "^6.5.7",
+    "@jupyterlab/docregistry": "^4.5.7",
+    "@jupyterlab/notebook": "^4.5.7",
+    "@jupyterlab/settingregistry": "^4.5.7",
+    "@jupyterlab/statusbar": "^4.5.7",
+    "@jupyterlab/translation": "^4.5.7",
+    "@jupyterlab/ui-components": "^4.5.7",
+    "@lumino/coreutils": "^2.2.1",
+    "@lumino/disposable": "^2.1.4",
+    "@lumino/signaling": "^2.1.5",
+    "@lumino/widgets": "^2.7.5",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@jupyterlab/builder": "^4.5.7",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "rimraf": "^5.0.10",
+    "typescript": "~5.9.3"
+  },
+  "jupyterlab": {
+    "extension": true,
+    "outputDir": "jupyterlab_md_reader/labextension",
+    "schemaDir": "schema",
+    "discovery": {
+      "server": {
+        "managers": [
+          "pip"
+        ],
+        "base": {
+          "name": "jupyterlab_md_reader"
+        }
+      }
+    },
+    "sharedPackages": {
+      "react": {
+        "bundled": false,
+        "singleton": true
+      },
+      "react-dom": {
+        "bundled": false,
+        "singleton": true
+      }
+    }
+  }
+}

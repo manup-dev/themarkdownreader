@@ -51,6 +51,28 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5183,
+    // The web app lives entirely in `src/`. Sibling tool dirs (the VS Code
+    // extension — which downloads a full ~900-dir VS Code under
+    // .wdio-vscode-service — the CLI, MCP server, and workspace packages) are
+    // not imported by the app, but Vite's file watcher would still recurse
+    // into them and exhaust the host's inotify limit, crashing `npm run dev`
+    // with EMFILE. Ignoring them keeps the dev server runnable on the host.
+    watch: {
+      ignored: [
+        '**/node_modules/**',
+        '**/.git/**',
+        '**/dist/**',
+        '**/vscode-extension/**',
+        '**/packages/**',
+        '**/cli/**',
+        '**/mcp-server/**',
+        '**/claude-code-plugin/**',
+        '**/e2e/**',
+        '**/e2e-hosted/**',
+        '**/test-results/**',
+        '**/.playwright-mcp/**',
+      ],
+    },
   },
   optimizeDeps: {
     include: ['markmap-common', 'markmap-lib', 'markmap-view'],

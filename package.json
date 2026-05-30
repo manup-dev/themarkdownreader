@@ -1,6 +1,5 @@
 {
   "name": "md-reader",
-  "private": false,
   "version": "1.0.0",
   "type": "module",
   "main": "dist-lib/md-reader.js",
@@ -34,6 +33,20 @@
   "engines": {
     "node": ">=20"
   },
+  "workspaces": [
+    "packages/*"
+  ],
+  "//overrides": "Force-upgrade transitive deps to fixed versions without waiting for upstream propagation. Each entry must reference a published advisory (URLs in the matching comment). Review on every npm install and prune entries whose direct parent ships a clean release.",
+  "overrides": {
+    "protobufjs": "^7.5.6",
+    "@protobufjs/utf8": "^1.1.1",
+    "dompurify": "^3.3.4",
+    "nanoid": "^5.0.9",
+    "picomatch": "^4.0.3",
+    "postcss": "^8.5.10",
+    "yaml": "^2.9.0",
+    "fast-uri": "^3.1.2"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -45,13 +58,16 @@
     "eval": "tsx scripts/eval/runner.ts",
     "e2e": "npx playwright test",
     "e2e:headed": "npx playwright test --headed",
+    "e2e:hosted": "npx playwright test --config=playwright.hosted.config.ts",
+    "e2e:hosted:headed": "npx playwright test --config=playwright.hosted.config.ts --headed",
     "analyze": "ANALYZE=true npm run build",
     "build:cli": "npm run build && cp -r dist cli/dist",
-    "build:lib": "vite build --config vite.lib.config.ts"
+    "build:lib": "vite build --config vite.lib.config.ts",
+    "build:jupyter": "vite build --config vite.jupyter.config.ts"
   },
   "dependencies": {
     "@ain1084/audio-worklet-stream": "^2.0.2",
-    "@excalidraw/excalidraw": "^0.18.0",
+    "@excalidraw/excalidraw": "^0.18.1",
     "@huggingface/transformers": "^4.0.1",
     "@mlc-ai/web-llm": "^0.2.82",
     "d3": "^7.9.0",

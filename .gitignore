@@ -97,3 +97,29 @@ test-screenshots/
 
 # Personal scratch notes (*.local.md never committed)
 *.local.md
+
+# Workspaces (packages/*) build artifacts
+packages/*/node_modules
+packages/*/lib
+packages/*/dist
+packages/*/tsconfig.tsbuildinfo
+packages/jupyterlab/jupyterlab_md_reader/labextension/
+packages/jupyterlab/jupyterlab_md_reader/_version.py
+packages/jupyterlab/jupyterlab_md_reader/__pycache__/
+packages/jupyterlab/build/
+packages/jupyterlab/*.egg-info/
+# Auto-generated from package.json by scripts/sync-version.mjs — single
+# source of truth for the package version lives in package.json.
+packages/jupyterlab/src/_version.ts
+
+# Vite output for the JL iframe build of the SPA. Built on demand by
+# `npm run build:jupyter`; large enough to bloat git history if committed.
+dist-jupyter/
+
+# Yarn (workspace tooling) — keep the lockfile + .yarnrc.yml but never
+# commit the local cache / install state.
+.yarn/cache/
+.yarn/install-state.gz
+.yarn/build-state.yml
+.yarn/unplugged/
+.pnp.*

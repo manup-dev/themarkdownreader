@@ -7,7 +7,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
-    exclude: ['**/node_modules/**', 'dist', 'vscode-extension', 'mcp-server', 'e2e/**'],
+    exclude: ['**/node_modules/**', 'dist', 'vscode-extension', 'mcp-server', 'e2e/**', 'e2e-hosted/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
