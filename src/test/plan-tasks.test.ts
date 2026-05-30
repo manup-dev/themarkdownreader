@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractCheckboxTasks } from '../lib/plan-tasks'
+import { extractCheckboxTasks, buildDispatchPrompt } from '../lib/plan-tasks'
 
 const MD = `# Project
 
@@ -42,5 +42,30 @@ describe('extractCheckboxTasks', () => {
     const t = extractCheckboxTasks('- [ ] orphan task\n')
     expect(t).toHaveLength(1)
     expect(t[0]).toMatchObject({ text: 'orphan task', sectionTitle: '', sectionId: '' })
+  })
+})
+
+describe('buildDispatchPrompt', () => {
+  const task = {
+    id: 'task_x', text: 'Add rate-limiting to /api/login', status: 'open' as const,
+    source: 'checkbox' as const, sectionId: 'security', sectionTitle: 'Security',
+  }
+  it('builds a grounded prompt with file, section, task, and context', () => {
+    const out = buildDispatchPrompt(task, {
+      fileName: 'plan.md', sectionTitle: 'Security', sectionText: 'We must protect auth endpoints.',
+    })
+    expect(out).toBe(
+      'In `plan.md` under section "Security", implement this task:\n\n' +
+      '  Add rate-limiting to /api/login\n\n' +
+      'Section context:\n' +
+      'We must protect auth endpoints.\n\n' +
+      'Please implement it and report what you changed.'
+    )
+  })
+  it('trims overly long section context to 1200 chars', () => {
+    const long = 'x'.repeat(5000)
+    const out = buildDispatchPrompt(task, { fileName: 'p.md', sectionTitle: 'S', sectionText: long })
+    expect(out).toContain('x'.repeat(1200))
+    expect(out).not.toContain('x'.repeat(1201))
   })
 })
