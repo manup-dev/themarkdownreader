@@ -44,6 +44,8 @@ export function PlanView() {
   const base = aiTasks ?? checkboxTasks
   const tasks = useMemo(
     () => mergeStatuses(base, loadStatuses(docId)),
+    // statusVersion is a manual cache-buster for the localStorage read; intentional
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [base, docId, statusVersion]
   )
 
