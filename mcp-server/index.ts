@@ -6,6 +6,7 @@ import path from 'path'
 import { z } from 'zod'
 import { buildReaderUrl } from './url'
 import { extractTasks, buildTaskPrompt } from './plan'
+import { diffMarkdown, buildDiffSummary } from './diff'
 
 const PROJECT_ROOT = process.cwd()
 const MD_READER_URL = process.env.MD_READER_URL || 'http://localhost:5183'
@@ -333,6 +334,23 @@ server.tool(
         text: `${open.length} open task${open.length === 1 ? '' : 's'} in ${inputPath}:\n\n${body}`,
       }],
     }
+  }
+)
+
+// ─── Tool 12: diff_markdown ─────────────────────────────────────────────────
+
+server.tool(
+  'diff_markdown',
+  'Compare two markdown files and summarise what changed at the section level (added / removed / changed sections with line counts). Use this to see what changed when a plan, spec, or doc was regenerated or edited.',
+  {
+    pathA: z.string().describe('Relative path to the older/base .md file'),
+    pathB: z.string().describe('Relative path to the newer .md file'),
+  },
+  async ({ pathA, pathB }) => {
+    const a = fs.readFileSync(validateMdPath(pathA), 'utf-8')
+    const b = fs.readFileSync(validateMdPath(pathB), 'utf-8')
+    const summary = buildDiffSummary(diffMarkdown(a, b), pathA, pathB)
+    return { content: [{ type: 'text', text: summary }] }
   }
 )
 
