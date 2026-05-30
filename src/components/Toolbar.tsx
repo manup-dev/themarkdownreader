@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap, GitBranch, Library, ArrowLeft, Save, Check, Settings, Contrast, Type, Maximize, Printer, Palette, SlidersHorizontal, ChevronDown, Download, Mic, Shapes, PanelLeft, FolderOpen, Home } from 'lucide-react'
+import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap, GitBranch, Library, ArrowLeft, Save, Check, Settings, Contrast, Type, Maximize, Printer, Palette, SlidersHorizontal, ChevronDown, Download, Mic, Shapes, PanelLeft, FolderOpen, Home, ListChecks } from 'lucide-react'
 import { AiSettings } from './AiSettings'
 import { AiLoadingIndicator } from './AiLoadingIndicator'
 import { useStore, type Theme, type ViewMode } from '../store/useStore'
@@ -13,6 +13,7 @@ const singleDocModes: { value: ViewMode; icon: React.ReactNode; label: string; t
   { value: 'mindmap', icon: <GitBranch className="h-3.5 w-3.5" />, label: 'Mind Map', tooltip: 'Visual outline of document structure' },
   { value: 'treemap', icon: <TreePine className="h-3.5 w-3.5" />, label: 'Treemap', tooltip: 'Section sizes as proportional blocks' },
   { value: 'coach', icon: <GraduationCap className="h-3.5 w-3.5" />, label: 'Coach', tooltip: 'AI explains sections + comprehension quizzes' },
+  { value: 'plan', icon: <ListChecks className="h-3.5 w-3.5" />, label: 'Plan', tooltip: 'Extract tasks from a plan and dispatch them to your agent' },
   { value: 'podcast', icon: <Mic className="h-4 w-4" />, label: 'Podcast', tooltip: 'AI podcast overview (P)' },
   { value: 'diagram', icon: <Shapes className="h-4 w-4" />, label: 'Diagram', tooltip: 'AI-generated diagram (V)' },
 ]

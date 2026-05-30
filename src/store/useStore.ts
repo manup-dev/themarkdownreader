@@ -245,7 +245,7 @@ async function persistPayload(tab: Tab, payload: TabPayload): Promise<void> {
 }
 
 export type Theme = 'light' | 'dark' | 'sepia' | 'high-contrast'
-export type ViewMode = 'read' | 'mindmap' | 'summary-cards' | 'treemap' | 'knowledge-graph' | 'coach' | 'podcast' | 'diagram' | 'workspace' | 'cross-doc-graph' | 'correlation' | 'similarity-map' | 'collection'
+export type ViewMode = 'read' | 'mindmap' | 'summary-cards' | 'treemap' | 'knowledge-graph' | 'coach' | 'podcast' | 'diagram' | 'workspace' | 'cross-doc-graph' | 'correlation' | 'similarity-map' | 'collection' | 'plan'
 export type FolderSortMode = 'name-asc' | 'name-desc' | 'mtime-desc' | 'mtime-asc'
 
 export interface TocEntry {

@@ -35,6 +35,7 @@ const KnowledgeGraphView = lazy(() => import('./components/KnowledgeGraph').then
 const CoachView = lazy(() => import('./components/Coach').then((m) => ({ default: m.CoachView })))
 const PodcastPlayer = lazy(() => import('./components/PodcastPlayer').then(m => ({ default: m.PodcastPlayer })))
 const DiagramGenerator = lazy(() => import('./components/DiagramGenerator').then(m => ({ default: m.DiagramGenerator })))
+const PlanView = lazy(() => import('./components/PlanView').then((m) => ({ default: m.PlanView })))
 const ExcalidrawViewer = lazy(() => import('./components/ExcalidrawViewer').then(m => ({ default: m.ExcalidrawViewer })))
 const Workspace = lazy(() => import('./components/Workspace').then((m) => ({ default: m.Workspace })))
 const CrossDocGraph = lazy(() => import('./components/CrossDocGraph').then((m) => ({ default: m.CrossDocGraph })))
@@ -346,7 +347,7 @@ function AppContent() {
     setPrevViewMode(viewMode)
   }
   const viewDirection = (() => {
-    const views: ViewMode[] = ['read', 'summary-cards', 'mindmap', 'treemap', 'knowledge-graph', 'coach']
+    const views: ViewMode[] = ['read', 'summary-cards', 'mindmap', 'treemap', 'knowledge-graph', 'coach', 'plan']
     const prev = views.indexOf(prevViewMode)
     const curr = views.indexOf(viewMode)
     return curr > prev ? 'right' : curr < prev ? 'left' : 'none'
@@ -627,6 +628,7 @@ function AppContent() {
                   {viewMode === 'treemap' && <ErrorBoundary name="Treemap"><TreemapView /></ErrorBoundary>}
                   {viewMode === 'knowledge-graph' && <ErrorBoundary name="Knowledge Graph"><KnowledgeGraphView /></ErrorBoundary>}
                   {viewMode === 'coach' && <ErrorBoundary name="Coach"><CoachView /></ErrorBoundary>}
+                  {viewMode === 'plan' && <ErrorBoundary name="Plan"><PlanView /></ErrorBoundary>}
                   {viewMode === 'podcast' && <ErrorBoundary name="Podcast"><PodcastPlayer /></ErrorBoundary>}
                   {viewMode === 'diagram' && (
                     <ErrorBoundary name="Diagram">
