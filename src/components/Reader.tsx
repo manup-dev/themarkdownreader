@@ -15,6 +15,7 @@ import type { Comment, Highlight } from '../types/storage-adapter'
 import { markProgrammaticScroll, isProgrammaticScroll } from '../lib/scroll-guard'
 import { trackEvent } from '../lib/telemetry'
 import { resolveAnchor } from '../lib/anchor'
+import { detectArtifactType } from '../lib/artifact-type'
 
 /** Recursively extract plain text from React children (handles bold, italic, code, etc.) */
 function childrenToText(children: React.ReactNode): string {
@@ -281,6 +282,7 @@ export function Reader() {
   const toc = useStore((s) => s.toc)
   const readingProgress = useStore((s) => s.readingProgress)
   const fileName = useStore((s) => s.fileName)
+  const setViewMode = useStore((s) => s.setViewMode)
   const adapter = useAdapter()
   const contentRef = useRef<HTMLDivElement>(null)
   const sectionsReadCache = useRef(new Set<string>())
@@ -450,6 +452,7 @@ export function Reader() {
     if (hasCode) return 'Technical'
     return 'Narrative'
   }, [markdown])
+  const artifactType = useMemo(() => detectArtifactType(fileName, markdown), [fileName, markdown])
   const quotableSentence = useMemo(() => {
     const sentences = markdown.split(/[.!?]\s+/).filter((s) => s.length > 30 && s.length < 200)
     const scored = sentences.map((s) => ({
@@ -1523,6 +1526,19 @@ export function Reader() {
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400`}>
               {contentType}
             </span>
+            {(() => {
+              const isPlanLike = artifactType.type === 'plan' || artifactType.type === 'todo'
+              return (
+                <button
+                  type="button"
+                  onClick={isPlanLike ? () => setViewMode('plan') : undefined}
+                  title={isPlanLike ? 'View as tasks (Plan)' : `Document type: ${artifactType.label}`}
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 ${isPlanLike ? 'cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-900/50 focus-visible:ring-2 focus-visible:ring-indigo-400' : 'cursor-default'}`}
+                >
+                  {artifactType.label}
+                </button>
+              )
+            })()}
             {codeBlockCount > 0 && (
               <span className="text-[10px] text-gray-400">{Math.floor(codeBlockCount)} code blocks</span>
             )}
