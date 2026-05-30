@@ -109,6 +109,11 @@ Rules:
 - Use single-letter IDs (a,b,c...)
 - Every node connects to at least one other
 - Only facts from text`,
+  extractTasks:
+    'Extract every actionable task, TODO, or next step from this markdown plan. ' +
+    'Return ONLY a JSON array, no prose, no code fences. Each item: ' +
+    '{"text": "<the task, imperative>", "section": "<nearest heading title or empty>"}. ' +
+    'Do not invent tasks; only extract what is stated.',
 } as const
 
 export const PROMPT_CONFIG = {
