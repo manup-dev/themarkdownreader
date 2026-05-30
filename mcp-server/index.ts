@@ -5,6 +5,7 @@ import fs from 'fs'
 import path from 'path'
 import { z } from 'zod'
 import { buildReaderUrl } from './url'
+import { extractTasks, buildTaskPrompt } from './plan'
 
 const PROJECT_ROOT = process.cwd()
 const MD_READER_URL = process.env.MD_READER_URL || 'http://localhost:5183'
@@ -303,6 +304,35 @@ server.tool(
     const absPath = validateMdPath(inputPath)
     const url = await openView(absPath, 'read')
     return { content: [{ type: 'text', text: `Opened ${inputPath} in the reader\n${url}` }] }
+  }
+)
+
+// ─── Tool 11: pending_tasks ─────────────────────────────────────────────────
+
+server.tool(
+  'pending_tasks',
+  'List the open (unchecked) checkbox tasks in a markdown plan, each as a grounded, ready-to-implement prompt. Use this to pull the remaining work from a plan/spec you or a teammate wrote and implement it task by task.',
+  { path: z.string().describe('Relative path to a .md plan file, e.g. "docs/plan.md"') },
+  async ({ path: inputPath }) => {
+    const absPath = validateMdPath(inputPath)
+    const md = fs.readFileSync(absPath, 'utf-8')
+    const fileName = path.basename(absPath)
+    const open = extractTasks(md).filter((t) => t.status === 'open')
+
+    if (open.length === 0) {
+      return { content: [{ type: 'text', text: `No open tasks found in ${inputPath}.` }] }
+    }
+
+    const body = open
+      .map((t, i) => `${i + 1}. [${t.section || 'no section'}] ${t.text}\n\n${buildTaskPrompt(t, fileName)}`)
+      .join('\n\n———\n\n')
+
+    return {
+      content: [{
+        type: 'text',
+        text: `${open.length} open task${open.length === 1 ? '' : 's'} in ${inputPath}:\n\n${body}`,
+      }],
+    }
   }
 )
 
