@@ -259,7 +259,9 @@ export function Upload() {
             </span>
           </h1>
           <p className="text-base text-gray-500 dark:text-gray-400 pt-1">
-            Comprehend. Then act. Without the alt-tab. Local, offline, MIT.
+            The reader for the agentic world. Your agents write markdown all
+            day — comprehend it, then ship feedback back. Without the alt-tab.
+            Local, offline, MIT.
           </p>
           <div className="flex items-center justify-center gap-1.5 pt-1">
             <Shield className="h-3.5 w-3.5 text-green-500" />
@@ -323,7 +325,7 @@ export function Upload() {
         >
           <UploadIcon className="mx-auto h-10 w-10 text-gray-400 mb-3" />
           <p className="text-gray-600 dark:text-gray-300 font-medium">
-            Drop a markdown file here or click to upload
+            Drop a plan, spec, or anything your agent wrote — or click to upload
           </p>
           <p className="text-sm text-gray-400 mt-1">
             {isFirstVisit ? 'Drop a file, paste with Ctrl+V, or click to browse' : '.md, .markdown, .txt, or .excalidraw'}
