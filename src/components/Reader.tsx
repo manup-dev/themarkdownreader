@@ -4,6 +4,7 @@ import Markdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import { remarkBoxTables } from '../lib/remark-box-tables'
+import { remarkCitations } from '../lib/remark-cite'
 import { useStore } from '../store/useStore'
 import { resolveImageBlobUrl } from '../lib/fs-access'
 import ScrollMinimap from './ScrollMinimap'
@@ -181,6 +182,26 @@ const markdownComponents = {
   h5: HeadingRenderer(5),
   h6: HeadingRenderer(6),
   a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
+    // Grounding citations (file.ext:line) — copy the reference to clipboard.
+    if (href?.startsWith('cite:')) {
+      const ref = href.slice(5)
+      return (
+        <a
+          href={href}
+          title={`Copy "${ref}" to clipboard`}
+          className="font-mono text-[0.92em] px-1 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 cursor-pointer no-underline focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
+          onClick={(e) => {
+            e.preventDefault()
+            navigator.clipboard
+              ?.writeText(ref)
+              .then(() => showToast('Reference copied — paste it to your agent'))
+              .catch(() => showToast('Copy failed'))
+          }}
+        >
+          {children}
+        </a>
+      )
+    }
     // Same-file anchor links — smooth scroll to heading
     if (href?.startsWith('#')) {
       return (
@@ -433,7 +454,7 @@ export function Reader() {
   }, [hasMath, hasCodeBlocks])
 
   // Memoize rendered Markdown — avoids re-parsing on scroll/progress/state changes
-  const remarkPluginsMemo = useMemo(() => [remarkGfm, remarkMath, remarkBoxTables], [])
+  const remarkPluginsMemo = useMemo(() => [remarkGfm, remarkMath, remarkBoxTables, remarkCitations], [])
   const renderedMarkdown = useMemo(() => (
     <Markdown
       remarkPlugins={remarkPluginsMemo}
