@@ -123,3 +123,6 @@ dist-jupyter/
 .yarn/build-state.yml
 .yarn/unplugged/
 .pnp.*
+
+# Python virtualenv for the JupyterLab package (third-party bundled JS).
+.venv-jupyter/

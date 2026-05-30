@@ -16,6 +16,10 @@ export default defineConfig([
     // so never on CI, but massive and full of .d.ts/.js files that explode
     // lint with thousands of errors.
     'vscode-extension/.wdio-vscode-service',
+    // Python virtualenv for the JupyterLab package. Full of third-party
+    // bundled JS (galata, yarn/handlebars staging templates) that trips the
+    // parser (#each) and references removed rules (ban-types). Never ours.
+    '.venv-jupyter',
     // Other gitignored build outputs that could show up locally.
     'cli/dist',
     'dist-e2e',
@@ -35,6 +39,22 @@ export default defineConfig([
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+    },
+    rules: {
+      // Honour the `_`-prefix convention for intentionally-unused vars/args
+      // (e.g. iframe-bridge handlers that ignore their payload).
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
+    },
+  },
+  {
+    // The JupyterLab package ships Lumino widgets, not a Vite fast-refresh
+    // app, so the "only export components" constraint doesn't apply there.
+    files: ['packages/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
     },
   },
 ])

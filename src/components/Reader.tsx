@@ -132,6 +132,10 @@ function ImageRenderer({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImage
 
   useEffect(() => {
     if (!needsResolve || !folderHandle || !activeFilePath || typeof src !== 'string') {
+      // Intentional reset: clear any previously-resolved blob URL when this
+      // image no longer needs (or can't have) local resolution. One-shot on
+      // dependency change, not a render-loop trigger.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResolvedSrc(null)
       return
     }
