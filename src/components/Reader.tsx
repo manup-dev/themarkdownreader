@@ -1521,6 +1521,19 @@ export function Reader() {
             })()}
             <svg className={`w-3 h-3 inline ml-1 opacity-40 transition-transform ${statsExpanded ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
           </button>
+          {artifactType.type !== 'doc' && (() => {
+            const isPlanLike = artifactType.type === 'plan' || artifactType.type === 'todo'
+            return (
+              <button
+                type="button"
+                onClick={isPlanLike ? () => setViewMode('plan') : undefined}
+                title={isPlanLike ? 'View as tasks (Plan)' : `Document type: ${artifactType.label}`}
+                className={`ml-2 align-middle px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 ${isPlanLike ? 'cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-900/50 focus-visible:ring-2 focus-visible:ring-indigo-400' : 'cursor-default'}`}
+              >
+                {artifactType.label}
+              </button>
+            )
+          })()}
           {statsExpanded && <div className="flex items-center gap-4 mt-1 text-xs">
             <span
               className="cursor-pointer hover:opacity-70"
@@ -1545,19 +1558,6 @@ export function Reader() {
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400`}>
               {contentType}
             </span>
-            {(() => {
-              const isPlanLike = artifactType.type === 'plan' || artifactType.type === 'todo'
-              return (
-                <button
-                  type="button"
-                  onClick={isPlanLike ? () => setViewMode('plan') : undefined}
-                  title={isPlanLike ? 'View as tasks (Plan)' : `Document type: ${artifactType.label}`}
-                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 ${isPlanLike ? 'cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-900/50 focus-visible:ring-2 focus-visible:ring-indigo-400' : 'cursor-default'}`}
-                >
-                  {artifactType.label}
-                </button>
-              )
-            })()}
             {codeBlockCount > 0 && (
               <span className="text-[10px] text-gray-400">{Math.floor(codeBlockCount)} code blocks</span>
             )}
