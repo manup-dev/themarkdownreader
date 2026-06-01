@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import 'katex/dist/katex.min.css' // hides the MathML fallback; without it every $…$/$$…$$ renders doubled
 import App from './App.tsx'
 import { isIFrameMode, getIFrameBridge } from './lib/iframe-bridge'
 import { useStore } from './store/useStore'

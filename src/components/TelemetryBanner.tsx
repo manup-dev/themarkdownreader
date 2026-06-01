@@ -28,7 +28,7 @@ export function TelemetryBanner() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Help improve md-reader</h3>
-              <button onClick={handleDecline} className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+              <button onClick={handleDecline} aria-label="Dismiss" className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                 <X className="h-4 w-4" />
               </button>
             </div>

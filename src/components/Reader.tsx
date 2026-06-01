@@ -92,7 +92,7 @@ function CodeBlockRenderer({ children, className, ...props }: React.HTMLAttribut
   }
 
   return (
-    <div className="relative group">
+    <div className={`relative group ${language ? 'pt-7' : ''}`}>
       {language && (
         <span className="absolute top-2 left-2 px-1.5 py-0.5 text-[10px] rounded bg-gray-700/80 sepia:bg-sepia-800/80 text-gray-400 sepia:text-sepia-200 font-mono">
           {language}
