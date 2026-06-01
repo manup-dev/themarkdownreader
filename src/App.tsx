@@ -782,8 +782,9 @@ function AppContent() {
         </div>
       )}
 
-      {/* Telemetry opt-in banner (shows once) */}
-      <TelemetryBanner />
+      {/* Telemetry opt-in banner (shows once) — suppressed while the first-run
+          onboarding tour is up so the two first-run prompts don't overlap. */}
+      {!showOnboarding && <TelemetryBanner />}
 
       {/* Share-load failure banner — fixed top, dismissible. Appears when
           the share-loader rejects (CORS, 404 on the doc URL, bad hash

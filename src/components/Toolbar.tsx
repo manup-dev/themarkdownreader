@@ -610,11 +610,12 @@ export function Toolbar() {
             <button
               key={vm.value}
               onClick={() => { setViewMode(vm.value); localStorage.setItem(`md-reader-used-${vm.value}`, '1') }}
+              aria-current={viewMode === vm.value ? 'page' : undefined}
               title={viewShortcuts[vm.value] ? `${vm.tooltip} (${viewShortcuts[vm.value]})` : vm.tooltip}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors whitespace-nowrap ${
                 viewMode === vm.value
-                  ? 'bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300'
-                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                  ? 'bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-semibold'
+                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 font-medium'
               }`}
             >
               {vm.icon}
