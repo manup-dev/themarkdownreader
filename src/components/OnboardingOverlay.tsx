@@ -28,6 +28,20 @@ export function OnboardingOverlay({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState(0)
   const [spotlightRect, setSpotlightRect] = useState<DOMRect | null>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
+  const nextBtnRef = useRef<HTMLButtonElement>(null)
+
+  // a11y: move focus into the modal on mount and close on Escape.
+  useEffect(() => {
+    nextBtnRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        localStorage.setItem('md-reader-onboarding-done', 'true')
+        onComplete()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onComplete])
 
   useEffect(() => {
     const target = document.querySelector(STEPS[step].target)
@@ -122,10 +136,13 @@ export function OnboardingOverlay({ onComplete }: { onComplete: () => void }) {
 
       {/* Coach mark card */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-title"
         className="absolute bg-white dark:bg-gray-800 sepia:bg-sepia-50 rounded-xl shadow-2xl p-5 max-w-xs animate-scale-in"
         style={getCardStyle()}
       >
-        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">{current.title}</p>
+        <p id="onboarding-title" className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">{current.title}</p>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{current.text}</p>
         <div className="flex items-center justify-between">
           <button
@@ -137,6 +154,7 @@ export function OnboardingOverlay({ onComplete }: { onComplete: () => void }) {
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-400">{step + 1}/{STEPS.length}</span>
             <button
+              ref={nextBtnRef}
               onClick={handleNext}
               className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium"
             >

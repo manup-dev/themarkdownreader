@@ -4,25 +4,58 @@ interface Props {
   children: ReactNode
   fallback?: ReactNode
   name?: string
+  /**
+   * Auto-recover from transient errors (e.g. React's commit-phase reconciliation
+   * hiccup when switching from an imperative-DOM view like Mind Map/Treemap back
+   * to Read). On catch, reset on the next frame so the children re-render after
+   * the problematic commit has completed. Capped so a *persistent* error still
+   * lands on the fallback instead of looping.
+   */
+  autoRetry?: boolean
 }
 
 interface State {
   hasError: boolean
   error: Error | null
+  retryCount: number
 }
 
+const MAX_AUTO_RETRIES = 2
+
 export class ErrorBoundary extends Component<Props, State> {
+  private retryRaf: number | null = null
+  private resetTimer: number | null = null
+
   constructor(props: Props) {
     super(props)
-    this.state = { hasError: false, error: null }
+    this.state = { hasError: false, error: null, retryCount: 0 }
   }
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error }
   }
 
   componentDidCatch(error: Error, info: { componentStack?: string | null }) {
     console.error(`[ErrorBoundary:${this.props.name ?? 'unknown'}]`, error, info.componentStack)
+    if (this.props.autoRetry && this.state.retryCount < MAX_AUTO_RETRIES) {
+      this.retryRaf = requestAnimationFrame(() => {
+        this.setState((s) => ({ hasError: false, error: null, retryCount: s.retryCount + 1 }))
+      })
+    }
+  }
+
+  componentDidUpdate(_prev: Props, prevState: State) {
+    // After a successful auto-recovery, clear the retry budget (after a short
+    // delay) so the *next* transient error can also auto-retry. A persistent
+    // error re-throws within this window, exhausts the budget, and shows the fallback.
+    if (prevState.hasError && !this.state.hasError && this.state.retryCount > 0) {
+      this.resetTimer = window.setTimeout(() => this.setState({ retryCount: 0 }), 1500)
+    }
+  }
+
+  componentWillUnmount() {
+    if (this.retryRaf !== null) cancelAnimationFrame(this.retryRaf)
+    if (this.resetTimer !== null) clearTimeout(this.resetTimer)
   }
 
   render() {
@@ -52,7 +85,7 @@ export class ErrorBoundary extends Component<Props, State> {
             )}
             <div className="flex items-center justify-center gap-2">
               <button
-                onClick={() => this.setState({ hasError: false, error: null })}
+                onClick={() => this.setState({ hasError: false, error: null, retryCount: 0 })}
                 className="text-sm px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Try again

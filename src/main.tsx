@@ -5,10 +5,13 @@ import 'katex/dist/katex.min.css' // hides the MathML fallback; without it every
 import App from './App.tsx'
 import { isIFrameMode, getIFrameBridge } from './lib/iframe-bridge'
 import { useStore } from './store/useStore'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary name="App" autoRetry>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 )
 
