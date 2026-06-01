@@ -504,7 +504,13 @@ export function Toolbar() {
             <button
               onClick={handleClose}
               className="p-1.5 text-gray-500 hover:text-red-500 transition-colors"
-              aria-label="Close document"
+              aria-label={
+                workspaceMode
+                  ? 'Back to library'
+                  : folderFiles !== null
+                    ? 'Close folder'
+                    : 'Close document'
+              }
               title={
                 workspaceMode
                   ? 'Back to library'
