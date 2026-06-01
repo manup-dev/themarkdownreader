@@ -521,6 +521,18 @@ article table tbody tr:hover { background: rgba(59, 130, 246, 0.05); }
   top: 0;
 }
 
+/* Long unbroken tokens (URLs, file hashes, JWTs, base64 blobs — common in
+   AI-generated markdown) must wrap instead of forcing a horizontal scrollbar
+   across the reading pane. */
+.prose p,
+.prose li,
+.prose blockquote,
+.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6,
+.prose td, .prose th,
+.prose a {
+  overflow-wrap: anywhere;
+}
+
 /* Print stylesheet */
 @media print {
   nav, aside, .fixed, button, .cursor-col-resize { display: none !important; }

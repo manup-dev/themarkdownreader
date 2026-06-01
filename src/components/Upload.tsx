@@ -52,6 +52,10 @@ export function Upload() {
       const reader = new FileReader()
       reader.onload = (e) => {
         const text = e.target?.result as string
+        if (!text || !text.trim()) {
+          setError('That file is empty — nothing to read.')
+          return
+        }
         setMarkdown(text, file.name)
       }
       reader.onerror = () => setError('Failed to read file')
