@@ -516,6 +516,7 @@ export function Workspace() {
               <button
                 onClick={() => toggleQueue(doc.id!)}
                 className={`p-1.5 transition-all ${queued.has(doc.id!) ? 'text-amber-500' : 'text-gray-300 opacity-0 group-hover:opacity-100'}`}
+                aria-label={queued.has(doc.id!) ? 'Remove from reading queue' : 'Add to reading queue'}
                 title={queued.has(doc.id!) ? 'Remove from reading queue' : 'Add to reading queue'}
               >
                 <Bookmark className={`h-4 w-4 ${queued.has(doc.id!) ? 'fill-amber-500' : ''}`} />
@@ -523,6 +524,7 @@ export function Workspace() {
               <button
                 onClick={() => handleRemove(doc.id!)}
                 className="p-1.5 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                aria-label="Remove from library"
                 title="Remove from library"
               >
                 <Trash2 className="h-4 w-4" />

@@ -557,6 +557,7 @@ export function PodcastPlayer() {
           onClick={() => handleSkip(-3)}
           disabled={state === 'generating' || !script}
           className="p-2 text-gray-400 hover:text-gray-200 disabled:opacity-20 transition-colors"
+          aria-label="Skip back"
           title="Skip back"
         >
           <SkipBack className="h-5 w-5" />
@@ -566,6 +567,7 @@ export function PodcastPlayer() {
           <button
             onClick={handlePause}
             className="p-4 bg-purple-600 text-white rounded-full hover:bg-purple-700 transition-colors shadow-lg shadow-purple-500/20"
+            aria-label="Pause"
             title="Pause"
           >
             <Pause className="h-6 w-6" />
@@ -575,6 +577,7 @@ export function PodcastPlayer() {
             onClick={handlePlay}
             disabled={state === 'generating'}
             className="p-4 bg-purple-600 text-white rounded-full hover:bg-purple-700 disabled:opacity-50 transition-colors shadow-lg shadow-purple-500/20"
+            aria-label={script ? 'Play' : 'Generate & Play'}
             title={script ? 'Play' : 'Generate & Play'}
           >
             {state === 'generating' ? (
@@ -589,6 +592,7 @@ export function PodcastPlayer() {
           onClick={() => handleSkip(3)}
           disabled={state === 'generating' || !script}
           className="p-2 text-gray-400 hover:text-gray-200 disabled:opacity-20 transition-colors"
+          aria-label="Skip forward"
           title="Skip forward"
         >
           <SkipForward className="h-5 w-5" />
@@ -598,6 +602,7 @@ export function PodcastPlayer() {
           onClick={handleStop}
           disabled={state === 'idle' && currentSegIdx === 0}
           className="p-2 text-gray-400 hover:text-gray-200 disabled:opacity-20 transition-colors"
+          aria-label="Stop"
           title="Stop"
         >
           <Square className="h-4 w-4" />

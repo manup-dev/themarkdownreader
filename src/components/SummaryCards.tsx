@@ -187,6 +187,7 @@ export function SummaryCardsView() {
                     }}
                     disabled={loadingId !== null}
                     className="ml-auto text-blue-500 hover:text-blue-700 disabled:opacity-50"
+                    aria-label="AI summarize this section"
                     title="AI summarize this section"
                   >
                     {loadingId === card.id ? (

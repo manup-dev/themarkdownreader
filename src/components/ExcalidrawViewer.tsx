@@ -102,6 +102,7 @@ export function ExcalidrawViewer({ elements: elementsProp, appState, inline, con
           <button
             onClick={() => setExpanded(false)}
             className="p-1.5 bg-white dark:bg-gray-800 rounded shadow text-gray-500 hover:text-gray-700"
+            aria-label="Collapse"
             title="Collapse"
           >
             <Minimize2 className="h-4 w-4" />
@@ -110,6 +111,7 @@ export function ExcalidrawViewer({ elements: elementsProp, appState, inline, con
         <button
           onClick={() => setFullscreen(!fullscreen)}
           className="p-1.5 bg-white dark:bg-gray-800 rounded shadow text-gray-500 hover:text-gray-700"
+          aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
         >
           {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}

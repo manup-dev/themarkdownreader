@@ -1474,6 +1474,7 @@ export function Reader() {
                 setTimeout(() => setLinkCopied(false), 1500)
               }}
               className="opacity-40 hover:opacity-80 transition-opacity shrink-0"
+              aria-label="Copy link to this section"
               title="Copy link to this section"
             >
               {linkCopied ? (
@@ -1890,6 +1891,7 @@ export function Reader() {
         <button
           onClick={scrollToTop}
           className="back-to-top fixed bottom-20 right-20 p-2.5 bg-gray-800/70 dark:bg-gray-200/70 text-white dark:text-gray-900 rounded-full shadow-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-all opacity-60 hover:opacity-100 z-10"
+          aria-label="Back to top"
           title="Back to top"
         >
           <ArrowUp className="h-4 w-4" />

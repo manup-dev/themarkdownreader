@@ -490,6 +490,7 @@ export function Toolbar() {
                   ? 'text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/30'
                   : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
+              aria-label="AI Settings"
               title="AI Settings"
             >
               <Settings className="h-4 w-4" />
@@ -503,6 +504,7 @@ export function Toolbar() {
             <button
               onClick={handleClose}
               className="p-1.5 text-gray-500 hover:text-red-500 transition-colors"
+              aria-label="Close document"
               title={
                 workspaceMode
                   ? 'Back to library'

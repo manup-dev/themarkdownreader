@@ -697,6 +697,7 @@ function AppContent() {
             <button
               onClick={() => { setFabMenuOpen(false); document.querySelector<HTMLButtonElement>('[data-tts-player]')?.click() }}
               className="p-2.5 rounded-full bg-emerald-600 text-white shadow-md hover:bg-emerald-700 hover:scale-110 transition-all"
+              aria-label="Read Aloud (TTS)"
               title="Read Aloud (TTS)"
             >
               <Volume2 className="h-4 w-4" />
@@ -707,6 +708,7 @@ function AppContent() {
               className={`p-2.5 rounded-full shadow-md hover:scale-110 transition-all relative ${
                 commentsOpen ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300' : 'bg-teal-600 text-white hover:bg-teal-700'
               }`}
+              aria-label="View comments"
               title={commentsOpen ? 'Close comments' : 'View comments'}
             >
               <MessageSquareText className="h-4 w-4" />
@@ -717,6 +719,7 @@ function AppContent() {
               className={`p-2.5 rounded-full shadow-md hover:scale-110 transition-all ${
                 chatOpen ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300' : 'bg-blue-500 text-white hover:bg-blue-600'
               }`}
+              aria-label="Chat with document"
               title={chatOpen ? 'Close chat' : 'Chat with document'}
             >
               <MessageSquare className="h-4 w-4" />
@@ -732,6 +735,7 @@ function AppContent() {
                 ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rotate-0'
                 : 'bg-blue-600 text-white hover:bg-blue-700 animate-pulse-once hover:scale-110'
             }`}
+            aria-label="Tools menu"
             title={fabMenuOpen ? 'Close menu (Esc)' : 'Tools menu'}
           >
             {fabMenuOpen ? <X className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
