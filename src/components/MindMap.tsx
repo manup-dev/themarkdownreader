@@ -82,6 +82,7 @@ export function MindMapView() {
 
     const isDark = theme === 'dark'
     const isSepia = theme === 'sepia'
+    const isHC = theme === 'high-contrast'
 
     mmRef.current = Markmap.create(svgRef.current, {
       // autoFit runs markmap's own deferred fit/measure on a timer; if the view
@@ -107,8 +108,8 @@ export function MindMapView() {
       },
     }, root)
 
-    const textColor = isDark ? '#e5e7eb' : isSepia ? '#3d3122' : '#1f2937'
-    const lineColor = isDark ? '#374151' : isSepia ? '#d6c4a8' : '#d1d5db'
+    const textColor = isDark ? '#e5e7eb' : isSepia ? '#3d3122' : isHC ? '#ffffff' : '#1f2937'
+    const lineColor = isDark ? '#374151' : isSepia ? '#d6c4a8' : isHC ? '#9ca3af' : '#d1d5db'
 
     // Markmap renders node content as HTML inside <foreignObject>, so styling
     // text via the SVG `text` selector alone is not enough — inline `<code>`,
@@ -128,6 +129,13 @@ export function MindMapView() {
          --markmap-a-color: #b45309;
          --markmap-a-hover-color: #92400e;
          --markmap-circle-open-bg: #faf6f1;`
+      : isHC
+      ? `--markmap-text-color: #ffffff;
+         --markmap-code-bg: #111111;
+         --markmap-code-color: #00ff00;
+         --markmap-a-color: #5ef5f5;
+         --markmap-a-hover-color: #a5fcfc;
+         --markmap-circle-open-bg: #000000;`
       : `--markmap-text-color: #1f2937;
          --markmap-code-bg: rgba(99, 102, 241, 0.08);
          --markmap-code-color: #6d28d9;
@@ -246,7 +254,7 @@ export function MindMapView() {
       canvas.width = img.width * 2
       canvas.height = img.height * 2
       ctx.scale(2, 2)
-      const bgColor = theme === 'dark' ? '#0a0a0f' : theme === 'sepia' ? '#faf6f1' : '#ffffff'
+      const bgColor = theme === 'dark' ? '#0a0a0f' : theme === 'sepia' ? '#faf6f1' : theme === 'high-contrast' ? '#000000' : '#ffffff'
       ctx.fillStyle = bgColor
       ctx.fillRect(0, 0, img.width, img.height)
       ctx.drawImage(img, 0, 0)
@@ -280,7 +288,7 @@ export function MindMapView() {
     setTimeout(() => mmRef.current?.fit(), 200)
   }, [activeSection, toc])
 
-  const bgColor = theme === 'dark' ? '#0a0a0f' : theme === 'sepia' ? '#faf6f1' : '#ffffff'
+  const bgColor = theme === 'dark' ? '#0a0a0f' : theme === 'sepia' ? '#faf6f1' : theme === 'high-contrast' ? '#000000' : '#ffffff'
 
   return (
     <div className="flex-1 overflow-hidden relative">
