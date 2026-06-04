@@ -148,7 +148,7 @@ export function PlanView() {
             {g.items.map((t) => (
               <li
                 key={t.id}
-                className="flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
+                className="flex items-center gap-3 min-w-0 rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
               >
                 <button
                   onClick={() => cycleStatus(t)}
@@ -159,7 +159,7 @@ export function PlanView() {
                   {STATUS_GLYPH[t.status]}
                 </button>
                 <span
-                  className={`flex-1 text-sm ${t.status === 'done' ? 'text-slate-400 line-through' : ''}`}
+                  className={`flex-1 min-w-0 [overflow-wrap:anywhere] text-sm ${t.status === 'done' ? 'text-slate-400 line-through' : ''}`}
                 >
                   {t.text}
                   {t.status === 'blocked' && t.blockedReason && (
@@ -169,7 +169,7 @@ export function PlanView() {
                 <button
                   onClick={() => dispatch(t)}
                   title="Copy a grounded prompt for this task"
-                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-400 dark:border-slate-600 dark:hover:bg-slate-700"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-400 dark:border-slate-600 dark:hover:bg-slate-700"
                 >
                   <ClipboardCopy className="h-3.5 w-3.5" /> Dispatch
                 </button>
