@@ -360,7 +360,7 @@ export function SelectionMenu() {
                 </div>
               ) : (
                 <div className="prose prose-sm dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-headings:my-1 prose-headings:text-sm max-w-none text-sm">
-                  <Markdown remarkPlugins={[remarkGfm]}>{aiResponse!}</Markdown>
+                  <Markdown remarkPlugins={[remarkGfm]} skipHtml>{aiResponse!}</Markdown>
                 </div>
               )}
             </div>
