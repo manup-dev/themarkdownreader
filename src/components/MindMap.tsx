@@ -84,7 +84,10 @@ export function MindMapView() {
     const isSepia = theme === 'sepia'
 
     mmRef.current = Markmap.create(svgRef.current, {
-      autoFit: true,
+      // autoFit runs markmap's own deferred fit/measure on a timer; if the view
+      // is switched away before it settles it measures a detached SVG and throws
+      // an uncaught SVGLength error. We do a single guarded fit() ourselves below.
+      autoFit: false,
       duration: 300,
       maxWidth: 280,
       paddingX: 16,
@@ -151,8 +154,16 @@ export function MindMapView() {
     `
     svgRef.current.appendChild(style)
 
-    // Ensure fit-to-view after initial render settles
-    setTimeout(() => mmRef.current?.fit(), 100)
+    // Ensure fit-to-view after initial render settles. Guard against the view
+    // being switched away before this fires: fit() measures the SVG, and on a
+    // detached/zero-layout SVG markmap throws an uncaught SVGLength
+    // "Could not resolve relative length" error. Clear the timer on cleanup and
+    // bail if the SVG is no longer connected.
+    const fitTimer = window.setTimeout(() => {
+      try {
+        if (svgRef.current?.isConnected) mmRef.current?.fit()
+      } catch { /* SVG detached mid-transition — safe to ignore */ }
+    }, 100)
 
     // Ctrl+click node to navigate to section in reader
     const svgEl = svgRef.current
@@ -183,8 +194,9 @@ export function MindMapView() {
     svgEl?.addEventListener('click', handleNodeClick)
 
     return () => {
+      clearTimeout(fitTimer)
       svgEl?.removeEventListener('click', handleNodeClick)
-      mmRef.current?.destroy()
+      try { mmRef.current?.destroy() } catch { /* best-effort teardown */ }
       mmRef.current = null
     }
   }, [markdown, theme, maxDepth, isLargeDoc])

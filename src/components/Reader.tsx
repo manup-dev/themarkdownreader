@@ -263,7 +263,7 @@ const themeConfig = {
   light: {
     container: 'bg-white text-gray-900',
     prose: 'prose prose-gray prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900 prose-a:text-blue-600 prose-code:text-gray-800 prose-code:bg-gray-100 prose-pre:bg-gray-50 prose-pre:text-gray-800 prose-blockquote:text-gray-600 prose-blockquote:border-gray-300 prose-li:text-gray-700 prose-td:text-gray-700 prose-th:text-gray-900',
-    stats: 'text-gray-400',
+    stats: 'text-gray-500', // gray-400 on white was 2.6:1 (fails WCAG AA); gray-500 = 4.83:1
     progressBg: 'bg-gray-200',
   },
   dark: {

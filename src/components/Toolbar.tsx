@@ -266,7 +266,7 @@ export function Toolbar() {
           {!isWorkspaceView && markdown && (
             <>
               <span
-                className="text-xs text-gray-400 tabular-nums cursor-default"
+                className="text-xs text-gray-500 dark:text-gray-400 tabular-nums cursor-default"
                 title={`${Math.round(readingProgress)}% read`}
               >
                 {Math.round(readingProgress)}%

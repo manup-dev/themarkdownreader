@@ -95,7 +95,7 @@ export function OnboardingOverlay({ onComplete }: { onComplete: () => void }) {
   }
 
   return (
-    <div ref={overlayRef} className="fixed inset-0 z-[100]" style={{ pointerEvents: 'auto' }}>
+    <div ref={overlayRef} className="fixed inset-0 z-[100]" style={{ pointerEvents: 'none' }}>
       {/* Semi-transparent overlay with spotlight cutout */}
       <svg className="absolute inset-0 w-full h-full" style={{ pointerEvents: 'none' }}>
         <defs>
@@ -137,17 +137,17 @@ export function OnboardingOverlay({ onComplete }: { onComplete: () => void }) {
       {/* Coach mark card */}
       <div
         role="dialog"
-        aria-modal="true"
+        aria-modal="false"
         aria-labelledby="onboarding-title"
         className="absolute bg-white dark:bg-gray-800 sepia:bg-sepia-50 rounded-xl shadow-2xl p-5 max-w-xs animate-scale-in"
-        style={getCardStyle()}
+        style={{ ...getCardStyle(), pointerEvents: 'auto' }}
       >
         <p id="onboarding-title" className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">{current.title}</p>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{current.text}</p>
         <div className="flex items-center justify-between">
           <button
             onClick={handleSkip}
-            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
           >
             Skip tour
           </button>

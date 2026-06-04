@@ -487,7 +487,7 @@ export function Upload() {
         </div>
 
         {error && (
-          <p className="text-center text-red-500 text-sm">{error}</p>
+          <p role="alert" className="text-center text-red-500 text-sm">{error}</p>
         )}
       </div>
     </div>
