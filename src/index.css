@@ -372,11 +372,12 @@ article h5:hover > span[aria-hidden], article h6:hover > span[aria-hidden] {
   box-shadow: inset 0 -1px 0 var(--vscode-keybindingLabel-bottomBorder, rgba(0, 0, 0, 0.1));
 }
 /* Box-drawing art (auto-detected from CLI output, e.g. kubectl tables):
-   tighten line-height so the vertical │ bars touch row-to-row and the grid
-   reads as a connected box. Scoped to .box-art so ordinary code keeps its
-   comfortable leading. */
-article pre:has(code.box-art) { line-height: 1.15; }
-article code.box-art { line-height: 1.15; }
+   line-height must be exactly 1 so each row's box-drawing glyphs (│ ─ ┼ …)
+   sit edge-to-edge with the rows above/below — any extra leading inserts a gap
+   that breaks the vertical bars and shatters the grid. Scoped to .box-art so
+   ordinary code keeps its comfortable leading. */
+article pre:has(code.box-art) { line-height: 1; }
+article code.box-art { line-height: 1; }
 /* Code block borders for better delineation */
 article pre { border: 1px solid #e5e7eb; border-radius: 0.5rem; }
 .dark article pre { border-color: #374151; }
