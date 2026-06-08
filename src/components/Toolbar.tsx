@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap, GitBranch, Library, ArrowLeft, Save, Check, Settings, Contrast, Type, Maximize, Printer, Palette, SlidersHorizontal, ChevronDown, Download, Mic, Shapes, PanelLeft, FolderOpen, Home, ListChecks } from 'lucide-react'
+import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap, GitBranch, Library, ArrowLeft, Save, Check, Settings, Contrast, Type, Maximize, Printer, Palette, SlidersHorizontal, ChevronDown, Download, Mic, Shapes, PanelLeft, FolderOpen, Home, ListChecks, PanelTopClose } from 'lucide-react'
 import { AiSettings } from './AiSettings'
 import { AiLoadingIndicator } from './AiLoadingIndicator'
 import { useStore, type Theme, type ViewMode } from '../store/useStore'
@@ -64,6 +64,8 @@ export function Toolbar() {
 
   const dyslexicFont = useStore((s) => s.dyslexicFont)
   const setDyslexicFont = useStore((s) => s.setDyslexicFont)
+  const autoHideHeader = useStore((s) => s.autoHideHeader)
+  const setAutoHideHeader = useStore((s) => s.setAutoHideHeader)
 
   const themes: { value: Theme; icon: React.ReactNode; label: string }[] = [
     { value: 'light', icon: <Sun className="h-4 w-4" />, label: 'Light' },
@@ -369,6 +371,23 @@ export function Toolbar() {
                   Dyslexia-friendly font
                   {dyslexicFont && <Check className="h-3 w-3 ml-auto" />}
                 </button>
+
+                {/* Auto-hide toolbar — reclaims vertical space while reading */}
+                <button
+                  onClick={() => setAutoHideHeader(!autoHideHeader)}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 mt-1 rounded-md text-xs transition-colors ${
+                    autoHideHeader
+                      ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400'
+                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <PanelTopClose className="h-3.5 w-3.5" />
+                  Auto-hide toolbar
+                  {autoHideHeader && <Check className="h-3 w-3 ml-auto" />}
+                </button>
+                <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-snug px-2 mt-1">
+                  Hides while you scroll down; returns on scroll-up or when you move to the top edge.
+                </p>
               </div>
             )}
           </div>

@@ -270,6 +270,14 @@ export interface DocumentState {
   sidebarWidth: number
   chatWidth: number
   dyslexicFont: boolean
+  // Auto-hide reader chrome (tab strip + toolbar) on scroll-down to reclaim
+  // vertical space. `autoHideHeader` is the persisted user preference;
+  // `headerHidden` is ephemeral live state driven by the read-view scroll
+  // direction (never persisted).
+  autoHideHeader: boolean
+  headerHidden: boolean
+  setAutoHideHeader: (on: boolean) => void
+  setHeaderHidden: (hidden: boolean) => void
   readScrollTop: number
   setReadScrollTop: (top: number) => void
 
@@ -397,6 +405,8 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   sidebarWidth: savedSidebarWidth,
   chatWidth: savedChatWidth,
   dyslexicFont: localStorage.getItem('md-reader-dyslexic') === 'true',
+  autoHideHeader: localStorage.getItem('md-reader-autohide-header') === 'true',
+  headerHidden: false,
   readScrollTop: 0,
   podcastScript: null,
   setPodcastScript: (script) => set({ podcastScript: script }),
@@ -463,6 +473,13 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   setSidebarWidth: (w) => { localStorage.setItem('md-reader-sidebarW', String(w)); set({ sidebarWidth: w }) },
   setChatWidth: (w) => { localStorage.setItem('md-reader-chatW', String(w)); set({ chatWidth: w }) },
   setDyslexicFont: (on) => { localStorage.setItem('md-reader-dyslexic', String(on)); set({ dyslexicFont: on }) },
+  setAutoHideHeader: (on) => {
+    localStorage.setItem('md-reader-autohide-header', String(on))
+    // Turning the preference off must always restore the chrome, otherwise a
+    // user who toggles it off while scrolled-down would be left with no chrome.
+    set(on ? { autoHideHeader: on } : { autoHideHeader: on, headerHidden: false })
+  },
+  setHeaderHidden: (hidden) => set({ headerHidden: hidden }),
   setReadScrollTop: (top) => set({ readScrollTop: top }),
   toggleFeature: (id) => {
     const current = useStore.getState().enabledFeatures

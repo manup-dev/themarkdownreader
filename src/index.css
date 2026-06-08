@@ -392,6 +392,59 @@ article pre { border: 1px solid #e5e7eb; border-radius: 0.5rem; }
 .focus-mode .fixed { display: none !important; }
 .focus-mode article { max-width: 48rem; margin: 0 auto; }
 
+/* Auto-hide reader chrome (tab strip + toolbar).
+   The wrapper is a 1-row CSS grid whose row animates 1fr → 0fr; collapsing a
+   grid row genuinely reclaims layout height (the flex-1 content area grows to
+   fill it) and transitions smoothly, unlike animating `height: auto`. The
+   inner .reader-chrome slides up and fades in concert so it reads as a clean
+   retract rather than a squish. */
+.reader-chrome-wrap {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 240ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.reader-chrome-wrap > .reader-chrome {
+  min-height: 0;
+  overflow: hidden;
+  transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease;
+}
+.reader-chrome-wrap.is-hidden { grid-template-rows: 0fr; }
+.reader-chrome-wrap.is-hidden > .reader-chrome { transform: translateY(-12px); opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .reader-chrome-wrap,
+  .reader-chrome-wrap > .reader-chrome { transition: none; }
+}
+
+/* Top-edge zone that summons the chrome back; sits above content, only mounted
+   while the chrome is hidden. The handle is a small peek affordance. */
+.reader-reveal-zone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 14px;
+  z-index: 45;
+  display: flex;
+  justify-content: center;
+}
+.reader-reveal-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 1.1rem;
+  border-radius: 0 0 0.5rem 0.5rem;
+  background: rgba(255, 255, 255, 0.9);
+  color: #64748b;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+.reader-reveal-zone:hover .reader-reveal-handle { opacity: 1; transform: translateY(0); }
+.dark .reader-reveal-handle { background: rgba(31, 41, 55, 0.95); color: #cbd5e1; }
+.sepia .reader-reveal-handle { background: rgba(245, 237, 227, 0.95); color: #7c6f5f; }
+
 /* Zen mode — ultra minimal, only article text */
 .zen-mode .fixed { display: none !important; }
 .zen-mode aside { display: none !important; }

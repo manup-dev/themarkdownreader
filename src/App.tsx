@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
-import { MessageSquare, MessageSquareText, PanelLeftOpen, Loader2, Menu, Volume2, X } from 'lucide-react'
+import { MessageSquare, MessageSquareText, PanelLeftOpen, Loader2, Menu, Volume2, X, ChevronDown } from 'lucide-react'
 import { useStore, type ViewMode } from './store/useStore'
 import { useAdapter } from './provider/hooks'
 import { SAMPLE_MARKDOWN } from './lib/sample-doc'
@@ -109,6 +109,9 @@ function AppContent() {
   const setMarkdown = useStore((s) => s.setMarkdown)
   const activeDocId = useStore((s) => s.activeDocId)
   const dyslexicFont = useStore((s) => s.dyslexicFont)
+  const autoHideHeader = useStore((s) => s.autoHideHeader)
+  const headerHidden = useStore((s) => s.headerHidden)
+  const setHeaderHidden = useStore((s) => s.setHeaderHidden)
 
   // Unified view: hydrate folder session from cache on mount (no prompt) +
   // install the __mdReaderLoadCollection test hook (used by E2E tests).
@@ -575,9 +578,31 @@ function AppContent() {
       {showSidebar && <ErrorBoundary name="Sidebar"><Sidebar /></ErrorBoundary>}
 
       {/* Main content */}
-      <div id="main-content" className="flex-1 flex flex-col min-w-0" role="main">
-        {!isIframe && <TabBar />}
-        <Toolbar />
+      <div id="main-content" className="relative flex-1 flex flex-col min-w-0" role="main">
+        {/* Reader chrome (tab strip + toolbar). When the "Auto-hide toolbar"
+            setting is on and the read view is scrolled down, this collapses
+            (height → 0) AND slides up, so the content reclaims the space.
+            Only ever hidden in the read view, so switching views always
+            restores the chrome. */}
+        <div className={`reader-chrome-wrap ${autoHideHeader && headerHidden && viewMode === 'read' ? 'is-hidden' : ''}`}>
+          <div className="reader-chrome">
+            {!isIframe && <TabBar />}
+            <Toolbar />
+          </div>
+        </div>
+        {/* Thin top-edge zone that summons the chrome back into view when the
+            pointer reaches the top — for mouse users who aren't scrolling. */}
+        {autoHideHeader && headerHidden && viewMode === 'read' && (
+          <div
+            className="reader-reveal-zone"
+            onMouseEnter={() => setHeaderHidden(false)}
+            aria-hidden="true"
+          >
+            <span className="reader-reveal-handle">
+              <ChevronDown className="h-3.5 w-3.5" />
+            </span>
+          </div>
+        )}
         <Suspense fallback={null}>
           <RemoteBanner />
         </Suspense>

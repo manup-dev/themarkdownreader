@@ -671,6 +671,26 @@ export function Reader() {
         if (wpm > 50 && wpm < 800) { setLiveWpm(wpm); setTimeout(() => setLiveWpm(null), 3000) }
       }
     }
+    // Auto-hide reader chrome based on scroll direction (opt-in setting).
+    // Down past a small threshold hides it (reclaim vertical space); scrolling
+    // up or sitting near the top reveals it. Reading `lastScrollRef.current.top`
+    // before the reassignment below gives the previous scrollTop.
+    {
+      const st = useStore.getState()
+      if (st.autoHideHeader) {
+        const delta = scrollTop - lastScrollRef.current.top
+        if (scrollTop < 80) {
+          if (st.headerHidden) st.setHeaderHidden(false)
+        } else if (delta > 6) {
+          if (!st.headerHidden) st.setHeaderHidden(true)
+        } else if (delta < -6) {
+          if (st.headerHidden) st.setHeaderHidden(false)
+        }
+      } else if (st.headerHidden) {
+        st.setHeaderHidden(false)
+      }
+    }
+
     lastScrollRef.current = { time: now, top: scrollTop }
 
     // Save scroll position for resume (throttled to 2s, batched via idle callback)
