@@ -405,17 +405,28 @@ article pre { border: 1px solid #e5e7eb; border-radius: 0.5rem; }
 }
 .reader-chrome-wrap > .reader-chrome {
   min-height: 0;
+  /* Let this grid item shrink below its content's min-content width. The
+     toolbar is wider than a phone, and without this the item grows to fit it
+     (default grid min-width:auto) and pushes the whole page into horizontal
+     scroll — the overflow-x:clip below can only clip content that exceeds the
+     box, not a box that has grown past the viewport. (overflow:hidden used to
+     imply this via the scroll-container auto-minimum-size rule.) */
+  min-width: 0;
   /* overflow:hidden is needed ONLY while collapsing, so the grid row can clip
      the chrome to 0. When fully shown we switch to visible (rule below) so the
      toolbar's dropdowns/menus (which extend below the bar) aren't clipped. */
   overflow: hidden;
   transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease;
 }
-/* Shown: let toolbar popovers overflow the chrome box. The switch to visible is
-   delayed to the end of the reveal so the toolbar doesn't paint over the article
-   while the row is still expanding (overflow is discrete → flips at the delay). */
+/* Shown: let toolbar popovers (dropdowns/menus) drop below the bar without being
+   clipped, while still containing any horizontal toolbar overflow so a narrow
+   viewport never gets page-wide horizontal scroll. overflow-x:clip + overflow-y:
+   visible is the valid pair for this — `clip` (unlike `hidden`) does NOT coerce
+   the visible axis to `auto`. The switch is delayed to the end of the reveal so
+   the toolbar doesn't paint over the article while the row is still expanding. */
 .reader-chrome-wrap:not(.is-hidden) > .reader-chrome {
-  overflow: visible;
+  overflow-x: clip;
+  overflow-y: visible;
   transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease, overflow 0s 240ms;
 }
 .reader-chrome-wrap.is-hidden { grid-template-rows: 0fr; }
