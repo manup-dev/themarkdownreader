@@ -405,8 +405,18 @@ article pre { border: 1px solid #e5e7eb; border-radius: 0.5rem; }
 }
 .reader-chrome-wrap > .reader-chrome {
   min-height: 0;
+  /* overflow:hidden is needed ONLY while collapsing, so the grid row can clip
+     the chrome to 0. When fully shown we switch to visible (rule below) so the
+     toolbar's dropdowns/menus (which extend below the bar) aren't clipped. */
   overflow: hidden;
   transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease;
+}
+/* Shown: let toolbar popovers overflow the chrome box. The switch to visible is
+   delayed to the end of the reveal so the toolbar doesn't paint over the article
+   while the row is still expanding (overflow is discrete → flips at the delay). */
+.reader-chrome-wrap:not(.is-hidden) > .reader-chrome {
+  overflow: visible;
+  transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease, overflow 0s 240ms;
 }
 .reader-chrome-wrap.is-hidden { grid-template-rows: 0fr; }
 .reader-chrome-wrap.is-hidden > .reader-chrome { transform: translateY(-12px); opacity: 0; }

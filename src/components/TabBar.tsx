@@ -9,6 +9,20 @@ export function TabBar() {
   const switchTab = useStore((s) => s.switchTab)
   const closeTab = useStore((s) => s.closeTab)
 
+  // Activating a tab. switchTab restores file/folder state, but it early-returns
+  // when the tab is already active — so a folder tab that's active yet unloaded
+  // (e.g. after a hard reload, which leaves the user on the Upload screen) would
+  // do nothing on click. Detect that case and re-read the directory instead.
+  const activateTab = (tab: (typeof tabs)[number]) => {
+    if (tab.id === activeTabId) {
+      if (tab.kind === 'folder' && useStore.getState().folderFiles === null) {
+        void useStore.getState().reopenFolderTab(tab.id)
+      }
+      return
+    }
+    switchTab(tab.id)
+  }
+
   if (tabs.length === 0) return null
 
   return (
@@ -28,7 +42,7 @@ export function TabBar() {
               aria-selected={isActive}
               aria-label={tab.title}
               tabIndex={isActive ? 0 : -1}
-              onClick={() => switchTab(tab.id)}
+              onClick={() => activateTab(tab)}
               onKeyDown={(e) => {
                 if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
                   e.preventDefault()
@@ -38,7 +52,7 @@ export function TabBar() {
                   switchTab(tabs[nextIdx].id)
                 } else if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
-                  switchTab(tab.id)
+                  activateTab(tab)
                 }
               }}
               className={[

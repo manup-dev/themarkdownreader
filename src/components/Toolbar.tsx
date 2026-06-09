@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap, GitBranch, Library, ArrowLeft, Save, Check, Settings, Contrast, Type, Maximize, Printer, Palette, SlidersHorizontal, ChevronDown, Download, Mic, Shapes, PanelLeft, FolderOpen, Home, ListChecks, PanelTopClose } from 'lucide-react'
 import { AiSettings } from './AiSettings'
 import { AiLoadingIndicator } from './AiLoadingIndicator'
@@ -552,8 +553,11 @@ export function Toolbar() {
           )}
           </div>
 
-      {/* Folder Close Confirm Modal */}
-      {showFolderCloseConfirm && (
+      {/* Folder Close Confirm Modal — portaled to <body> so its `fixed inset-0`
+          is relative to the viewport (centered), not trapped by the toolbar's
+          backdrop-filter containing block or clipped by the auto-hide chrome's
+          overflow. */}
+      {showFolderCloseConfirm && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setShowFolderCloseConfirm(false)}>
           <div onClick={(e) => e.stopPropagation()} className="bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4">
             <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">Close folder and return to home?</h3>
@@ -582,11 +586,12 @@ export function Toolbar() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Close Confirm Modal */}
-      {showCloseConfirm && (
+      {/* Close Confirm Modal — portaled to <body> for the same reason as above. */}
+      {showCloseConfirm && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setShowCloseConfirm(false)}>
           <div onClick={(e) => e.stopPropagation()} className="bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-700 sepia:border-sepia-200 rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4">
             <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">Close without saving?</h3>
@@ -612,7 +617,8 @@ export function Toolbar() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* View mode tabs */}

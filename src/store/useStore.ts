@@ -9,7 +9,9 @@ import { emptyTab, newTabId, type Tab, type TabPayload } from '../lib/tabs-types
 import { decideOpen } from '../lib/smart-open'
 import { addOrTouchRecent } from '../lib/recents'
 import { putTabContent, getTabContent } from '../lib/tabContent'
-import { putHandle } from '../lib/handleStore'
+import { putHandle, getHandle } from '../lib/handleStore'
+import { reopenDirectory } from '../lib/fs-access'
+import { showToast } from '../lib/toast'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -345,6 +347,11 @@ export interface DocumentState {
   newEmptyTab: () => string
   closeTab: (id: string) => void
   switchTab: (id: string) => void
+  /** Re-read a folder tab's directory from its persisted handle (re-requesting
+   *  permission if needed) and restore the folder view into the active tab.
+   *  Flashes an error toast if the folder was moved / access denied / handle
+   *  lost. The tab must already be active when called. */
+  reopenFolderTab: (tabId: string) => Promise<void>
   openInCurrentTab: (payload: TabPayload) => void
   openInNewTab: (payload: TabPayload) => void
   openSmart: (payload: TabPayload) => void
@@ -659,6 +666,56 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
           set({ markdown: row.body })
         }
       })
+    }
+    // 4. Folder-kind cross-reload restoration: the directory handle and file
+    // contents are per-session (a FileSystemDirectoryHandle can't be hydrated
+    // synchronously from persistence). After a reload the folderBodyCache is
+    // empty, so hydrateFromTab leaves folderFiles null — which would otherwise
+    // drop the user on the Upload screen. Re-read the directory from the
+    // persisted handle so clicking a folder tab returns to that folder.
+    if (target.kind === 'folder' && get().folderFiles === null) {
+      void get().reopenFolderTab(id)
+    }
+  },
+
+  reopenFolderTab: async (tabId) => {
+    const tab = get().tabs.find((t) => t.id === tabId)
+    if (!tab || tab.kind !== 'folder') return
+    // Caller guarantees the tab is active; openInCurrentTab targets the active tab.
+    if (get().activeTabId !== tabId) return
+    const label = tab.folderName ?? tab.title ?? 'folder'
+    const fail = (why: string) =>
+      showToast(`Couldn't reopen "${label}" — ${why}`, { durationMs: 4000 })
+    if (!tab.handleKey) { fail('its folder reference is unavailable. Re-open it from the Open menu.'); return }
+    const handle = await getHandle(tab.handleKey)
+    if (!handle) { fail('the folder reference was lost. Re-open it from the Open menu.'); return }
+    // Bail if the user switched away while the (async) handle lookup ran.
+    if (get().activeTabId !== tabId) return
+    // Remember which file was open so we can return to it (openInCurrentTab
+    // resets the active file to the folder's first entry).
+    const prevActiveFile = tab.activeFilePath ?? null
+    try {
+      const rawFiles = await reopenDirectory(handle)
+      if (get().activeTabId !== tabId) return
+      get().openInCurrentTab({
+        kind: 'folder',
+        folderName: label,
+        handle,
+        files: rawFiles.map((f) => ({
+          path: f.path,
+          name: f.path.split('/').pop() ?? f.path,
+          content: f.content,
+          lastModified: f.lastModified,
+        })),
+      })
+      // Restore the previously-viewed file within the folder. setActiveFile
+      // no-ops when the path no longer exists (file moved/deleted), so we
+      // gracefully fall back to the first file in that case.
+      if (prevActiveFile) get().setActiveFile(prevActiveFile)
+    } catch {
+      // reopenDirectory throws on denied permission or when the directory is
+      // gone/moved — exactly the "flash an error" case.
+      fail('it may have been moved or access was denied.')
     }
   },
 
