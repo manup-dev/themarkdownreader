@@ -101,6 +101,15 @@ describe('<Toolbar> — back-to-upload navigation', () => {
     })
   })
 
+  describe('AI Settings event listener', () => {
+    it('opens AI Settings when the md-reader-open-ai-settings event fires', async () => {
+      useStore.setState({ markdown: '# hello', fileName: 'hello.md' })
+      renderToolbar()
+      window.dispatchEvent(new CustomEvent('md-reader-open-ai-settings'))
+      expect(await screen.findByPlaceholderText(/sk-or-/i)).toBeInTheDocument()
+    })
+  })
+
   describe('Toolbar X in folder mode', () => {
     it('opens a confirm dialog on first use instead of silently clearing the active file', () => {
       useStore.getState().setFolderSession(null, [

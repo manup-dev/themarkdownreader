@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap, GitBranch, Library, ArrowLeft, Save, Check, Settings, Contrast, Type, Maximize, Printer, Palette, SlidersHorizontal, ChevronDown, Download, Mic, Shapes, PanelLeft, FolderOpen, Home, ListChecks, PanelTopClose } from 'lucide-react'
 import { AiSettings } from './AiSettings'
+import { OPEN_AI_SETTINGS_EVENT } from './AiSetupPrompt'
 import { AiLoadingIndicator } from './AiLoadingIndicator'
 import { useStore, type Theme, type ViewMode } from '../store/useStore'
 import { useAdapter } from '../provider/hooks'
@@ -48,6 +49,15 @@ export function Toolbar() {
   const [nameInput, setNameInput] = useState('')
   const [saved, setSaved] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+
+  // Open the settings modal from anywhere (AiSetupPrompt CTA in Chat/Coach/
+  // SummaryCards) — Toolbar owns the modal state, so it owns the listener.
+  useEffect(() => {
+    const onOpen = () => setShowSettings(true)
+    window.addEventListener(OPEN_AI_SETTINGS_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_AI_SETTINGS_EVENT, onOpen)
+  }, [])
+
   const [aiBackend, setAiBackend] = useState<string>(() => getActiveBackend())
   const [showAppearance, setShowAppearance] = useState(false)
   const [showMode, setShowMode] = useState(false)
