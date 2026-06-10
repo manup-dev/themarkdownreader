@@ -6,6 +6,7 @@ import { useStore } from '../store/useStore'
 import { chunkMarkdown } from '../lib/markdown'
 import { generateCoachExplanation, generateQuiz, detectBestBackend, summarizeSection } from '../lib/ai'
 import { trackEvent } from '../lib/telemetry'
+import { AiSetupPrompt } from './AiSetupPrompt'
 
 interface QuizQuestion {
   question: string
@@ -162,10 +163,7 @@ export function CoachView() {
         <div className="text-center space-y-3">
           <GraduationCap className="h-12 w-12 text-gray-300 dark:text-gray-600 mx-auto" />
           <h3 className="text-lg font-semibold text-gray-600 dark:text-gray-300">Visual Coach</h3>
-          <p className="text-gray-400 text-sm max-w-md">
-            The coach needs an AI backend to explain sections, create analogies, and quiz you.
-            Configure Ollama, an OpenRouter API key, or use a browser with WebGPU support.
-          </p>
+          <AiSetupPrompt feature="The coach" />
         </div>
       </div>
     )

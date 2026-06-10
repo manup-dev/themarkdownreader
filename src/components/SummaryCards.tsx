@@ -3,6 +3,7 @@ import { Clock, FileText, Sparkles, Loader2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { buildSectionCards, type SectionCard } from '../lib/visualize'
 import { summarizeSection, detectBestBackend } from '../lib/ai'
+import { openAiSettings } from './AiSetupPrompt'
 
 const SUMMARY_STOP_WORDS = new Set(['this','that','with','from','have','been','will','your','they','their','which','when','what','each','other','about','more','than','also','only','into','some','very','just','like','over','such','most','these','there','could','would','should'])
 
@@ -70,7 +71,7 @@ export function SummaryCardsView() {
             Document Overview
             {cards.length > 0 && <span className="text-sm font-normal text-gray-400 ml-2">{cards.length} sections</span>}
           </h2>
-          {aiReady && (
+          {aiReady ? (
             <button
               onClick={generateAll}
               disabled={loadingId !== null}
@@ -78,6 +79,14 @@ export function SummaryCardsView() {
             >
               <Sparkles className="h-3 w-3" />
               Summarize all sections
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={openAiSettings}
+              className="text-xs text-blue-500 hover:text-blue-600 underline underline-offset-2"
+            >
+              Enable AI to summarize all sections →
             </button>
           )}
         </div>

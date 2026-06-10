@@ -53,7 +53,9 @@ export function Toolbar() {
   // Open the settings modal from anywhere (AiSetupPrompt CTA in Chat/Coach/
   // SummaryCards) — Toolbar owns the modal state, so it owns the listener.
   useEffect(() => {
-    const onOpen = () => setShowSettings(true)
+    // Defer by one tick so the document 'click' event (which triggers
+    // handleClickOutside) fires first with showSettings=false, then we open.
+    const onOpen = () => setTimeout(() => { setShowSettings(true); setHeaderHidden(false) }, 0)
     window.addEventListener(OPEN_AI_SETTINGS_EVENT, onOpen)
     return () => window.removeEventListener(OPEN_AI_SETTINGS_EVENT, onOpen)
   }, [])
@@ -77,6 +79,7 @@ export function Toolbar() {
   const setDyslexicFont = useStore((s) => s.setDyslexicFont)
   const autoHideHeader = useStore((s) => s.autoHideHeader)
   const setAutoHideHeader = useStore((s) => s.setAutoHideHeader)
+  const setHeaderHidden = useStore((s) => s.setHeaderHidden)
 
   const themes: { value: Theme; icon: React.ReactNode; label: string }[] = [
     { value: 'light', icon: <Sun className="h-4 w-4" />, label: 'Light' },

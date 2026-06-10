@@ -8,6 +8,7 @@ import { chunkMarkdown } from '../lib/markdown'
 import { searchChunks } from '../lib/embeddings'
 import { askAboutDocument, summarize, detectBestBackend, getActiveBackend, isBackendReady, onBackendChange, onWebLLMProgress, onModelProgress } from '../lib/ai'
 import { trackEvent } from '../lib/telemetry'
+import { AiSetupPrompt } from './AiSetupPrompt'
 
 // Turn a raw error message from the ai.ts layer into a human, actionable string.
 // The goal: a first-time user should know EXACTLY what to do next without
@@ -280,9 +281,13 @@ export function Chat() {
         {messages.length === 0 && !modelProgress && (
           <div className="text-center py-8 space-y-3">
             <Bot className="h-8 w-8 text-gray-300 dark:text-gray-600 mx-auto" />
-            <p className="text-sm text-gray-400">
-              {isReady ? 'Ask me anything about this document' : backend === 'detecting...' ? 'Detecting AI backend...' : 'No AI backend available'}
-            </p>
+            {isReady ? (
+              <p className="text-sm text-gray-400">Ask me anything about this document</p>
+            ) : backend === 'detecting...' ? (
+              <p className="text-sm text-gray-400">Detecting AI backend...</p>
+            ) : (
+              <AiSetupPrompt feature="Chat" />
+            )}
             {isReady && (
               <>
                 <button
