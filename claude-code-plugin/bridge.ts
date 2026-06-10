@@ -1,8 +1,11 @@
 import { getCachedCaps } from './caps.js'
 import { renderAsciiTree } from './renderers/ascii-tree.js'
 import { encodeInlineImage } from './renderers/inline-image.js'
-import { generateMindMapSvg } from './renderers/svg-mindmap.js'
 import type { TreeNode } from '../shared/tree-parser.js'
+// Note: ./renderers/svg-mindmap (which pulls in markmap-lib) and the optional
+// `sharp` dependency are loaded lazily inside the image branch below, so the
+// common ASCII path — and any caller that only ever renders ASCII (e.g. the
+// MCP server) — never pays markmap-lib/sharp's import cost.
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -65,14 +68,15 @@ export async function renderMindMapResult(jsonText: string): Promise<string> {
 
   if (caps.imageProtocol !== 'none') {
     try {
+      // Lazy: markmap-lib + sharp only load when an image-capable terminal is
+      // detected. `sharp` is an optionalDependency; a missing install throws
+      // here and we fall through to ASCII. esbuild keeps both external
+      // (--packages=external), so this never breaks the bundle.
+      const { generateMindMapSvg } = await import('./renderers/svg-mindmap.js')
       const markdown = rebuildMarkdownFromTree(tree)
       const svg = generateMindMapSvg(markdown)
-      // Use a variable to prevent Vite's static import analysis from failing
-      // when sharp is not installed. Falls back to ASCII if unavailable.
-      const sharpId = 'sharp'
-      // eslint-disable-next-line @typescript-eslint/no-implied-eval
-      const sharp = await (new Function('id', 'return import(id)')(sharpId) as Promise<typeof import('sharp')>)
-      const pngBuffer = await sharp.default(Buffer.from(svg)).png().toBuffer()
+      const sharp = (await import('sharp')).default
+      const pngBuffer = await sharp(Buffer.from(svg)).png().toBuffer()
       const encoded = encodeInlineImage(pngBuffer, caps.imageProtocol)
       lines.push(encoded)
       treeRendered = true

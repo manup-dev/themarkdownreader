@@ -7,10 +7,8 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "jsx": "react-jsx",
-    "declaration": true,
-    "outDir": "dist",
-    "rootDir": "."
+    "noEmit": true
   },
-  "include": ["*.ts", "*.tsx", "renderers/**/*.ts", "renderers/**/*.tsx"],
+  "include": ["*.ts", "*.tsx", "renderers/**/*.ts", "renderers/**/*.tsx", "../shared/tree-parser.ts"],
   "exclude": ["**/*.test.ts", "dist"]
 }

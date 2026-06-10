@@ -7,6 +7,10 @@ import { z } from 'zod'
 import { buildReaderUrl } from './url'
 import { extractTasks, buildTaskPrompt } from './plan'
 import { diffMarkdown, buildDiffSummary } from './diff'
+// Single source of truth for markdown → tree (shared with the terminal renderers).
+import { buildTree, extractToc, type TreeNode } from '../shared/tree-parser.js'
+// Renders the mind_map JSON into a terminal tree/image for the tool result.
+import { renderMindMapResult } from '../claude-code-plugin/bridge.js'
 
 const PROJECT_ROOT = process.cwd()
 // Default to the hosted app so `npx md-reader-mcp` works for users who never
@@ -72,108 +76,6 @@ async function openView(absPath: string, view: string, extra?: Record<string, st
   await open(url)
 
   return url
-}
-
-// ─── Tree-building helpers (inlined to avoid cross-package import complexity) ─
-
-interface TocEntry {
-  depth: number
-  text: string
-  slug: string
-}
-
-interface TreeNode {
-  id: string
-  name: string
-  value: number // word count
-  children: TreeNode[]
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .trim()
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractTextFromNode(node: any): string {
-  if (node.type === 'text') return node.value as string
-  if (node.children) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (node.children as any[]).map(extractTextFromNode).join('')
-  }
-  return ''
-}
-
-function extractToc(markdown: string): TocEntry[] {
-  const processor = unified().use(remarkParse).use(remarkGfm)
-  const tree = processor.parse(markdown)
-  const entries: TocEntry[] = []
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const node of (tree as any).children) {
-    if (node.type === 'heading') {
-      const text = extractTextFromNode(node)
-      entries.push({ depth: node.depth as number, text, slug: slugify(text) })
-    }
-  }
-  return entries
-}
-
-function wordCount(text: string): number {
-  return text.trim().split(/\s+/).filter(Boolean).length
-}
-
-function buildTree(markdown: string, toc: TocEntry[]): TreeNode {
-  const root: TreeNode = { id: 'root', name: 'Document', value: 0, children: [] }
-
-  if (toc.length === 0) {
-    root.value = wordCount(markdown)
-    return root
-  }
-
-  // Split markdown into sections by heading for word counts
-  const lines = markdown.split('\n')
-  const sectionTexts = new Map<number, string>()
-  let currentIdx = -1
-  let currentLines: string[] = []
-
-  for (const line of lines) {
-    const m = line.match(/^(#{1,6})\s+(.+)$/)
-    if (m) {
-      if (currentIdx >= 0) sectionTexts.set(currentIdx, currentLines.join('\n'))
-      // Find matching toc entry
-      const text = m[2].trim()
-      const depth = m[1].length
-      currentIdx = toc.findIndex((e, i) => i > currentIdx && e.text === text && e.depth === depth)
-      if (currentIdx === -1) {
-        // Try slug match
-        currentIdx = toc.findIndex((e, i) => i > (sectionTexts.size - 1) && slugify(e.text) === slugify(text) && e.depth === depth)
-      }
-      currentLines = []
-    } else {
-      currentLines.push(line)
-    }
-  }
-  if (currentIdx >= 0) sectionTexts.set(currentIdx, currentLines.join('\n'))
-
-  const stack: { node: TreeNode; depth: number }[] = [{ node: root, depth: 0 }]
-
-  toc.forEach((entry, index) => {
-    const words = wordCount(sectionTexts.get(index) ?? '') || 10
-    const node: TreeNode = { id: entry.slug, name: entry.text, value: words, children: [] }
-
-    while (stack.length > 1 && stack[stack.length - 1].depth >= entry.depth) {
-      stack.pop()
-    }
-
-    stack[stack.length - 1].node.children.push(node)
-    stack.push({ node, depth: entry.depth })
-  })
-
-  return root
 }
 
 function countNodes(node: TreeNode): number {

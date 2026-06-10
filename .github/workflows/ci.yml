@@ -25,6 +25,11 @@ jobs:
       - name: Type check
         run: npx tsc -b
 
+      - name: Type check shared + claude-code-plugin
+        run: |
+          npx tsc -p shared/tsconfig.json --noEmit
+          npx tsc -p claude-code-plugin/tsconfig.json --noEmit
+
       - name: Lint
         run: npm run lint
 

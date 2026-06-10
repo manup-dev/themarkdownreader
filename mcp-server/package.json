@@ -19,11 +19,15 @@
   "engines": { "node": ">=18" },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "markmap-lib": "^0.18.12",
     "open": "^10.0.0",
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
     "unified": "^11.0.5",
     "zod": "^3.25.0"
+  },
+  "optionalDependencies": {
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "tsx": "^4.0.0",

@@ -3,5 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "index.ts"
+  "main": "bridge.ts",
+  "description": "Terminal renderers for md-reader mind maps (ASCII tree / inline image). Consumed by the MCP server today; a Claude Code plugin hook is planned (see docs/superpowers/plans).",
+  "dependencies": {
+    "markmap-lib": "^0.18.12"
+  },
+  "optionalDependencies": {
+    "sharp": "^0.34.5"
+  }
 }
