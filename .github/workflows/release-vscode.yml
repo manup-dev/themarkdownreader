@@ -1,0 +1,29 @@
+name: Release VS Code Extension
+
+on:
+  push:
+    tags: ['vscode-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm ci
+        working-directory: vscode-extension
+      - run: node esbuild.mjs
+        working-directory: vscode-extension
+      - run: npm ci
+        working-directory: vscode-extension/webview
+      - run: npx vite build
+        working-directory: vscode-extension/webview
+      - run: npx @vscode/vsce publish -p ${{ secrets.VSCE_PAT }}
+        working-directory: vscode-extension

@@ -49,7 +49,7 @@ jobs:
         working-directory: vscode-extension/webview
 
       - name: Package VS Code extension
-        run: npx @vscode/vsce package --allow-missing-repository
+        run: npx @vscode/vsce package
         working-directory: vscode-extension
 
       - name: Copy .vsix to dist with stable name

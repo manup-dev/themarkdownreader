@@ -75,7 +75,7 @@ jobs:
 
       - name: Package extension
         working-directory: vscode-extension
-        run: npx @vscode/vsce package --allow-missing-repository
+        run: npx @vscode/vsce package
 
       - name: Upload VSIX
         uses: actions/upload-artifact@v4
