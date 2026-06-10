@@ -1,0 +1,25 @@
+name: Release CLI
+
+on:
+  push:
+    tags: ['cli-v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      # Unset GITHUB_ACTIONS for the vite build: vite.config.ts switches base
+      # to /themarkdownreader/ in CI, which breaks the CLI-served app.
+      - run: env -u GITHUB_ACTIONS npm run build:cli
+      - run: ./scripts/test-cli-pack.sh
+      - run: npm publish
+        working-directory: cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
