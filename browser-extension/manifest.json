@@ -16,7 +16,7 @@
         "https://raw.githubusercontent.com/*",
         "https://gitlab.com/*",
         "https://bitbucket.org/*",
-        "https://*.gitea.io/*"
+        "https://codeberg.org/*"
       ],
       "js": ["markmap-bundle.js", "content.js"],
       "css": ["content.css"],

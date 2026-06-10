@@ -1,7 +1,7 @@
 /**
- * md-reader GitHub Extension — In-Page Reader
+ * md-reader Browser Extension — In-Page Reader
  * Enhanced reading panel with Mind Map, Summary, TOC, TTS, and reading progress.
- * Works on GitHub, GHE, GitLab, Gitea, and any page with rendered markdown.
+ * Works on GitHub (incl. Gists and raw files), GitLab, Bitbucket, Codeberg, and any page with rendered markdown.
  */
 
 // ─── Utilities ──────────────────────────────────────────────────

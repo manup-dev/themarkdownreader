@@ -53,6 +53,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:extension": "node scripts/test-extension-manifest.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "eval": "tsx scripts/eval/runner.ts",

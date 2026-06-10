@@ -24,6 +24,7 @@ for (const f of referenced) {
 
 for (const cs of manifest.content_scripts ?? []) {
   if (!cs.matches?.length) fail('content_script with empty matches')
-  if (cs.matches.includes('<all_urls>')) fail('<all_urls> in required content_scripts — use optional_host_permissions')
+  const BROAD = ['<all_urls>', 'https://*/*', 'http://*/*', '*://*/*']
+  if (cs.matches.some((m) => BROAD.includes(m))) fail('overly broad match in required content_scripts — use optional_host_permissions')
 }
 console.log(`PASS: extension manifest v${manifest.version} (${referenced.length} files verified)`)

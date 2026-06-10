@@ -28,6 +28,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Validate extension manifest
+        run: npm run test:extension
+
       - name: Run tests with coverage
         run: npm test -- --coverage
 
