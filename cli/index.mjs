@@ -9,7 +9,7 @@ import open from 'open'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const DIST_DIR = join(__dirname, 'dist')
-const VERSION = '1.0.0'
+const VERSION = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf-8')).version
 
 // ─── Parse args ────────────────────────────────────────────────────────────
 

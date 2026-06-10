@@ -61,7 +61,7 @@
     "e2e:hosted": "npx playwright test --config=playwright.hosted.config.ts",
     "e2e:hosted:headed": "npx playwright test --config=playwright.hosted.config.ts --headed",
     "analyze": "ANALYZE=true npm run build",
-    "build:cli": "npm run build && cp -r dist cli/dist",
+    "build:cli": "npm run build && rm -rf cli/dist && cp -r dist cli/dist",
     "build:lib": "vite build --config vite.lib.config.ts",
     "build:jupyter": "vite build --config vite.jupyter.config.ts"
   },
