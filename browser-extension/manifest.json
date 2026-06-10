@@ -10,12 +10,20 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": [
+        "https://github.com/*",
+        "https://gist.github.com/*",
+        "https://raw.githubusercontent.com/*",
+        "https://gitlab.com/*",
+        "https://bitbucket.org/*",
+        "https://*.gitea.io/*"
+      ],
       "js": ["markmap-bundle.js", "content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
     }
   ],
+  "optional_host_permissions": ["<all_urls>"],
   "action": {
     "default_popup": "popup.html",
     "default_icon": "icon48.png"
