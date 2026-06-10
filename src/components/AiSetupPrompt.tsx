@@ -1,12 +1,5 @@
 import { Cloud, Cpu, Zap } from 'lucide-react'
-
-// Cross-component signal to open the AI Settings modal, which lives as local
-// state in Toolbar.tsx. Same pattern as 'md-reader-highlight-changed'.
-export const OPEN_AI_SETTINGS_EVENT = 'md-reader-open-ai-settings'
-
-export function openAiSettings(): void {
-  window.dispatchEvent(new CustomEvent(OPEN_AI_SETTINGS_EVENT))
-}
+import { openAiSettings } from '../lib/ai-settings-event'
 
 /**
  * Empty-state shown wherever an AI feature is blocked because backend

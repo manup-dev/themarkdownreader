@@ -3,7 +3,7 @@ import { Clock, FileText, Sparkles, Loader2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { buildSectionCards, type SectionCard } from '../lib/visualize'
 import { summarizeSection, detectBestBackend } from '../lib/ai'
-import { openAiSettings } from './AiSetupPrompt'
+import { openAiSettings } from '../lib/ai-settings-event'
 
 const SUMMARY_STOP_WORDS = new Set(['this','that','with','from','have','been','will','your','they','their','which','when','what','each','other','about','more','than','also','only','into','some','very','just','like','over','such','most','these','there','could','would','should'])
 
