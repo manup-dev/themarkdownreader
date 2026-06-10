@@ -256,17 +256,16 @@ Open http://localhost:5183, then configure an AI backend:
 
 Use md-reader directly inside VS Code — open any `.md` file and read it with mind maps, TTS, and all visualizations.
 
-```bash
-cd vscode-extension
-npm install
-npm run build
-```
-Then in VS Code: `Ctrl+Shift+P` → **"Install from VSIX"** → select `vscode-extension/md-reader-0.1.0.vsix`
+Install from the Marketplace (search **"md-reader"** in the Extensions view, or):
 
-Or install from source:
 ```bash
-cd vscode-extension && npx @vscode/vsce package --no-dependencies
-code --install-extension md-reader-0.1.0.vsix
+code --install-extension manup-dev.md-reader
+```
+
+Or build and sideload from source:
+```bash
+cd vscode-extension && npm install && npm run build && npx @vscode/vsce package
+code --install-extension md-reader-0.2.0.vsix
 ```
 
 **Usage:** Open any `.md` file → press `Ctrl+Shift+R` (or click the book icon in the editor title bar)
@@ -393,21 +392,22 @@ md-reader can serve as a visual companion for Claude Code. Claude reasons about 
 
 ### Setup
 
-1. Start the dev server: `npm run dev`
-2. Install MCP server dependencies: `cd mcp-server && npm install`
-3. Add to your Claude Code MCP config (`.claude/settings.json`):
+Add to your Claude Code MCP config (`.claude/settings.json` or `.mcp.json`):
 
 ```json
 {
   "mcpServers": {
     "md-reader": {
       "command": "npx",
-      "args": ["tsx", "mcp-server/index.ts"],
-      "cwd": "/path/to/md-reader"
+      "args": ["-y", "md-reader-mcp"]
     }
   }
 }
 ```
+
+The tools open views on the hosted reader by default. To point them at a local
+dev server instead, add `"env": { "MD_READER_URL": "http://localhost:5183" }` to
+the entry above and run `npm run dev`.
 
 ### Available Tools
 

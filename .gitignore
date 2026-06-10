@@ -57,8 +57,6 @@ browser-extension/*.zip
 vscode-extension/dist/
 vscode-extension/webview/dist/
 vscode-extension/tsconfig.tsbuildinfo
-# Keep md-reader-*.vsix for download from README
-# vscode-extension/*.vsix
 vscode-extension/.wdio-vscode-service/
 .md-reader-mcp-port
 .md-reader-view
@@ -129,3 +127,6 @@ dist-jupyter/
 
 # Python virtualenv for the JupyterLab package (third-party bundled JS).
 .venv-jupyter/
+
+# Packaged VS Code extension (build artifact)
+*.vsix
