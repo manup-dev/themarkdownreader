@@ -11,19 +11,32 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm ci
+      - name: Install root deps
+        run: npm ci
+      - name: Verify tag matches vscode-extension version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#vscode-v}"
+          PKG_VERSION=$(node -p "require('./vscode-extension/package.json').version")
+          [ "$TAG_VERSION" = "$PKG_VERSION" ] || { echo "Tag $TAG_VERSION != package $PKG_VERSION"; exit 1; }
+      - name: Install extension deps
+        run: npm ci
         working-directory: vscode-extension
-      - run: node esbuild.mjs
+      - name: Build extension host
+        run: node esbuild.mjs
         working-directory: vscode-extension
-      - run: npm ci
+      - name: Install webview deps
+        run: npm ci
         working-directory: vscode-extension/webview
-      - run: npx vite build
+      - name: Build webview
+        run: npx vite build
         working-directory: vscode-extension/webview
-      - run: npx @vscode/vsce publish -p ${{ secrets.VSCE_PAT }}
+      - name: Publish to Marketplace
+        run: npx @vscode/vsce publish -p ${{ secrets.VSCE_PAT }}
         working-directory: vscode-extension
