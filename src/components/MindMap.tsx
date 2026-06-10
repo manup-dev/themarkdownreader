@@ -55,8 +55,11 @@ export function MindMapView() {
   }, [markdown])
   const isLargeDoc = nodeCount > 40
 
-  // Depth slider: auto-collapse for large docs
-  const [maxDepth, setMaxDepth] = useState(2)
+  // Depth slider with a smart default: expand to H3 so a typical doc shows its
+  // structure on first paint (the demo/welcome doc, agent specs, READMEs), but
+  // stay collapsed at H2 for large docs (>40 nodes) so they don't render as an
+  // overwhelming wall. Users adjust either way via the depth control.
+  const [maxDepth, setMaxDepth] = useState(() => (nodeCount > 40 ? 2 : 3))
   const [showDepthControl, setShowDepthControl] = useState(false)
 
   // Derive highlight directly from activeSection (no extra state/effect)
