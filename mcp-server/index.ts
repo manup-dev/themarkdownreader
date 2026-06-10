@@ -9,7 +9,9 @@ import { extractTasks, buildTaskPrompt } from './plan'
 import { diffMarkdown, buildDiffSummary } from './diff'
 
 const PROJECT_ROOT = process.cwd()
-const MD_READER_URL = process.env.MD_READER_URL || 'http://localhost:5183'
+// Default to the hosted app so `npx md-reader-mcp` works for users who never
+// cloned this repo. Local dev overrides with MD_READER_URL=http://localhost:5183.
+const MD_READER_URL = process.env.MD_READER_URL || 'https://manup-dev.github.io/themarkdownreader'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
