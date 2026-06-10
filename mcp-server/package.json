@@ -13,7 +13,8 @@
   "files": ["dist/**"],
   "scripts": {
     "build": "esbuild index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/index.js",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "prepack": "npm run build"
   },
   "engines": { "node": ">=18" },
   "dependencies": {

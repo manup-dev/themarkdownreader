@@ -37,9 +37,10 @@ async function checkHealth(): Promise<void> {
     })
     if (!res.ok) throw new Error()
   } catch {
-    throw new Error(
-      `md-reader is not running at ${MD_READER_URL}. Start it with: npm run dev or ./startup.sh`
-    )
+    const hint = MD_READER_URL.includes('localhost')
+      ? `Start it with: npm run dev or ./startup.sh`
+      : `The hosted reader may be temporarily down, or set MD_READER_URL to your local instance.`
+    throw new Error(`md-reader is not reachable at ${MD_READER_URL}. ${hint}`)
   }
 }
 

@@ -28,5 +28,6 @@ server.stdout.on('data', (d) => {
 })
 server.on('exit', (code) => {
   if (code !== null && code !== 0) { console.error(`FAIL: server exited ${code}`); process.exit(1) }
+  if (code === 0 && !out.includes('"serverInfo"')) { console.error('FAIL: server exited 0 before responding'); process.exit(1) }
 })
 server.stdin.write(initialize)
