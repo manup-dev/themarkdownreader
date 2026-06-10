@@ -3,16 +3,16 @@
 # in a clean temp project, and verify the binary serves the built app.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TARBALL=""; TMP=""; SERVER=""
+cleanup() { [ -n "$SERVER" ] && kill "$SERVER" 2>/dev/null; [ -n "$TMP" ] && rm -rf "$TMP"; [ -n "$TARBALL" ] && rm -f "$TARBALL"; }
+trap cleanup EXIT
 
 cd "$ROOT/cli"
 TARBALL="$PWD/$(npm pack --silent)"
-trap 'rm -f "$TARBALL"' EXIT
-
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"; rm -f "$TARBALL"' EXIT
 cd "$TMP"
 npm init -y --silent >/dev/null
-npm install --silent "$TARBALL"
+npm install --quiet "$TARBALL"
 
 # 1. --help exits 0 and prints usage
 ./node_modules/.bin/md-reader --help | grep -q "Usage" || { echo "FAIL: --help"; exit 1; }
@@ -22,7 +22,10 @@ npm install --silent "$TARBALL"
 echo "# smoke doc" > smoke.md
 ./node_modules/.bin/md-reader --no-open --port 4199 smoke.md &
 SERVER=$!
-trap 'kill $SERVER 2>/dev/null; rm -rf "$TMP"; rm -f "$TARBALL"' EXIT
-sleep 2
+
+for i in $(seq 1 10); do
+  curl -sf http://localhost:4199/ >/dev/null 2>&1 && break
+  sleep 0.5
+done
 curl -sf http://localhost:4199/ | grep -q "md-reader" || { echo "FAIL: app not served"; exit 1; }
 echo "PASS: CLI pack smoke"

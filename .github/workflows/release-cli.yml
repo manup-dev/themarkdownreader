@@ -4,6 +4,9 @@ on:
   push:
     tags: ['cli-v*']
 
+permissions:
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -15,6 +18,11 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
       - run: npm ci
+      - name: Verify tag matches cli/package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#cli-v}"
+          PKG_VERSION=$(node -p "require('./cli/package.json').version")
+          [ "$TAG_VERSION" = "$PKG_VERSION" ] || { echo "Tag $TAG_VERSION != package $PKG_VERSION"; exit 1; }
       # Unset GITHUB_ACTIONS for the vite build: vite.config.ts switches base
       # to /themarkdownreader/ in CI, which breaks the CLI-served app.
       - run: env -u GITHUB_ACTIONS npm run build:cli
