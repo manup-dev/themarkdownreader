@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { BarChart3, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { hasBeenAsked, enableTelemetry, disableTelemetry, TRACKED_EVENTS } from '../lib/telemetry'
+import { shouldShowTelemetryBanner } from '../lib/first-run'
 
 export function TelemetryBanner() {
-  const [dismissed, setDismissed] = useState(() => hasBeenAsked())
+  const [dismissed, setDismissed] = useState(() => !shouldShowTelemetryBanner(hasBeenAsked()))
   const [showDetails, setShowDetails] = useState(false)
 
   if (dismissed) return null

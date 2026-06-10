@@ -6,6 +6,12 @@ import App from './App.tsx'
 import { isIFrameMode, getIFrameBridge } from './lib/iframe-bridge'
 import { useStore } from './store/useStore'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { bumpVisitCount } from './lib/first-run'
+
+// Count this visit before first render so first-run overlays (telemetry
+// banner) gate correctly on the current visit. Standalone only — embedded
+// (iframe/Jupyter) hosts don't show these overlays.
+if (!isIFrameMode()) bumpVisitCount()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -16,6 +16,7 @@ import { useAdapter } from '../provider/hooks'
 import type { Comment, Highlight } from '../types/storage-adapter'
 import { markProgrammaticScroll, isProgrammaticScroll } from '../lib/scroll-guard'
 import { trackEvent } from '../lib/telemetry'
+import { shouldShowFirstTimeTip } from '../lib/first-run'
 import { resolveAnchor } from '../lib/anchor'
 import { detectArtifactType } from '../lib/artifact-type'
 
@@ -329,7 +330,9 @@ export function Reader() {
 
   const [resumeToast, setResumeToast] = useState<{ text: string; scrollTop: number } | null>(null)
   const [statsExpanded, setStatsExpanded] = useState(false)
-  const [firstTimeTip, setFirstTimeTip] = useState(() => !localStorage.getItem('md-reader-tip-shown'))
+  // Don't stack the tip on the onboarding tour — the tour already covers tabs
+  // + chat. The tip shows on the next doc open after the tour completed.
+  const [firstTimeTip, setFirstTimeTip] = useState(shouldShowFirstTimeTip)
   useEffect(() => {
     if (firstTimeTip) {
       localStorage.setItem('md-reader-tip-shown', '1')
