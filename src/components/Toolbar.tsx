@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap, GitBranch, Library, ArrowLeft, Save, Check, Settings, Contrast, Type, Maximize, Printer, Palette, SlidersHorizontal, ChevronDown, Download, Mic, Shapes, PanelLeft, FolderOpen, Home, ListChecks, PanelTopClose } from 'lucide-react'
 import { AiSettings } from './AiSettings'
-import { OPEN_AI_SETTINGS_EVENT } from './AiSetupPrompt'
+import { OPEN_AI_SETTINGS_EVENT } from '../lib/ai-settings-event'
 import { AiLoadingIndicator } from './AiLoadingIndicator'
 import { useStore, type Theme, type ViewMode } from '../store/useStore'
 import { useAdapter } from '../provider/hooks'
@@ -50,16 +50,6 @@ export function Toolbar() {
   const [saved, setSaved] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
 
-  // Open the settings modal from anywhere (AiSetupPrompt CTA in Chat/Coach/
-  // SummaryCards) — Toolbar owns the modal state, so it owns the listener.
-  useEffect(() => {
-    // Defer by one tick so the document 'click' event (which triggers
-    // handleClickOutside) fires first with showSettings=false, then we open.
-    const onOpen = () => setTimeout(() => { setShowSettings(true); setHeaderHidden(false) }, 0)
-    window.addEventListener(OPEN_AI_SETTINGS_EVENT, onOpen)
-    return () => window.removeEventListener(OPEN_AI_SETTINGS_EVENT, onOpen)
-  }, [])
-
   const [aiBackend, setAiBackend] = useState<string>(() => getActiveBackend())
   const [showAppearance, setShowAppearance] = useState(false)
   const [showMode, setShowMode] = useState(false)
@@ -80,6 +70,24 @@ export function Toolbar() {
   const autoHideHeader = useStore((s) => s.autoHideHeader)
   const setAutoHideHeader = useStore((s) => s.setAutoHideHeader)
   const setHeaderHidden = useStore((s) => s.setHeaderHidden)
+
+  // Open the settings modal from anywhere (AiSetupPrompt CTA in Chat/Coach/
+  // SummaryCards) — Toolbar owns the modal state, so it owns the listener.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const onOpen = () => {
+      if (timer) clearTimeout(timer)
+      // Defer to a new macrotask so the click that dispatched this event finishes
+      // bubbling to Toolbar's document-level click-outside handler before the
+      // modal opens (otherwise the same click closes it immediately).
+      timer = setTimeout(() => { setShowSettings(true); setHeaderHidden(false) }, 0)
+    }
+    window.addEventListener(OPEN_AI_SETTINGS_EVENT, onOpen)
+    return () => {
+      window.removeEventListener(OPEN_AI_SETTINGS_EVENT, onOpen)
+      if (timer) clearTimeout(timer)
+    }
+  }, [setHeaderHidden])
 
   const themes: { value: Theme; icon: React.ReactNode; label: string }[] = [
     { value: 'light', icon: <Sun className="h-4 w-4" />, label: 'Light' },

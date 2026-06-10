@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { AiSetupPrompt, OPEN_AI_SETTINGS_EVENT } from '../components/AiSetupPrompt'
+import { AiSetupPrompt } from '../components/AiSetupPrompt'
+import { OPEN_AI_SETTINGS_EVENT } from '../lib/ai-settings-event'
 
 describe('AiSetupPrompt', () => {
   it('names the feature and offers the three backend options', () => {
