@@ -74,6 +74,126 @@ async function openView(absPath: string, view: string, extra?: Record<string, st
   return url
 }
 
+// ─── Tree-building helpers (inlined to avoid cross-package import complexity) ─
+
+interface TocEntry {
+  depth: number
+  text: string
+  slug: string
+}
+
+interface TreeNode {
+  id: string
+  name: string
+  value: number // word count
+  children: TreeNode[]
+}
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .trim()
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTextFromNode(node: any): string {
+  if (node.type === 'text') return node.value as string
+  if (node.children) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (node.children as any[]).map(extractTextFromNode).join('')
+  }
+  return ''
+}
+
+function extractToc(markdown: string): TocEntry[] {
+  const processor = unified().use(remarkParse).use(remarkGfm)
+  const tree = processor.parse(markdown)
+  const entries: TocEntry[] = []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const node of (tree as any).children) {
+    if (node.type === 'heading') {
+      const text = extractTextFromNode(node)
+      entries.push({ depth: node.depth as number, text, slug: slugify(text) })
+    }
+  }
+  return entries
+}
+
+function wordCount(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length
+}
+
+function buildTree(markdown: string, toc: TocEntry[]): TreeNode {
+  const root: TreeNode = { id: 'root', name: 'Document', value: 0, children: [] }
+
+  if (toc.length === 0) {
+    root.value = wordCount(markdown)
+    return root
+  }
+
+  // Split markdown into sections by heading for word counts
+  const lines = markdown.split('\n')
+  const sectionTexts = new Map<number, string>()
+  let currentIdx = -1
+  let currentLines: string[] = []
+
+  for (const line of lines) {
+    const m = line.match(/^(#{1,6})\s+(.+)$/)
+    if (m) {
+      if (currentIdx >= 0) sectionTexts.set(currentIdx, currentLines.join('\n'))
+      // Find matching toc entry
+      const text = m[2].trim()
+      const depth = m[1].length
+      currentIdx = toc.findIndex((e, i) => i > currentIdx && e.text === text && e.depth === depth)
+      if (currentIdx === -1) {
+        // Try slug match
+        currentIdx = toc.findIndex((e, i) => i > (sectionTexts.size - 1) && slugify(e.text) === slugify(text) && e.depth === depth)
+      }
+      currentLines = []
+    } else {
+      currentLines.push(line)
+    }
+  }
+  if (currentIdx >= 0) sectionTexts.set(currentIdx, currentLines.join('\n'))
+
+  const stack: { node: TreeNode; depth: number }[] = [{ node: root, depth: 0 }]
+
+  toc.forEach((entry, index) => {
+    const words = wordCount(sectionTexts.get(index) ?? '') || 10
+    const node: TreeNode = { id: entry.slug, name: entry.text, value: words, children: [] }
+
+    while (stack.length > 1 && stack[stack.length - 1].depth >= entry.depth) {
+      stack.pop()
+    }
+
+    stack[stack.length - 1].node.children.push(node)
+    stack.push({ node, depth: entry.depth })
+  })
+
+  return root
+}
+
+function countNodes(node: TreeNode): number {
+  return 1 + node.children.reduce((sum, child) => sum + countNodes(child), 0)
+}
+
+function maxDepth(node: TreeNode, depth = 0): number {
+  if (node.children.length === 0) return depth
+  return Math.max(...node.children.map(child => maxDepth(child, depth + 1)))
+}
+
+function findSubtree(node: TreeNode, sectionText: string): TreeNode | null {
+  if (node.name.toLowerCase().includes(sectionText.toLowerCase())) return node
+  for (const child of node.children) {
+    const found = findSubtree(child, sectionText)
+    if (found) return found
+  }
+  return null
+}
+
 // ─── MCP Server ─────────────────────────────────────────────────────────────
 
 const server = new McpServer({
@@ -85,11 +205,56 @@ const server = new McpServer({
 server.tool(
   'show_mind_map',
   'Open an interactive mind map visualization of a markdown file. Shows the document structure as an expandable tree with zoom/pan.',
-  { path: z.string().describe('Relative path to a .md file, e.g. "docs/architecture.md"') },
-  async ({ path: inputPath }) => {
+  {
+    path: z.string().describe('Relative path to a .md file, e.g. "docs/architecture.md"'),
+    section: z.string().optional().describe('Optional heading text to focus on (case-insensitive substring match)'),
+  },
+  async ({ path: inputPath, section }) => {
     const absPath = validateMdPath(inputPath)
-    const url = await openView(absPath, 'mindmap')
-    return { content: [{ type: 'text', text: `Opened mind map for ${inputPath}\n${url}` }] }
+
+    // Parse markdown into tree structure
+    const markdown = fs.readFileSync(absPath, 'utf-8')
+    const toc = extractToc(markdown)
+    const fullTree = buildTree(markdown, toc)
+
+    // Filter to section subtree if requested
+    const tree = section ? (findSubtree(fullTree, section) ?? fullTree) : fullTree
+
+    // Attempt to open browser (best-effort, non-blocking)
+    let browserUrl: string
+    try {
+      const relativePath = path.relative(PROJECT_ROOT, absPath)
+      const extra: Record<string, string> = {}
+      if (section) extra.section = section
+      const result = await openView(absPath, 'mindmap', extra)
+      // If openView returns a vscode: string, construct the browser URL anyway
+      if (result.startsWith('vscode:')) {
+        const params = new URLSearchParams({ file: relativePath, view: 'mindmap', ...extra })
+        browserUrl = `${MD_READER_URL}/#${params.toString()}`
+      } else {
+        browserUrl = result
+      }
+    } catch {
+      // Construct fallback browser URL without health check
+      const relativePath = path.relative(PROJECT_ROOT, absPath)
+      const extra: Record<string, string> = {}
+      if (section) extra.section = section
+      const params = new URLSearchParams({ file: relativePath, view: 'mindmap', ...extra })
+      browserUrl = `${MD_READER_URL}/#${params.toString()}`
+    }
+
+    const resultJson = JSON.stringify({
+      type: 'mind_map',
+      tree,
+      source_file: absPath,
+      browser_url: browserUrl,
+      total_nodes: countNodes(tree),
+      max_depth: maxDepth(tree),
+      section: section ?? null,
+    })
+
+    const rendered = await renderMindMapResult(resultJson)
+    return { content: [{ type: 'text', text: rendered }] }
   }
 )
 
