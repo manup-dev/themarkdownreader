@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "md-reader": {
+      "command": "npx",
+      "args": ["-y", "md-reader-mcp"],
+      "env": {
+        "MD_READER_RENDER_INLINE": "0"
+      }
+    }
+  }
+}

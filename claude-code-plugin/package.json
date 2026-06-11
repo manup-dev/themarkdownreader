@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "main": "bridge.ts",
-  "description": "Terminal renderers for md-reader mind maps (ASCII tree / inline image). Consumed by the MCP server today; a Claude Code plugin hook is planned (see docs/superpowers/plans).",
+  "description": "Claude Code plugin: renders md-reader show_mind_map results as a rich terminal tree/image via a PostToolUse hook. Renderers are also consumed by the MCP server (Option A).",
+  "scripts": {
+    "build": "esbuild hook.ts --bundle --platform=node --format=esm --external:sharp --external:markmap-lib --outfile=hook.mjs"
+  },
   "dependencies": {
     "markmap-lib": "^0.18.12"
   },

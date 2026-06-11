@@ -423,6 +423,30 @@ the entry above and run `npm run dev`.
 
 Ask Claude: *"Show me a mind map of docs/architecture.md"* — Claude invokes the tool and your browser opens the interactive visualization.
 
+### Terminal rendering
+
+`show_mind_map` also returns a rendered preview right in your terminal, so you
+see the structure without leaving the conversation. By default the MCP server
+renders a colored box-drawing tree itself (works in any MCP client). Set
+`MD_READER_TERM_CAPS=truecolor,unicode` in the server `env` to force colors, or
+`unicode` for plain box-drawing with no ANSI.
+
+#### Optional: Claude Code plugin (capability-aware rendering)
+
+For an inline **image** of the mind map in image-capable terminals
+(kitty / iTerm2 / WezTerm), install the bundled plugin. It runs a `PostToolUse`
+hook that re-renders the result using *your* terminal's real capabilities:
+
+```bash
+claude --plugin-dir ./claude-code-plugin
+```
+
+The plugin ships its own `.mcp.json` (so `/plugin install` also wires the MCP
+server) and sets `MD_READER_RENDER_INLINE=0` so the hook owns rendering. The
+colored ASCII tree works with zero extra setup; inline images additionally need
+`markmap-lib` and the optional native `sharp` dependency installed in
+`claude-code-plugin/` (`cd claude-code-plugin && npm install`).
+
 ## License
 
 MIT

@@ -155,6 +155,14 @@ server.tool(
       section: section ?? null,
     })
 
+    // When the Claude Code plugin is active it sets MD_READER_RENDER_INLINE=0
+    // (via its bundled .mcp.json) so the PostToolUse hook can render with the
+    // *user's* real terminal capabilities. In that mode return the raw JSON.
+    // For every other MCP client we render server-side (Option A).
+    if (process.env.MD_READER_RENDER_INLINE === '0') {
+      return { content: [{ type: 'text', text: resultJson }] }
+    }
+
     const rendered = await renderMindMapResult(resultJson)
     return { content: [{ type: 'text', text: rendered }] }
   }
