@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FolderOpen, X, ChevronRight, ChevronDown, Link as LinkIcon, ArrowRight, ArrowLeft, RefreshCw, ArrowDownUp, Check } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { FolderOpen, Folder, FileText, X, ChevronRight, ChevronDown, Link as LinkIcon, ArrowRight, ArrowLeft, RefreshCw, ArrowDownUp, Check } from 'lucide-react'
 import { useStore, type FolderSortMode } from '../store/useStore'
 import { useActiveSection, type Heading } from '../hooks/useActiveSection'
-import { sortFolderFiles, folderSortLabels } from '../lib/folder-sort'
+import { folderSortLabels } from '../lib/folder-sort'
+import { buildFileTree, childrenByDir, parentDir, type FileTreeNode } from '../lib/file-tree'
 
 const SORT_MODES: FolderSortMode[] = ['name-asc', 'name-desc', 'mtime-desc', 'mtime-asc']
 
@@ -66,12 +67,20 @@ export function FileExplorer() {
   const sidebarExpandedFile = useStore(s => s.sidebarExpandedFile)
   const folderHandle = useStore(s => s.folderHandle)
   const folderSortMode = useStore(s => s.folderSortMode)
+  const folderExpandedDirs = useStore(s => s.folderExpandedDirs)
+  const folderManualOrder = useStore(s => s.folderManualOrder)
   const setActiveFile = useStore(s => s.setActiveFile)
   const setSidebarExpandedFile = useStore(s => s.setSidebarExpandedFile)
   const setFolderSortMode = useStore(s => s.setFolderSortMode)
+  const toggleFolderDir = useStore(s => s.toggleFolderDir)
+  const setFolderManualOrder = useStore(s => s.setFolderManualOrder)
   const closeFolderSession = useStore(s => s.closeFolderSession)
   const refreshFolder = useStore(s => s.refreshFolder)
   const toc = useStore(s => s.toc)
+
+  // Path of the file currently being dragged (for reorder), plus its dir.
+  const dragRef = useRef<{ path: string; dir: string } | null>(null)
+  const [dragOverPath, setDragOverPath] = useState<string | null>(null)
 
   const [linksOpen, setLinksOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -90,10 +99,32 @@ export function FileExplorer() {
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [sortMenuOpen])
 
-  const sortedFiles = useMemo(
-    () => (folderFiles ? sortFolderFiles(folderFiles, folderSortMode) : null),
-    [folderFiles, folderSortMode],
+  const fileTree = useMemo(
+    () => (folderFiles ? buildFileTree(folderFiles, folderSortMode, folderManualOrder) : null),
+    [folderFiles, folderSortMode, folderManualOrder],
   )
+  const dirMap = useMemo(() => (fileTree ? childrenByDir(fileTree) : null), [fileTree])
+  const expandedSet = useMemo(() => new Set(folderExpandedDirs), [folderExpandedDirs])
+
+  // Reorder files within a single folder (sibling-only, view-only). A drop
+  // whose target lives in a different folder is ignored — no disk move.
+  const handleDropOn = useCallback((targetPath: string) => {
+    const drag = dragRef.current
+    dragRef.current = null
+    setDragOverPath(null)
+    if (!drag || !dirMap) return
+    const dir = parentDir(targetPath)
+    if (drag.dir !== dir) return
+    const siblings = dirMap.get(dir) ?? []
+    const folderPaths = siblings.filter(n => n.type === 'folder').map(n => n.path)
+    const filePaths = siblings.filter(n => n.type === 'file').map(n => n.path)
+    const from = filePaths.indexOf(drag.path)
+    const to = filePaths.indexOf(targetPath)
+    if (from === -1 || to === -1 || from === to) return
+    filePaths.splice(from, 1)
+    filePaths.splice(to, 0, drag.path)
+    setFolderManualOrder(dir, [...folderPaths, ...filePaths])
+  }, [dirMap, setFolderManualOrder])
 
   const handleRefresh = useCallback(async () => {
     if (refreshing) return
@@ -159,6 +190,101 @@ export function FileExplorer() {
     const el = document.getElementById(id)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
+
+  // Recursive tree renderer. Folders toggle expand; files select + (when
+  // active) expand their inline TOC. Files are drag-reorderable within
+  // their own folder.
+  const renderNodes = (nodes: FileTreeNode[], depth: number): ReactNode[] =>
+    nodes.map((node) => {
+      const indent = { paddingLeft: `${0.5 + depth * 0.75}rem` }
+      if (node.type === 'folder') {
+        const open = expandedSet.has(node.path)
+        return (
+          <li key={node.path}>
+            <button
+              type="button"
+              onClick={() => toggleFolderDir(node.path)}
+              aria-expanded={open}
+              style={indent}
+              className="flex items-center gap-1 w-full text-left text-sm py-1 pr-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            >
+              {open ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
+              {open
+                ? <FolderOpen className="h-3.5 w-3.5 shrink-0 text-blue-400 dark:text-blue-500" />
+                : <Folder className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500" />}
+              <span className="truncate">{node.name}</span>
+            </button>
+            {open && node.children.length > 0 && (
+              <ul>{renderNodes(node.children, depth + 1)}</ul>
+            )}
+          </li>
+        )
+      }
+
+      const isActive = activeFilePath === node.path
+      const isFileExpanded = sidebarExpandedFile === node.path
+      const isDragOver = dragOverPath === node.path
+      return (
+        <li key={node.path}>
+          <button
+            type="button"
+            draggable
+            onDragStart={(e) => {
+              dragRef.current = { path: node.path, dir: parentDir(node.path) }
+              e.dataTransfer.effectAllowed = 'move'
+            }}
+            onDragOver={(e) => {
+              const d = dragRef.current
+              if (d && d.path !== node.path && d.dir === parentDir(node.path)) {
+                e.preventDefault()
+                setDragOverPath(node.path)
+              }
+            }}
+            onDragLeave={() => setDragOverPath((p) => (p === node.path ? null : p))}
+            onDrop={(e) => { e.preventDefault(); handleDropOn(node.path) }}
+            onDragEnd={() => { dragRef.current = null; setDragOverPath(null) }}
+            onClick={() => handleFileClick(node.path)}
+            aria-current={isActive ? 'true' : undefined}
+            style={indent}
+            className={
+              'flex items-center gap-1 w-full text-left text-sm py-1 pr-3 transition-colors ' +
+              (isActive
+                ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 font-medium'
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800') +
+              (isDragOver ? ' ring-1 ring-inset ring-blue-400' : '')
+            }
+          >
+            {isActive
+              ? (isFileExpanded
+                  ? <ChevronDown className="h-3 w-3 shrink-0" />
+                  : <ChevronRight className="h-3 w-3 shrink-0" />)
+              : <FileText className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500" />}
+            <span className="truncate">{node.name}</span>
+          </button>
+          {isActive && isFileExpanded && headings.length > 0 && (
+            <ul className="mb-1 pl-4 border-l border-gray-200 dark:border-gray-700 ml-4">
+              {headings.map((h, idx) => (
+                <li key={`${h.id}-${idx}`}>
+                  <button
+                    type="button"
+                    onClick={() => handleHeadingClick(h.id)}
+                    style={{ paddingLeft: `${(h.level - 1) * 0.6}rem` }}
+                    className={
+                      'block w-full text-left text-xs py-0.5 pr-2 hover:bg-gray-100 dark:hover:bg-gray-800 ' +
+                      (activeSectionId === h.id
+                        ? 'text-blue-600 dark:text-blue-400 font-medium'
+                        : 'text-gray-500 dark:text-gray-400')
+                    }
+                  >
+                    {h.text}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </li>
+      )
+    })
 
   if (!folderFiles) {
     return (
@@ -264,53 +390,7 @@ export function FileExplorer() {
       )}
 
       <ul className="flex-1 overflow-y-auto py-1 min-h-0">
-        {(sortedFiles ?? folderFiles).map((file) => {
-          const isActive = activeFilePath === file.path
-          const isExpanded = sidebarExpandedFile === file.path
-          return (
-            <li key={file.path}>
-              <button
-                type="button"
-                onClick={() => handleFileClick(file.path)}
-                aria-current={isActive ? 'true' : undefined}
-                className={
-                  'flex items-center gap-1 w-full text-left text-sm px-3 py-1 transition-colors ' +
-                  (isActive
-                    ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 font-medium'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800')
-                }
-              >
-                {isActive
-                  ? (isExpanded
-                      ? <ChevronDown className="h-3 w-3 shrink-0" />
-                      : <ChevronRight className="h-3 w-3 shrink-0" />)
-                  : <span className="w-3 shrink-0" />}
-                <span className="truncate">{file.name}</span>
-              </button>
-              {isActive && isExpanded && headings.length > 0 && (
-                <ul className="mb-1 pl-4 border-l border-gray-200 dark:border-gray-700 ml-4">
-                  {headings.map((h, idx) => (
-                    <li key={`${h.id}-${idx}`}>
-                      <button
-                        type="button"
-                        onClick={() => handleHeadingClick(h.id)}
-                        style={{ paddingLeft: `${(h.level - 1) * 0.6}rem` }}
-                        className={
-                          'block w-full text-left text-xs py-0.5 pr-2 hover:bg-gray-100 dark:hover:bg-gray-800 ' +
-                          (activeSectionId === h.id
-                            ? 'text-blue-600 dark:text-blue-400 font-medium'
-                            : 'text-gray-500 dark:text-gray-400')
-                        }
-                      >
-                        {h.text}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          )
-        })}
+        {renderNodes(fileTree ?? [], 0)}
       </ul>
 
       {/* Links panel — collapsible, only shows if there are links */}

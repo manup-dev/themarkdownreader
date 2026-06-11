@@ -10,6 +10,7 @@ import { decideOpen } from '../lib/smart-open'
 import { addOrTouchRecent } from '../lib/recents'
 import { putTabContent, getTabContent } from '../lib/tabContent'
 import { putHandle, getHandle } from '../lib/handleStore'
+import { ancestorDirs } from '../lib/file-tree'
 import { reopenDirectory } from '../lib/fs-access'
 import { showToast } from '../lib/toast'
 
@@ -248,7 +249,29 @@ async function persistPayload(tab: Tab, payload: TabPayload): Promise<void> {
 
 export type Theme = 'light' | 'dark' | 'sepia' | 'high-contrast'
 export type ViewMode = 'read' | 'mindmap' | 'summary-cards' | 'treemap' | 'knowledge-graph' | 'coach' | 'podcast' | 'diagram' | 'workspace' | 'cross-doc-graph' | 'correlation' | 'similarity-map' | 'collection' | 'plan'
-export type FolderSortMode = 'name-asc' | 'name-desc' | 'mtime-desc' | 'mtime-asc'
+export type FolderSortMode = 'name-asc' | 'name-desc' | 'mtime-desc' | 'mtime-asc' | 'custom'
+
+// Per-collection persistence for sidebar tree expand state + manual order,
+// scoped by folder name so different folders remember independently.
+const expandedKey = (folder: string) => `md-reader-folder-expanded:${folder}`
+const manualOrderKey = (folder: string) => `md-reader-folder-order:${folder}`
+
+function loadExpandedDirs(folder: string): string[] {
+  if (typeof localStorage === 'undefined') return []
+  try { return JSON.parse(localStorage.getItem(expandedKey(folder)) ?? '[]') } catch { return [] }
+}
+function saveExpandedDirs(folder: string, dirs: string[]): void {
+  if (typeof localStorage === 'undefined') return
+  try { localStorage.setItem(expandedKey(folder), JSON.stringify(dirs)) } catch { /* quota */ }
+}
+function loadManualOrder(folder: string): Record<string, string[]> {
+  if (typeof localStorage === 'undefined') return {}
+  try { return JSON.parse(localStorage.getItem(manualOrderKey(folder)) ?? '{}') } catch { return {} }
+}
+function saveManualOrder(folder: string, order: Record<string, string[]>): void {
+  if (typeof localStorage === 'undefined') return
+  try { localStorage.setItem(manualOrderKey(folder), JSON.stringify(order)) } catch { /* quota */ }
+}
 
 export interface TocEntry {
   id: string
@@ -326,6 +349,11 @@ export interface DocumentState {
   sidebarCollapsed: boolean
   sidebarExpandedFile: string | null
   folderSortMode: FolderSortMode
+  // Expanded folder dir paths in the file tree (e.g. 'docs', 'docs/api').
+  folderExpandedDirs: string[]
+  // Manual drag-reorder: dir path → ordered child paths. Active only while
+  // folderSortMode === 'custom'.
+  folderManualOrder: Record<string, string[]>
 
   // Unified view actions
   setFolderSession: (
@@ -337,6 +365,8 @@ export interface DocumentState {
   toggleSidebar: () => void
   setSidebarExpandedFile: (path: string | null) => void
   setFolderSortMode: (mode: FolderSortMode) => void
+  toggleFolderDir: (path: string) => void
+  setFolderManualOrder: (dir: string, order: string[]) => void
   navigateToPath: (relOrAbsPath: string) => boolean
   hydrateFolderFromCache: () => Promise<void>
   refreshFolder: () => Promise<{ ok: true; added: number; changed: number; removed: number } | { ok: false; reason: string }>
@@ -537,6 +567,8 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   folderSortMode: (typeof localStorage !== 'undefined'
     && (localStorage.getItem('md-reader-folder-sort') as FolderSortMode))
     || 'name-asc',
+  folderExpandedDirs: [],
+  folderManualOrder: {},
 
   setFolderSession: (handle, files) => {
     const folderName = handle?.name ?? '__cache__'
@@ -551,6 +583,30 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     }
     // Route through smart-open — this handles tab creation/focus/fill.
     get().openSmart({ kind: 'folder', folderName, handle, files })
+
+    // Restore per-collection tree state. Prune manual-order entries that
+    // reference paths no longer on disk (added/removed files); if nothing
+    // survives, drop out of 'custom' sort back to the persisted named mode.
+    const existingPaths = new Set(files.map((f) => f.path))
+    const rawManual = loadManualOrder(folderName)
+    const manual: Record<string, string[]> = {}
+    for (const [dir, order] of Object.entries(rawManual)) {
+      const kept = order.filter((p) => existingPaths.has(p))
+      if (kept.length) manual[dir] = kept
+    }
+    saveManualOrder(folderName, manual)
+    const hasManual = Object.keys(manual).length > 0
+    if (get().folderSortMode === 'custom' && !hasManual) {
+      set({ folderSortMode: 'name-asc' })
+    }
+    // Expanded dirs: persisted set ∪ ancestors of the chosen file so the
+    // active file is never hidden inside a collapsed branch on load.
+    const expanded = new Set(loadExpandedDirs(folderName))
+    if (chosenFile) for (const d of ancestorDirs(chosenFile.path)) expanded.add(d)
+    const expandedDirs = [...expanded]
+    saveExpandedDirs(folderName, expandedDirs)
+    set({ folderExpandedDirs: expandedDirs, folderManualOrder: manual })
+
     // After openSmart, override activeFilePath to the chosen file (openSmart
     // defaults to files[0]).
     if (chosenFile) {
@@ -821,6 +877,19 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     // Persist scoped by folder name so a reload restores the last-viewed file.
     // Also mark this file as viewed for the collection-completion banner.
     const folderKey = get().folderHandle?.name ?? '__cache__'
+    // Auto-expand ancestor folders so the newly active file is visible even
+    // if it lives in a collapsed branch.
+    const ancestors = ancestorDirs(path)
+    if (ancestors.length) {
+      const expanded = new Set(get().folderExpandedDirs)
+      let grew = false
+      for (const d of ancestors) if (!expanded.has(d)) { expanded.add(d); grew = true }
+      if (grew) {
+        const dirs = [...expanded]
+        saveExpandedDirs(folderKey, dirs)
+        set({ folderExpandedDirs: dirs })
+      }
+    }
     if (typeof localStorage !== 'undefined') {
       try {
         localStorage.setItem(`md-reader-active-file:${folderKey}`, path)
@@ -842,6 +911,8 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       folderFileContents: null,
       activeFilePath: null,
       sidebarExpandedFile: null,
+      folderExpandedDirs: [],
+      folderManualOrder: {},
       markdown: '',
       fileName: null,
     })
@@ -861,7 +932,34 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     if (typeof localStorage !== 'undefined') {
       try { localStorage.setItem('md-reader-folder-sort', mode) } catch { /* quota */ }
     }
-    set({ folderSortMode: mode })
+    // Selecting a named sort clears any manual drag-order.
+    if (mode !== 'custom') {
+      const folderKey = get().folderHandle?.name ?? '__cache__'
+      saveManualOrder(folderKey, {})
+      set({ folderSortMode: mode, folderManualOrder: {} })
+    } else {
+      set({ folderSortMode: mode })
+    }
+  },
+
+  toggleFolderDir: (path) => {
+    const folderKey = get().folderHandle?.name ?? '__cache__'
+    const cur = new Set(get().folderExpandedDirs)
+    if (cur.has(path)) cur.delete(path); else cur.add(path)
+    const dirs = [...cur]
+    saveExpandedDirs(folderKey, dirs)
+    set({ folderExpandedDirs: dirs })
+  },
+
+  setFolderManualOrder: (dir, order) => {
+    const folderKey = get().folderHandle?.name ?? '__cache__'
+    const next = { ...get().folderManualOrder, [dir]: order }
+    saveManualOrder(folderKey, next)
+    if (typeof localStorage !== 'undefined') {
+      try { localStorage.setItem('md-reader-folder-sort', 'custom') } catch { /* quota */ }
+    }
+    // A drag implies custom order from now on.
+    set({ folderManualOrder: next, folderSortMode: 'custom' })
   },
 
   navigateToPath: (relOrAbsPath) => {

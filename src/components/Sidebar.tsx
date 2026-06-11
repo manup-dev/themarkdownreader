@@ -20,6 +20,7 @@ export function Sidebar() {
   const activeFilePath = useStore(s => s.activeFilePath)
   const sidebarCollapsed = useStore(s => s.sidebarCollapsed)
   const markdown = useStore(s => s.markdown)
+  const sidebarWidth = useStore(s => s.sidebarWidth)
 
   const folderMode = folderFiles !== null
   const hasActiveFile = !!markdown || !!activeFilePath
@@ -34,7 +35,8 @@ export function Sidebar() {
   return (
     <aside
       id="sidebar"
-      className="w-[280px] shrink-0 border-r border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 flex flex-col h-full"
+      style={{ width: sidebarWidth }}
+      className="shrink-0 border-r border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 flex flex-col h-full"
     >
       {folderMode ? <FileExplorer /> : <OutlinePanel />}
     </aside>

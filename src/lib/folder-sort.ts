@@ -31,6 +31,12 @@ export function sortFolderFiles<T extends SortableFile>(
       return arr.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0))
     case 'mtime-asc':
       return arr.sort((a, b) => (a.lastModified || 0) - (b.lastModified || 0))
+    case 'custom':
+      // Manual order is resolved by the tree builder; a flat fallback here
+      // just keeps a stable, predictable order (name-asc).
+      return arr.sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }),
+      )
   }
 }
 
@@ -39,4 +45,5 @@ export const folderSortLabels: Record<FolderSortMode, string> = {
   'name-desc': 'Name (Z → A)',
   'mtime-desc': 'Modified (newest)',
   'mtime-asc': 'Modified (oldest)',
+  'custom': 'Custom order',
 }

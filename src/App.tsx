@@ -85,6 +85,7 @@ function AppContent() {
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const chatWidth = useStore((s) => s.chatWidth)
   const setChatWidth = useStore((s) => s.setChatWidth)
+  const setSidebarWidth = useStore((s) => s.setSidebarWidth)
   // Single source of truth for sidebar visibility: store.sidebarCollapsed.
   // Toolbar's sidebar-toggle button + Ctrl+\ shortcut + the floating
   // re-open button (further down this file) all flip the same store
@@ -533,6 +534,13 @@ function AppContent() {
     setChatWidth(Math.max(250, Math.min(600, cur - delta)))
   }, [setChatWidth])
 
+  // Sidebar lives on the left edge, so it grows as the handle moves right
+  // (delta added) — mirror of the chat handle which subtracts.
+  const handleSidebarResize = useCallback((delta: number) => {
+    const cur = useStore.getState().sidebarWidth
+    setSidebarWidth(Math.max(200, Math.min(480, cur + delta)))
+  }, [setSidebarWidth])
+
   // Repo browser takes precedence — when a folder share URL landed, the
   // user should see the folder listing regardless of any persisted doc
   // state (Zustand persist hydrates asynchronously and would otherwise
@@ -576,6 +584,7 @@ function AppContent() {
           FileExplorer for folder mode). The component manages its own chrome
           and internally honors store.sidebarCollapsed. */}
       {showSidebar && <ErrorBoundary name="Sidebar"><Sidebar /></ErrorBoundary>}
+      {showSidebar && <ResizeHandle onResize={handleSidebarResize} />}
 
       {/* Main content */}
       <div id="main-content" className="relative flex-1 flex flex-col min-w-0" role="main">
