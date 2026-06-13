@@ -36,6 +36,10 @@ jobs:
           git diff --exit-code claude-code-plugin/hook.mjs \
             || (echo "::error::claude-code-plugin/hook.mjs is stale — run 'npm run build' in claude-code-plugin/ and commit." && exit 1)
 
+      - name: Install mcp-server dependencies
+        working-directory: mcp-server
+        run: npm ci
+
       - name: MCP + plugin pipeline e2e
         run: |
           (cd mcp-server && npm run build)
