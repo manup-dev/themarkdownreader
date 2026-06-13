@@ -9,7 +9,7 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// claude-code-plugin/renderers/svg-mindmap.ts
+// renderers/svg-mindmap.ts
 var svg_mindmap_exports = {};
 __export(svg_mindmap_exports, {
   generateMindMapSvg: () => generateMindMapSvg,
@@ -97,13 +97,13 @@ function buildSvgFromTree(root, width, height) {
 }
 var transformer;
 var init_svg_mindmap = __esm({
-  "claude-code-plugin/renderers/svg-mindmap.ts"() {
+  "renderers/svg-mindmap.ts"() {
     "use strict";
     transformer = new Transformer();
   }
 });
 
-// claude-code-plugin/caps.ts
+// caps.ts
 var HYPERLINK_ALLOWLIST = /* @__PURE__ */ new Set([
   "iTerm.app",
   "WezTerm",
@@ -169,7 +169,7 @@ function getCachedCaps() {
   return _cache;
 }
 
-// claude-code-plugin/renderers/ascii-tree.ts
+// renderers/ascii-tree.ts
 function renderAsciiTree(tree, opts) {
   const lines = [];
   const rootName = opts.color ? `\x1B[1m${tree.name}\x1B[0m` : tree.name;
@@ -224,7 +224,7 @@ function renderChildren(children, prefix, depth, opts, lines) {
   }
 }
 
-// claude-code-plugin/renderers/inline-image.ts
+// renderers/inline-image.ts
 var KITTY_CHUNK_SIZE = 4096;
 function encodeInlineImage(pngBuffer, protocol) {
   switch (protocol) {
@@ -261,7 +261,7 @@ function encodeInlineImage(pngBuffer, protocol) {
   }
 }
 
-// claude-code-plugin/bridge.ts
+// bridge.ts
 function rebuildMarkdownFromTree(node, depth = 0) {
   const lines = [];
   if (depth > 0) {
@@ -326,7 +326,7 @@ async function renderMindMapResult(jsonText) {
   return lines.join("\n");
 }
 
-// claude-code-plugin/hook.ts
+// hook.ts
 async function readStdin() {
   const chunks = [];
   for await (const chunk of process.stdin) {
