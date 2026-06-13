@@ -90,7 +90,10 @@ test.describe('Hosted demo smoke tests', () => {
   test('keyboard help opens on ?', async ({ page }) => {
     await page.goto(HOSTED_URL, { waitUntil: 'networkidle' })
 
-    await page.keyboard.press('Shift+/')
+    // Press '?' directly. `press('Shift+/')` delivers key='/' (with
+    // shiftKey), which triggers the '/' search shortcut in read view, not
+    // the '?' help shortcut — so it must be pressed as the literal char.
+    await page.keyboard.press('?')
     await page.waitForTimeout(300)
 
     const help = page.getByText(/keyboard|shortcut/i).first()
