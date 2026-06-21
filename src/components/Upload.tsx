@@ -19,10 +19,15 @@ export function Upload() {
   useEffect(() => {
     // Note: #url= hash handling is done in App.tsx so it works even when Upload isn't mounted
 
-    // Handle postMessage from browser extension (validate origin)
+    // Handle postMessage from browser extension or mdonline collaborative editor
     const handleMessage = (event: MessageEvent) => {
-      // Only accept messages from same origin or GitHub
-      const trustedOrigins = [window.location.origin, 'https://github.com']
+      const trustedOrigins = [
+        window.location.origin,
+        'https://github.com',
+        // mdonline collaborative editor (same machine, different port)
+        'http://localhost:5180',
+        'http://localhost:5173',
+      ]
       if (!trustedOrigins.includes(event.origin)) return
       if (event.data?.type === 'md-reader-load' && event.data.markdown) {
         setMarkdown(event.data.markdown, event.data.fileName || 'document.md')
