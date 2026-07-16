@@ -49,7 +49,7 @@ test.describe('Live github.io deploy verification', () => {
     await diagram.scrollIntoViewIfNeeded()
     const svg = diagram.locator('svg')
     await expect(svg).toBeVisible({ timeout: 15_000 })
-    await expect(svg).toContainText('Outer loop')
+    await expect(svg).toContainText('md-reader CLI')
     const bbox = await svg.boundingBox()
     expect(bbox).not.toBeNull()
     expect(bbox!.width).toBeGreaterThan(100)

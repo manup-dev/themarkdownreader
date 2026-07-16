@@ -39,7 +39,7 @@ test('live github.io — mermaid block in a harness file renders as SVG', async 
   expect(bbox!.height).toBeGreaterThan(100)
 
   // Diagram must contain the source's actual node text
-  await expect(svg).toContainText('Outer loop')
+  await expect(svg).toContainText('md-reader CLI')
 
   await page.screenshot({ path: 'mermaid-live-proof.png', fullPage: false })
   await context.close()

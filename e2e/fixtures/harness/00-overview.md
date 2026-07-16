@@ -5,7 +5,7 @@ A representative architecture doc used by the e2e suite to verify mermaid render
 ## Request flow
 
 ```mermaid
-flowchart LR
+flowchart TB
   U[User] --> CLI[md-reader CLI]
   CLI --> S[sirv static server]
   S --> B[Browser app]
