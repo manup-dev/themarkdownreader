@@ -28,4 +28,15 @@ for i in $(seq 1 10); do
   sleep 0.5
 done
 curl -sf http://localhost:4199/ | grep -q "md-reader" || { echo "FAIL: app not served"; exit 1; }
+
+# 3. stdin pipe mode serves piped content
+kill "$SERVER" 2>/dev/null; SERVER=""
+echo "# piped smoke doc" | ./node_modules/.bin/md-reader --no-open --port 4198 &
+SERVER=$!
+for i in $(seq 1 10); do
+  curl -sf http://localhost:4198/ >/dev/null 2>&1 && break
+  sleep 0.5
+done
+curl -sf http://localhost:4198/ | grep -q "md-reader" || { echo "FAIL: stdin mode not served"; exit 1; }
+
 echo "PASS: CLI pack smoke"
