@@ -1,5 +1,6 @@
 {
-  "name": "md-reader",
+  "name": "@md-reader/app",
+  "private": true,
   "version": "1.0.0",
   "type": "module",
   "main": "dist-lib/md-reader.js",
