@@ -9,7 +9,7 @@ description = "Local-first AI-assisted markdown reader for JupyterLab"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
-authors = [{ name = "Manu Pandit", email = "devmanupandit@gmail.com" }]
+authors = [{ name = "md-reader contributors" }]
 keywords = ["jupyter", "jupyterlab", "jupyterlab-extension", "markdown", "md-reader"]
 classifiers = [
   "Framework :: Jupyter",

@@ -3,7 +3,6 @@
     "md-reader": {
       "command": "npx",
       "args": ["tsx", "mcp-server/index.ts"],
-      "cwd": "/home/manu/Desktop/code/md-reader",
       "env": { "MD_READER_URL": "http://localhost:5183" }
     }
   }

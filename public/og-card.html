@@ -9,7 +9,7 @@
       To produce og-card.png:
 
       Option A (Playwright, recommended):
-        cd /home/manu/Desktop/code/md-reader
+        cd <repo-root>
         npm run dev
         node -e "require('playwright').chromium.launch().then(async b => { const p = await b.newPage({viewport:{width:1200,height:630},deviceScaleFactor:2}); await p.goto('http://localhost:5183/og-card.html'); await p.waitForTimeout(500); await p.screenshot({path:'public/og-card.png', omitBackground:false}); await b.close(); })"
 
