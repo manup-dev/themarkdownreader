@@ -1,0 +1,19 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.json",
+  "name": "io.github.manup-dev/md-reader",
+  "description": "Visual markdown tools for agents: mind map, knowledge graph, treemap, TTS read-aloud, podcast, diff, and share URLs — rendered in a local, private reader.",
+  "repository": {
+    "url": "https://github.com/manup-dev/themarkdownreader",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "packages": [
+    {
+      "registry_type": "npm",
+      "registry_base_url": "https://registry.npmjs.org",
+      "identifier": "md-reader-mcp",
+      "version": "1.0.0",
+      "transport": { "type": "stdio" }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+name: Release MCP server
+
+on:
+  push:
+    tags: ['mcp-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - name: Verify tag matches mcp-server/package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#mcp-v}"
+          PKG_VERSION=$(node -p "require('./mcp-server/package.json').version")
+          [ "$TAG_VERSION" = "$PKG_VERSION" ] || { echo "Tag $TAG_VERSION != package $PKG_VERSION"; exit 1; }
+      - run: npm run build
+        working-directory: mcp-server
+      - run: node scripts/test-mcp-stdio.mjs
+      - run: npm publish
+        working-directory: mcp-server
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
