@@ -2,6 +2,8 @@
 
 Prereqs (one-time, human): npm account with 2FA; repo secret `NPM_TOKEN` (automation token) set; VS Code Marketplace PAT set as repo secret `VSCE_PAT`; Chrome Web Store developer account ($5 fee paid).
 
+(Local-only prep files: `founder-comment.md`, `tweet-variants.md`, `distribution.md`, `hero-gif-storyboard.md` under `docs/launch/` are intentionally untracked — kept locally, not in the public repo.)
+
 ## 1. npm — CLI (headline: `npx md-reader`)
 
 ```bash

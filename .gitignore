@@ -68,6 +68,12 @@ docs/learnings/
 docs/specs/
 docs/research/
 
+# Launch prep/strategy docs stay local-only; only the runbook and hero
+# GIF are meant to be public/tracked.
+docs/launch/*
+!docs/launch/launch-runbook.md
+!docs/launch/hero.gif
+
 # Superpowers specs/plans
 docs/superpowers/
 
