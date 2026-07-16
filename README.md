@@ -16,7 +16,7 @@
 </div>
 
 <div align="center">
-  <img src="public/og-card.png" alt="md-reader — Read it. Ship it." width="800" />
+  <img src="docs/launch/hero.gif" alt="md-reader demo — reader, mind map, and Ship-it selection menu" width="800" />
 </div>
 
 ---
