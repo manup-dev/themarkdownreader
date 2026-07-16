@@ -31,7 +31,7 @@ test.describe('Live github.io deploy verification', () => {
   })
 
   test('mermaid harness file still renders as SVG', async ({ browser }) => {
-    const md = fs.readFileSync(path.join('/home/manu/Desktop/learn/harness', '00-overview.md'), 'utf-8')
+    const md = fs.readFileSync(path.join(process.cwd(), 'e2e', 'fixtures', 'harness', '00-overview.md'), 'utf-8')
     const ctx = await browser.newContext()
     const page = await ctx.newPage()
     await page.setViewportSize({ width: 1400, height: 1000 })

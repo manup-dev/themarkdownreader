@@ -3,13 +3,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 /**
- * Load the actual harness markdown files from /home/manu/Desktop/learn/harness
+ * Load the harness fixture markdown files from e2e/fixtures/harness
  * one by one, and verify each mermaid block becomes an SVG with non-zero size.
  *
  * Run: npx playwright test e2e/mermaid-harness-files.spec.ts
  */
 
-const HARNESS_DIR = '/home/manu/Desktop/learn/harness'
+const HARNESS_DIR = path.join(process.cwd(), 'e2e', 'fixtures', 'harness')
 
 function listMermaidFiles(): string[] {
   return fs.readdirSync(HARNESS_DIR)

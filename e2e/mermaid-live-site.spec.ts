@@ -13,7 +13,7 @@ const LIVE_URL = 'https://manup-dev.github.io/themarkdownreader/'
 
 test('live github.io — mermaid block in a harness file renders as SVG', async ({ browser }) => {
   test.setTimeout(60_000)
-  const md = fs.readFileSync(path.join('/home/manu/Desktop/learn/harness', '00-overview.md'), 'utf-8')
+  const md = fs.readFileSync(path.join(process.cwd(), 'e2e', 'fixtures', 'harness', '00-overview.md'), 'utf-8')
 
   const context = await browser.newContext({ baseURL: LIVE_URL })
   const page = await context.newPage()

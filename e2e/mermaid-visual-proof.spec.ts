@@ -9,7 +9,7 @@ import path from 'node:path'
 
 test('visual proof — 00-overview.md mermaid renders inline', async ({ page }) => {
   test.setTimeout(60_000)
-  const md = fs.readFileSync(path.join('/home/manu/Desktop/learn/harness', '00-overview.md'), 'utf-8')
+  const md = fs.readFileSync(path.join(process.cwd(), 'e2e', 'fixtures', 'harness', '00-overview.md'), 'utf-8')
 
   await page.setViewportSize({ width: 1400, height: 1000 })
   await page.goto('/')
