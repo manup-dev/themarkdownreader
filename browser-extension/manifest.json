@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "md-reader",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "Enhanced reading for markdown files — TOC, reading progress, TTS, dark mode. Works on GitHub, GitLab, Gitea, and any site with markdown.",
   "permissions": ["activeTab", "storage"],
   "icons": {

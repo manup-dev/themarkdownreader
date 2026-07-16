@@ -2,6 +2,10 @@
 
 All notable changes to md-reader are documented here.
 
+## 1.0.0 — 2026-07-16
+
+First coordinated release across all surfaces: npm CLI (`npx md-reader`), MCP server (`md-reader-mcp`), VS Code extension, browser extension, and Claude Code plugin — all at 1.0.0. Repo hygiene pass: private root package, portable e2e fixtures, no machine-specific paths.
+
 ## [1.0.0] — 2026-04-01
 
 ### First Stable Release

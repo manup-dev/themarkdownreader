@@ -2,7 +2,7 @@
   "name": "md-reader",
   "displayName": "md-reader",
   "description": "Read it. Ship it. Comprehend any markdown in VS Code, highlight a passage, ship a grounded prompt to Claude Code in the terminal — without the alt-tab. Mind maps, TTS, AI chat, all local.",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "publisher": "manup-dev",
   "repository": { "type": "git", "url": "https://github.com/manup-dev/themarkdownreader.git", "directory": "vscode-extension" },
   "license": "MIT",
