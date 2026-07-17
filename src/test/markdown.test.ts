@@ -96,3 +96,37 @@ describe('wordCount', () => {
     expect(wordCount('')).toBe(0)
   })
 })
+
+describe('chunkMarkdown — fenced code blocks (A12)', () => {
+  const fencedMd = [
+    '# Setup',
+    '',
+    'Intro text before the code.',
+    '',
+    '```bash',
+    '# install deps',
+    'npm install',
+    '```',
+    '',
+    'Text after the code block.',
+  ].join('\n')
+
+  it('does not treat `# comment` inside a fence as a heading', () => {
+    const chunks = chunkMarkdown(fencedMd)
+    expect(chunks.every((c) => !c.sectionPath.includes('install deps'))).toBe(true)
+  })
+
+  it('does not split the chunk at a fenced comment line', () => {
+    const chunks = chunkMarkdown(fencedMd)
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0].sectionPath).toBe('Setup')
+    expect(chunks[0].text).toContain('# install deps') // content preserved verbatim
+  })
+
+  it('handles ~~~ fences too', () => {
+    const md = '# Top\n\n~~~\n## fake heading\n~~~\n\nAfter.'
+    const chunks = chunkMarkdown(md)
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0].sectionPath).toBe('Top')
+  })
+})

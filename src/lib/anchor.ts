@@ -1,4 +1,4 @@
-import { extractToc, slugify } from './markdown'
+import { createFenceTracker, slugify } from './markdown'
 
 export interface ResolvedRange {
   startNode: Text
@@ -98,31 +98,31 @@ function findAllPositions(haystack: string, needle: string): number[] {
  * { start: number, id: string } sorted by start position.
  */
 function buildSectionMap(markdown: string): Array<{ start: number; id: string }> {
-  const toc = extractToc(markdown)
   const sections: Array<{ start: number; id: string }> = []
-  const slugCounts = new Map<string, number>()
 
-  // extractToc uses the same slug dedup logic — we need to replicate
-  // the heading-level dedup as we scan raw positions.
-  const headingRegex = /^#{1,6}\s+(.+)$/gm
-  let match: RegExpExecArray | null
-
-  // We track slug dedup ourselves to match extractToc exactly
+  // Line-by-line scan with fence tracking so `# comment` lines inside
+  // ``` / ~~~ blocks are not counted as headings — remark-based extractToc
+  // never counts them, so the old global regex shifted the slug dedup
+  // counters and produced ids extractToc never emits (A12). Slug dedup
+  // below replicates extractToc exactly.
   const localSlugCounts = new Map<string, number>()
-
-  while ((match = headingRegex.exec(markdown)) !== null) {
-    const text = match[1].trim()
-    let slug = slugify(text)
-    const count = localSlugCounts.get(slug) ?? 0
-    localSlugCounts.set(slug, count + 1)
-    if (count > 0) slug = `${slug}-${count}`
-    sections.push({ start: match.index, id: slug })
+  const inFence = createFenceTracker()
+  const lines = markdown.split('\n')
+  let offset = 0
+  for (const line of lines) {
+    if (!inFence(line)) {
+      const match = line.match(/^#{1,6}\s+(.+)$/)
+      if (match) {
+        const text = match[1].trim()
+        let slug = slugify(text)
+        const count = localSlugCounts.get(slug) ?? 0
+        localSlugCounts.set(slug, count + 1)
+        if (count > 0) slug = `${slug}-${count}`
+        sections.push({ start: offset, id: slug })
+      }
+    }
+    offset += line.length + 1
   }
-
-  // Suppress unused variable warning — toc is only used for its side-effect
-  void toc
-  void slugCounts
-
   return sections
 }
 

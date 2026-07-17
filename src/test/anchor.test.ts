@@ -165,3 +165,22 @@ describe('resolveAnchor', () => {
     expect(result!.endNode.textContent).toBe('world')
   })
 })
+
+describe('captureAnchor — fenced code blocks (A12)', () => {
+  it('slug ids stay aligned with extractToc when a fence contains a duplicate heading', () => {
+    const md = [
+      '```',
+      '# Title',
+      '```',
+      '',
+      '# Title',
+      '',
+      'Anchor target paragraph here.',
+    ].join('\n')
+    // extractToc (remark) sees ONE "Title" heading → id "title". The
+    // regex-based section map used to count the fenced line too, making
+    // the real heading "title-1" and breaking anchor→section resolution.
+    const anchor = captureAnchor(md, 'Anchor target paragraph')
+    expect(anchor.sectionId).toBe('title')
+  })
+})

@@ -206,3 +206,37 @@ describe('defaultRemoteAdapter', () => {
     globalThis.fetch = origFetch
   })
 })
+
+describe('HttpRemoteAdapter.fetchDocument — streamed size cap (A13)', () => {
+  let originalFetch: typeof fetch
+  beforeEach(() => { originalFetch = globalThis.fetch })
+  afterEach(() => { globalThis.fetch = originalFetch })
+
+  it('rejects an over-limit chunked response with no Content-Length', async () => {
+    const chunk = new Uint8Array(1024 * 1024).fill(97) // 1MB of 'a'
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < 11; i++) controller.enqueue(chunk) // 11MB > 10MB cap
+        controller.close()
+      },
+    })
+    globalThis.fetch = vi.fn(async () => new Response(stream, { status: 200 })) as typeof fetch
+    const handle = { kind: 'url-pair' as const, docUrl: 'https://example.com/huge.md' }
+    await expect(new HttpRemoteAdapter().fetchDocument(handle)).rejects.toThrow(/too large/)
+  })
+
+  it('still returns small streamed bodies intact', async () => {
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('# streamed '))
+        controller.enqueue(encoder.encode('hello'))
+        controller.close()
+      },
+    })
+    globalThis.fetch = vi.fn(async () => new Response(stream, { status: 200 })) as typeof fetch
+    const handle = { kind: 'url-pair' as const, docUrl: 'https://example.com/ok.md' }
+    const doc = await new HttpRemoteAdapter().fetchDocument(handle)
+    expect(doc.markdown).toBe('# streamed hello')
+  })
+})

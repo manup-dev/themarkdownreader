@@ -72,8 +72,7 @@ export class HttpRemoteAdapter implements RemoteDocumentAdapter {
     if (!safe.ok) throw new Error(`Refusing to fetch: ${safe.reason}`)
     const target = safe.url!
 
-    const res = await fetchWithLimits(target, MAX_DOC_BYTES)
-    const text = await res.text()
+    const { text } = await fetchTextWithLimit(target, MAX_DOC_BYTES)
     const fileName = guessFileName(target)
     return {
       markdown: text,
@@ -103,9 +102,8 @@ export class HttpRemoteAdapter implements RemoteDocumentAdapter {
     if (!safe.ok) return []
 
     try {
-      const res = await fetchWithLimits(safe.url!, MAX_ANNOT_BYTES, { allow404: true })
-      if (!res || res.status === 404) return []
-      const text = await res.text()
+      const { status, text } = await fetchTextWithLimit(safe.url!, MAX_ANNOT_BYTES, { allow404: true })
+      if (status === 404) return []
       return decodeWal(text)
     } catch (e) {
       // R4 from the design: missing/unreachable sidecar must NOT block the
@@ -122,12 +120,13 @@ interface FetchOpts {
   allow404?: boolean
 }
 
-async function fetchWithLimits(url: string, maxBytes: number, opts: FetchOpts = {}): Promise<Response> {
+async function fetchTextWithLimit(url: string, maxBytes: number, opts: FetchOpts = {}): Promise<{ status: number; text: string }> {
   const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
   if (!res.ok) {
-    if (opts.allow404 && res.status === 404) return res
+    if (opts.allow404 && res.status === 404) return { status: 404, text: '' }
     throw new Error(`HTTP ${res.status} for ${url}`)
   }
+  // Fast reject when the server declares a size…
   const lenHeader = res.headers.get('content-length')
   if (lenHeader) {
     const len = parseInt(lenHeader, 10)
@@ -135,7 +134,29 @@ async function fetchWithLimits(url: string, maxBytes: number, opts: FetchOpts = 
       throw new Error(`Response too large: ${len} > ${maxBytes} bytes`)
     }
   }
-  return res
+  // …but never trust the header alone: chunked responses carry no
+  // Content-Length and res.text() would buffer unbounded (A13).
+  if (!res.body) {
+    const text = await res.text()
+    if (text.length > maxBytes) throw new Error(`Response too large: > ${maxBytes} bytes`)
+    return { status: res.status, text }
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let received = 0
+  let text = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    received += value.byteLength
+    if (received > maxBytes) {
+      try { await reader.cancel() } catch { /* connection teardown is best-effort */ }
+      throw new Error(`Response too large: exceeded ${maxBytes} bytes`)
+    }
+    text += decoder.decode(value, { stream: true })
+  }
+  text += decoder.decode()
+  return { status: res.status, text }
 }
 
 function guessFileName(url: string): string {

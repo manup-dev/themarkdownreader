@@ -89,6 +89,19 @@ describe('diffEvents — comments', () => {
     const diff = diffEvents([cAdd('c1', ts(1))], [cAdd('c1', ts(1))])
     expect(isEmpty(diff)).toBe(true)
   })
+
+  it('a comment edited AND resolved in the same range counts once (resolved wins)', () => {
+    const resolveEvt = {
+      v: SCHEMA_VERSION, ts: ts(2), id: 'c1', op: 'comment.resolve', docKey: DOC, resolved: true,
+    } as AnnotationEvent
+    const diff = diffEvents(
+      [cAdd('c1', ts(1), 'old body')],
+      [cAdd('c1', ts(1), 'new body'), resolveEvt],
+    )
+    expect(diff.comments.resolved.length).toBe(1)
+    expect(diff.comments.edited.length).toBe(0)
+    expect(diff.totals.edits).toBe(1)
+  })
 })
 
 describe('PR body generator', () => {

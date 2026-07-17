@@ -81,10 +81,15 @@ export function diffStates(base: DocState, head: DocState): AnnotationDiff {
     else if (before && after) {
       const bodyChanged = before.body !== after.body
       const resolveChanged = before.resolved !== after.resolved
-      if (bodyChanged) cEdited.push({ id, before, after, kind: 'edited' })
+      // Exactly ONE bucket per comment (A15): a body-edit + resolve in the
+      // same range used to land in BOTH lists and count twice in
+      // totals.edits. Resolution wins — it's the reviewer-visible
+      // transition; the before/after pair still carries the body change.
       if (resolveChanged) {
         if (after.resolved) cResolved.push({ id, before, after, kind: 'resolved' })
         else cUnresolved.push({ id, before, after, kind: 'unresolved' })
+      } else if (bodyChanged) {
+        cEdited.push({ id, before, after, kind: 'edited' })
       }
     }
   }

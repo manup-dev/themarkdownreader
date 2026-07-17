@@ -68,6 +68,34 @@ export interface DocumentChunk {
   index: number
 }
 
+/**
+ * Stateful tracker for fenced code blocks (``` and ~~~). Feed it every line
+ * IN ORDER; it returns true when the line is a fence delimiter or inside an
+ * open fence — lines that must NOT be parsed as markdown structure (A12).
+ * remark-based parsing (extractToc) already skips fences; this keeps the
+ * line-scanning paths (chunkMarkdown here, buildSectionMap in anchor.ts)
+ * consistent with it. Exported for anchor.ts and tests.
+ */
+export function createFenceTracker(): (line: string) => boolean {
+  let open: { char: string; len: number } | null = null
+  return (line: string): boolean => {
+    const m = line.match(/^ {0,3}(`{3,}|~{3,})/)
+    if (m) {
+      const char = m[1][0]
+      const len = m[1].length
+      if (!open) {
+        open = { char, len }
+      } else if (char === open.char && len >= open.len && line.trim() === m[1]) {
+        // Closing fence: same char, at least as long as the opener, and
+        // nothing but the marker on the line (per CommonMark).
+        open = null
+      }
+      return true
+    }
+    return open !== null
+  }
+}
+
 export function chunkMarkdown(markdown: string): DocumentChunk[] {
   const lines = markdown.split('\n')
   const chunks: DocumentChunk[] = []
@@ -91,8 +119,9 @@ export function chunkMarkdown(markdown: string): DocumentChunk[] {
     currentChunkLen = 0
   }
 
+  const inFence = createFenceTracker()
   for (const line of lines) {
-    const headingMatch = line.match(/^(#{1,6})\s+(.+)/)
+    const headingMatch = inFence(line) ? null : line.match(/^(#{1,6})\s+(.+)/)
     if (headingMatch) {
       flushChunk()
       const level = headingMatch[1].length
