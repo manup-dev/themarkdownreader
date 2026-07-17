@@ -20,32 +20,57 @@ urlInput.addEventListener('change', () => {
   if (openAppBtn) openAppBtn.href = url
 })
 
+// Map each content-script host (manifest.json content_scripts[0].matches) to
+// a raw-URL builder. Returns null when the path doesn't look like a file page.
+const RAW_URL_BUILDERS = {
+  'github.com': (url) => {
+    const m = url.pathname.match(/^\/([^/]+)\/([^/]+)\/blob\/(.+)$/)
+    return m ? `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}` : null
+  },
+  'gist.github.com': (url) => {
+    const m = url.pathname.match(/^\/([^/]+)\/([0-9a-f]+)/)
+    return m ? `https://gist.githubusercontent.com/${m[1]}/${m[2]}/raw` : null
+  },
+  'raw.githubusercontent.com': (url) => url.href,
+  'gitlab.com': (url) => {
+    const m = url.pathname.match(/^\/(.+)\/-\/blob\/(.+)$/)
+    return m ? `https://gitlab.com/${m[1]}/-/raw/${m[2]}` : null
+  },
+  'bitbucket.org': (url) => {
+    const m = url.pathname.match(/^\/([^/]+)\/([^/]+)\/src\/(.+)$/)
+    return m ? `https://bitbucket.org/${m[1]}/${m[2]}/raw/${m[3]}` : null
+  },
+  'codeberg.org': (url) => {
+    const m = url.pathname.match(/^\/([^/]+)\/([^/]+)\/src\/(.+)$/)
+    return m ? `https://codeberg.org/${m[1]}/${m[2]}/raw/${m[3]}` : null
+  },
+}
+
 // Open current file
 document.getElementById('openCurrent').addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
   if (!tab?.url) return
 
   const url = new URL(tab.url)
-  if (url.hostname !== 'github.com') {
-    alert('Navigate to a markdown file on GitHub first')
+  const buildRawUrl = RAW_URL_BUILDERS[url.hostname]
+  if (!buildRawUrl) {
+    alert('Navigate to a markdown file on GitHub, GitLab, Bitbucket, Codeberg, or a Gist first')
     return
   }
 
-  const path = url.pathname
-  if (!/\.(md|markdown|mdx)$/i.test(path)) {
+  // Gists don't carry a file extension in the page path; every other host
+  // must point at a markdown file.
+  if (url.hostname !== 'gist.github.com' && !/\.(md|markdown|mdx)$/i.test(url.pathname)) {
     alert('This does not appear to be a markdown file')
     return
   }
 
-  // Convert to raw URL
-  const match = path.match(/^\/([^/]+)\/([^/]+)\/blob\/(.+)$/)
-  if (!match) {
+  const rawUrl = buildRawUrl(url)
+  if (!rawUrl) {
     alert('Could not determine raw URL')
     return
   }
 
-  const [, user, repo, rest] = match
-  const rawUrl = `https://raw.githubusercontent.com/${user}/${repo}/${rest}`
   const readerUrl = urlInput.value.trim() || DEFAULT_URL
 
   // Open md-reader with URL hash

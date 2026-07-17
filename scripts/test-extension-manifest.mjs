@@ -27,4 +27,18 @@ for (const cs of manifest.content_scripts ?? []) {
   const BROAD = ['<all_urls>', 'https://*/*', 'http://*/*', '*://*/*']
   if (cs.matches.some((m) => BROAD.includes(m))) fail('overly broad match in required content_scripts — use optional_host_permissions')
 }
+// C12: the popup's host handling must cover every content-script host, and
+// optional_host_permissions must not be declared without a
+// chrome.permissions.request call to ever grant it.
+const popup = readFileSync(path.join(dir, 'popup.js'), 'utf-8')
+for (const cs of manifest.content_scripts ?? []) {
+  for (const m of cs.matches) {
+    const host = new URL(m.replace('*', 'x')).hostname
+    if (!popup.includes(host)) fail(`popup.js does not handle content-script host: ${host}`)
+  }
+}
+if (manifest.optional_host_permissions) {
+  fail('optional_host_permissions declared but never requested (no chrome.permissions.request in the extension)')
+}
+
 console.log(`PASS: extension manifest v${manifest.version} (${referenced.length} files verified)`)

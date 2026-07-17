@@ -1,7 +1,6 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
 import * as fs from 'fs'
-import * as http from 'http'
 import { ReaderPanel } from './ReaderPanel'
 
 const WORDS_PER_MINUTE = 230
@@ -257,113 +256,6 @@ export function activate(context: vscode.ExtensionContext) {
   // Set context key when panel is active (for keybinding "when" clauses)
   ReaderPanel.onPanelActiveCallback = (active: boolean) => {
     vscode.commands.executeCommand('setContext', 'md-reader.panelActive', active)
-  }
-
-  // ── MCP integration: internal command + HTTP server ──────────────
-  // The HTTP server receives requests from the MCP server.
-  // It delegates to a VS Code command (which runs on the extension host thread).
-
-  // Shared state: HTTP handler stores request, command consumes it
-  let pendingMcpRequest: { file: string; view: string; tts?: string; section?: string } | null = null
-
-  // Internal command that opens the file + reader panel
-  context.subscriptions.push(
-    vscode.commands.registerCommand('md-reader._mcpOpen', async () => {
-      const req = pendingMcpRequest
-      if (!req) return
-      pendingMcpRequest = null
-
-      const tick = () => new Promise<void>(r => setTimeout(r, 50))
-
-      const doc = await vscode.workspace.openTextDocument(req.file)
-      await tick()
-      await vscode.window.showTextDocument(doc, vscode.ViewColumn.One)
-      await tick()
-
-      ReaderPanel.createOrShow(context, req.view || 'read')
-      await tick()
-
-      const content = doc.getText()
-      const fileName = path.basename(req.file)
-      ReaderPanel.current?.loadContent(content, fileName, req.view, req.section)
-
-      if (req.tts === 'true') {
-        setTimeout(() => ReaderPanel.current?.postMessage({ type: 'readAloud' }), 2000)
-      }
-    }),
-  )
-
-  // HTTP server for MCP server discovery
-  {
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
-    if (workspaceRoot) {
-      const portFile = path.join(workspaceRoot, '.md-reader-mcp-port')
-      const allowedViews = ['read', 'mindmap', 'summary-cards', 'treemap', 'knowledge-graph', 'coach']
-
-      const server = http.createServer((req, res) => {
-        if (req.method !== 'POST' || req.url !== '/open') {
-          res.writeHead(404)
-          res.end('Not found')
-          return
-        }
-
-        const chunks: Buffer[] = []
-        let totalSize = 0
-        req.on('data', (chunk: Buffer) => {
-          totalSize += chunk.length
-          if (totalSize > 65536) { res.writeHead(413); res.end('Too large'); req.destroy(); return }
-          chunks.push(chunk)
-        })
-        req.on('end', () => {
-          const body = Buffer.concat(chunks).toString()
-          let trigger: { file: string; view: string; tts?: string; section?: string }
-          try {
-            trigger = JSON.parse(body)
-          } catch {
-            res.writeHead(400)
-            res.end('Invalid JSON')
-            return
-          }
-
-          const filePath = trigger.file
-          if (!filePath || !fs.existsSync(filePath)) {
-            res.writeHead(404)
-            res.end('File not found')
-            return
-          }
-
-          const resolved = path.resolve(filePath)
-          if (!resolved.endsWith('.md') || !resolved.startsWith(workspaceRoot + path.sep)) {
-            res.writeHead(403)
-            res.end('Access denied')
-            return
-          }
-
-          if (trigger.view && !allowedViews.includes(trigger.view)) {
-            trigger.view = 'read'
-          }
-
-          // Store request and trigger the command (runs on VS Code's extension host thread)
-          pendingMcpRequest = trigger
-          vscode.commands.executeCommand('md-reader._mcpOpen')
-
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: true }))
-        })
-      })
-
-      server.listen(0, '127.0.0.1', () => {
-        const addr = server.address() as { port: number }
-        fs.writeFileSync(portFile, String(addr.port))
-      })
-
-      context.subscriptions.push({
-        dispose() {
-          server.close()
-          try { fs.unlinkSync(portFile) } catch { /* port file may not exist */ }
-        },
-      })
-    }
   }
 
   // ── Auto-update webview ───────────────────────────────────────────
