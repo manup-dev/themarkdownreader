@@ -363,12 +363,16 @@ async function loadOrRebuildIndex() {
 
 // ─── SimHash for near-duplicate detection ──────────────────────────────────
 
-function hammingDistance(a: number, b: number): number {
-  let xor = a ^ b
+/** Popcount of a^b. The logical shift `>>>` is load-bearing: simhashes have
+ * bit 31 set for ~half of all docs (see computeSimhashFromTokens), making
+ * the XOR negative — an arithmetic `>>=` keeps the sign bit and never
+ * terminates (A1). Exported for src/test/docstore-correctness.test.ts. */
+export function hammingDistance(a: number, b: number): number {
+  let xor = (a ^ b) >>> 0
   let count = 0
   while (xor) {
     count += xor & 1
-    xor >>= 1
+    xor >>>= 1
   }
   return count
 }
@@ -1038,29 +1042,50 @@ export async function importLibrary(json: string) {
   }
   try {
     await clearAllData()
+    // clear() does NOT reset the IndexedDB key generator, so re-added docs
+    // get NEW auto-increment ids. Map old→new so annotations can follow (A2).
+    const idMap = new Map<number, number>()
     for (const doc of data.docs) {
-      await addDocument(doc.fileName, doc.markdown)
+      const result = await addDocument(doc.fileName, doc.markdown)
+      if (typeof doc.id === 'number') idMap.set(doc.id, result.docId)
     }
     if (data.highlights && Array.isArray(data.highlights)) {
       for (const h of data.highlights) {
         if (typeof h.text !== 'string' || typeof h.docId !== 'number') continue
-        await db.highlights.add({ ...h, id: undefined })
+        const newDocId = idMap.get(h.docId)
+        if (newDocId === undefined) continue
+        await db.highlights.add({ ...h, id: undefined, docId: newDocId })
       }
     }
     if (data.comments && Array.isArray(data.comments)) {
       for (const c of data.comments) {
         if (typeof c.selectedText !== 'string' || typeof c.docId !== 'number') continue
-        await db.comments.add({ ...c, id: undefined })
+        const newDocId = idMap.get(c.docId)
+        if (newDocId === undefined) continue
+        await db.comments.add({ ...c, id: undefined, docId: newDocId })
       }
     }
   } catch (e) {
-    // Restore from backup on failure
+    // Restore from backup on failure — including annotations, which the old
+    // restore path silently discarded (second half of A2).
     console.error('Import failed, restoring backup:', e)
     try {
       await clearAllData()
       const backupData = JSON.parse(backup)
+      const restoreMap = new Map<number, number>()
       for (const doc of backupData.docs) {
-        await addDocument(doc.fileName, doc.markdown, { skipPostProcessing: true })
+        const result = await addDocument(doc.fileName, doc.markdown, { skipPostProcessing: true })
+        if (typeof doc.id === 'number') restoreMap.set(doc.id, result.docId)
+      }
+      for (const h of backupData.highlights ?? []) {
+        const newDocId = typeof h.docId === 'number' ? restoreMap.get(h.docId) : undefined
+        if (newDocId === undefined) continue
+        await db.highlights.add({ ...h, id: undefined, docId: newDocId })
+      }
+      for (const c of backupData.comments ?? []) {
+        const newDocId = typeof c.docId === 'number' ? restoreMap.get(c.docId) : undefined
+        if (newDocId === undefined) continue
+        await db.comments.add({ ...c, id: undefined, docId: newDocId })
       }
       await finalizeImport()
     } catch { /* best effort restore */ }
