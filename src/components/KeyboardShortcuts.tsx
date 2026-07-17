@@ -54,6 +54,68 @@ function getReaderScrollContainer(): HTMLElement | null {
   return document.querySelector('#main-content [class*="overflow-y-auto"]')
 }
 
+// ─── B9: exact-identity undo log for text-node-replacing reading modes ───
+// Bionic and heatmap each walk react-markdown's live text nodes and swap
+// each one for a DocumentFragment (bold-span / highlight-span pieces) via
+// `parent.replaceChild(frag, node)`. The ORIGINAL Text object is what
+// React's fiber tree still references as that position's child. Restoring
+// by creating a brand-new `document.createTextNode(...)` with equivalent
+// content (the pre-fix approach) makes the DOM *look* right but leaves
+// React's fiber pointing at the old, now-permanently-detached node — the
+// next time React reconciles that position (e.g. a markdown change updates
+// or removes a sibling, forcing this parent's children to be diffed instead
+// of just written via `.textContent`) it calls
+// `parentNode.removeChild(staleFiberNode)`, and since that node is no
+// longer actually a child of parentNode, the browser throws
+// `NotFoundError: The node to be removed is not a child of this node` —
+// the white-screen crash B9 describes. Recording {parent, originalNode,
+// nextSibling, insertedNodes} per mutation and splicing the SAME node
+// object back at the SAME position keeps React's fiber↔DOM references
+// intact, so subsequent reconciliation succeeds normally. Restoring in
+// REVERSE application order guarantees each record's captured
+// `nextSibling` — which may itself be another tracked node — is already
+// back in the live tree by the time it's used as an insertion anchor.
+//
+// Records are tagged by `mode` because bionic and heatmap are independent
+// toggles that CAN be active at once (nothing mutually excludes them); an
+// off-toggle must only undo its own mode's mutations, not the other mode's
+// still-live ones. clearReadingModes() (Escape / content-change guard) is a
+// full teardown, so it restores every tracked record regardless of mode.
+type ReadingMode = 'bionic' | 'heatmap'
+interface TextMutationRecord {
+  mode: ReadingMode
+  parent: Node
+  originalNode: Text
+  nextSibling: Node | null
+  insertedNodes: Node[]
+}
+const textMutations: TextMutationRecord[] = []
+
+function replaceTextNodeTracked(mode: ReadingMode, node: Text, frag: DocumentFragment): void {
+  const parent = node.parentNode
+  if (!parent) return
+  const insertedNodes = Array.from(frag.childNodes)
+  const nextSibling = node.nextSibling
+  parent.replaceChild(frag, node)
+  textMutations.push({ mode, parent, originalNode: node, nextSibling, insertedNodes })
+}
+
+function restoreTrackedTextNodes(mode?: ReadingMode): void {
+  for (let i = textMutations.length - 1; i >= 0; i--) {
+    if (mode && textMutations[i].mode !== mode) continue
+    const { parent, originalNode, nextSibling, insertedNodes } = textMutations[i]
+    for (const n of insertedNodes) {
+      if (n.parentNode === parent) parent.removeChild(n)
+    }
+    if (nextSibling && nextSibling.parentNode === parent) {
+      parent.insertBefore(originalNode, nextSibling)
+    } else {
+      parent.appendChild(originalNode)
+    }
+    textMutations.splice(i, 1)
+  }
+}
+
 // ─── B9/B10: full teardown of DOM-mutating reading modes ────────────────
 // Bionic, heatmap, word-count badges, and TL;DR all rewrite DOM that
 // react-markdown owns. Centralized teardown so Escape, the off-toggles, and
@@ -62,18 +124,7 @@ function getReaderScrollContainer(): HTMLElement | null {
 const tldrHandlers = new Map<HTMLElement, () => void>()
 
 function clearReadingModes(): void {
-  document.querySelectorAll('[data-bionic]').forEach((el) => {
-    const parent = el.parentNode
-    if (!parent) return
-    parent.replaceChild(document.createTextNode(el.textContent ?? ''), el)
-    parent.normalize()
-  })
-  document.querySelectorAll('[data-freq-highlight]').forEach((el) => {
-    const parent = el.parentNode
-    if (!parent) return
-    parent.replaceChild(document.createTextNode(el.textContent ?? ''), el)
-    parent.normalize()
-  })
+  restoreTrackedTextNodes()
   document.querySelectorAll('[data-word-count-badge]').forEach((el) => el.remove())
   const article = document.querySelector('article')
   if (article?.classList.contains('tldr-mode')) {
@@ -257,13 +308,12 @@ export function KeyboardShortcuts() {
           trackEvent('bionic_toggle')
           const article = document.querySelector('article')
           if (!article) return
-          // Toggle off
+          // Toggle off — restore the exact original text nodes (B9: a
+          // freshly-created replacement node breaks React's fiber↔DOM
+          // identity and crashes the next reconciliation; see
+          // restoreTrackedTextNodes).
           if (article.querySelector('[data-bionic]')) {
-            article.querySelectorAll('[data-bionic]').forEach((el) => {
-              const parent = el.parentNode!
-              parent.replaceChild(document.createTextNode(el.textContent ?? ''), el)
-              parent.normalize()
-            })
+            restoreTrackedTextNodes('bionic')
             break
           }
           // Apply bionic reading: bold first half of each word
@@ -290,7 +340,7 @@ export function KeyboardShortcuts() {
                 frag.appendChild(span)
               }
             }
-            node.parentNode?.replaceChild(frag, node)
+            replaceTextNodeTracked('bionic', node, frag)
           }
           break
         }
@@ -338,13 +388,10 @@ export function KeyboardShortcuts() {
           trackEvent('heatmap_toggle')
           const article = document.querySelector('article')
           if (!article) return
-          // Toggle: if heatmap is on, remove it
+          // Toggle: if heatmap is on, remove it — restore the exact
+          // original text nodes (B9, see restoreTrackedTextNodes).
           if (article.querySelector('[data-freq-highlight]')) {
-            article.querySelectorAll('[data-freq-highlight]').forEach((el) => {
-              const parent = el.parentNode!
-              parent.replaceChild(document.createTextNode(el.textContent ?? ''), el)
-              parent.normalize()
-            })
+            restoreTrackedTextNodes('heatmap')
             break
           }
           // Build word frequency map from visible text
@@ -390,7 +437,7 @@ export function KeyboardShortcuts() {
               lastIdx = regex.lastIndex
             }
             if (lastIdx < content.length) frag.appendChild(document.createTextNode(content.slice(lastIdx)))
-            node.parentNode?.replaceChild(frag, node)
+            replaceTextNodeTracked('heatmap', node, frag)
           }
           break
         }
