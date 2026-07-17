@@ -30,10 +30,13 @@ export function TtsPlayer({ autoPlay, onAutoPlayConsumed }: { autoPlay?: boolean
       setTtsSectionIndex(s.currentSection)
     })
 
-    // Load voices
+    // Load voices. speechSynthesis is unavailable in some environments
+    // (jsdom under test, older/embedded browsers) — guard both the initial
+    // read (tts.getVoices() already tolerates a null synth) and the
+    // voiceschanged subscription so mounting here never throws.
     const loadVoices = () => setVoices(tts.getVoices())
     loadVoices()
-    window.speechSynthesis.onvoiceschanged = loadVoices
+    if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = loadVoices
 
     // Pause TTS when user switches to another tab (prevents ghost speech)
     const handleVisibility = () => {
@@ -45,7 +48,7 @@ export function TtsPlayer({ autoPlay, onAutoPlayConsumed }: { autoPlay?: boolean
 
     return () => {
       tts.stop()
-      window.speechSynthesis.onvoiceschanged = null
+      if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = null
       document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, [markdown, setTtsPlaying, setTtsSectionIndex])

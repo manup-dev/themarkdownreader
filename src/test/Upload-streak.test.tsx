@@ -21,7 +21,18 @@ describe('<Upload> reading streak (B12)', () => {
     localStorage.clear()
     useStore.setState({ markdown: '', fileName: null, workspaceMode: false, folderFiles: null })
   })
-  afterEach(() => cleanup())
+  afterEach(async () => {
+    cleanup()
+    // <Upload> renders <RecentsList>, which fires a mount-time fire-and-forget
+    // IndexedDB read (`void reload()` in RecentsList.tsx) that these tests
+    // never await directly. If it's still in flight when vitest tears down
+    // jsdom for this file, its continuation throws "ReferenceError: window is
+    // not defined" (an unhandled rejection that fails the whole `vitest run`
+    // even though every assertion passed). Flush the microtask/macrotask
+    // queue here so it settles before the test — and the file — finish.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
 
   it('does NOT bump the streak on a mere visit (no words read today)', () => {
     const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toDateString()

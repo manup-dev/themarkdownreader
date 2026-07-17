@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { useStore, persistSettled, type DocumentState } from '../store/useStore'
 import { db } from '../lib/docstore'
 
@@ -452,7 +452,10 @@ describe('useStore — drift fixes (review-driven)', () => {
 })
 
 describe('useStore — per-tab activeDocId + chatMessages (B1/B3)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // Drain any in-flight persistPayload writes from prior describes'
+    // openInNewTab/openSmart calls before this block's own tests start.
+    await persistSettled()
     useStore.getState().reset()          // clears module body/chat caches too
     useStore.setState({
       tabs: [], activeTabId: null,
@@ -462,6 +465,15 @@ describe('useStore — per-tab activeDocId + chatMessages (B1/B3)', () => {
       activeDocId: null,
       chatMessages: [],
     })
+  })
+
+  // This is the last describe in the file — nothing downstream drains its
+  // openInNewTab-triggered persistPayload writes. Without this, a write can
+  // still be in flight (and its catch-block console.warn still pending) when
+  // vitest tears down the jsdom environment, producing
+  // "EnvironmentTeardownError: Closing rpc while onUserConsoleLog was pending".
+  afterEach(async () => {
+    await persistSettled()
   })
 
   it('opening a payload in a new tab clears activeDocId and chatMessages', () => {

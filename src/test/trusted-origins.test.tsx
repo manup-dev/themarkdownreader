@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import { lazy, Suspense } from 'react'
-import { useStore } from '../store/useStore'
+import { useStore, persistSettled } from '../store/useStore'
 import { isTrustedEmbedOrigin } from '../lib/trusted-origins'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import App from '../App'
@@ -26,7 +26,16 @@ describe('App md-reader-load postMessage origin gate (B7)', () => {
     window.location.hash = ''
     useStore.getState().reset()
   })
-  afterEach(() => cleanup())
+  afterEach(async () => {
+    cleanup()
+    // Rendering <App /> here and feeding it a trusted postMessage routes
+    // through setMarkdown → openSmart → a fire-and-forget persistPayload()
+    // IndexedDB write. Drain it before the test ends so it can't still be in
+    // flight when vitest tears down the environment (surfaces as
+    // "EnvironmentTeardownError: Closing rpc while onUserConsoleLog was
+    // pending" from persistPayload's DEV-only console.warn on failure).
+    await persistSettled()
+  })
 
   it('ignores md-reader-load from an untrusted origin', async () => {
     render(<App />)

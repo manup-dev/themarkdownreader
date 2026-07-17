@@ -27,6 +27,14 @@ export default defineConfig([
     'playwright-report',
     'test-results',
     '**/*.min.js',
+    // Bundled build artifact (markmap-lib + friends inlined so the plugin
+    // works on a fresh install with no node_modules — see Task 12). Carries
+    // third-party inline eslint-disable directives for rules this repo's
+    // flat config doesn't define, which ESLint reports as errors. A separate
+    // CI step rebuilds it and diffs against git, so lint coverage here would
+    // be redundant, not lost. Do not hand-edit; see claude-code-plugin's
+    // build script.
+    'claude-code-plugin/hook.mjs',
   ]),
   {
     files: ['**/*.{ts,tsx}'],

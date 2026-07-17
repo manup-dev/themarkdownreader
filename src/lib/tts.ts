@@ -166,7 +166,11 @@ export interface TtsState {
 }
 
 class MarkdownTts {
-  private synth = typeof window !== 'undefined' ? window.speechSynthesis : null as unknown as SpeechSynthesis
+  // Honestly nullable: unlike the old `as unknown as SpeechSynthesis` cast,
+  // this lets TypeScript catch future unguarded `this.synth.x` dereferences.
+  // speechSynthesis is absent in jsdom (tests) and in some real embedded
+  // browsers, so every call site below must tolerate a null synth.
+  private synth: SpeechSynthesis | null = typeof window !== 'undefined' ? (window.speechSynthesis ?? null) : null
   private sectionSegments: SpeechSegment[][] = []
   private currentSectionIdx = 0
   private currentSegmentIdx = 0
@@ -179,7 +183,7 @@ class MarkdownTts {
   private pauseWatchdog: ReturnType<typeof setInterval> | null = null
 
   getVoices(): SpeechSynthesisVoice[] {
-    return this.synth.getVoices().filter((v) => v.lang.startsWith('en'))
+    return this.synth?.getVoices().filter((v) => v.lang.startsWith('en')) ?? []
   }
 
   setRate(rate: number) {
@@ -196,7 +200,7 @@ class MarkdownTts {
 
   private emitState(overrides: Partial<TtsState> = {}) {
     this.onStateChange?.({
-      speaking: this.synth.speaking || this._paused,
+      speaking: this.synth?.speaking || this._paused,
       paused: this._paused,
       currentSection: this.currentSectionIdx,
       currentSentence: this.currentSegmentIdx,
@@ -281,7 +285,7 @@ class MarkdownTts {
       const timeout = setTimeout(() => resolve(), maxDuration)
       utter.onend = () => { clearTimeout(timeout); resolve() }
       utter.onerror = () => { clearTimeout(timeout); resolve() }
-      this.synth.speak(utter)
+      this.synth?.speak(utter)
     })
   }
 
@@ -296,12 +300,12 @@ class MarkdownTts {
     // Trade-off: cancel() destroys the current utterance, so on resume the
     // current segment replays from the beginning rather than mid-sentence.
     // This is preferable to ghost speech that can't be stopped.
-    this.synth.cancel()
+    this.synth?.cancel()
     // Watchdog: keep cancelling in case Chrome tries to auto-resume
     this.clearPauseWatchdog()
     this.pauseWatchdog = setInterval(() => {
-      if (this._paused && this.synth.speaking) {
-        this.synth.cancel()
+      if (this._paused && this.synth?.speaking) {
+        this.synth?.cancel()
       }
     }, 500)
     this.emitState({ paused: true, speaking: true })
@@ -320,7 +324,7 @@ class MarkdownTts {
     this.stopped = true
     this._paused = false
     this.clearPauseWatchdog()
-    this.synth.cancel()
+    this.synth?.cancel()
     this.emitState({ speaking: false, paused: false })
   }
 
@@ -340,7 +344,7 @@ class MarkdownTts {
   }
 
   get isSpeaking() {
-    return !this.stopped && (this.synth.speaking || this._paused)
+    return !this.stopped && (this.synth?.speaking || this._paused)
   }
 }
 
