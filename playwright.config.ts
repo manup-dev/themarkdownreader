@@ -12,7 +12,10 @@ export default defineConfig({
   // html reporter is configured — without this, the upload step silently
   // no-ops (upload-artifact defaults if-no-files-found to 'warn') and a red
   // CI run leaves no debuggable artifact behind.
-  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+  // 'github' posts per-test failure annotations (file/line/message) to the
+  // commit's check run — the one CI diagnostic channel readable without an
+  // auth token (raw job logs and report artifacts both require one).
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }], ['github']] : 'list',
   use: {
     baseURL: 'http://localhost:4174',
     screenshot: 'only-on-failure',
