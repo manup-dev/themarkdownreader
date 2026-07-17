@@ -6,7 +6,7 @@
   "main": "bridge.ts",
   "description": "Claude Code plugin: renders md-reader show_mind_map results as a rich terminal tree/image via a PostToolUse hook. Renderers are also consumed by the MCP server (Option A).",
   "scripts": {
-    "build": "npx -y esbuild@0.21.5 hook.ts --bundle --platform=node --format=esm --external:sharp --external:markmap-lib --outfile=hook.mjs"
+    "build": "npx -y esbuild@0.21.5 hook.ts --bundle --platform=node --format=esm --external:sharp --outfile=hook.mjs"
   },
   "dependencies": {
     "markmap-lib": "^0.18.12"

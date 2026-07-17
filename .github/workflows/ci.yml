@@ -51,6 +51,9 @@ jobs:
           node scripts/test-mcp-stdio.mjs
           node scripts/test-plugin-hook-e2e.mjs
 
+      - name: Plugin hook fresh-install smoke (no node_modules)
+        run: bash scripts/test-plugin-hook-fresh-install.sh
+
       - name: Lint
         run: npm run lint
 

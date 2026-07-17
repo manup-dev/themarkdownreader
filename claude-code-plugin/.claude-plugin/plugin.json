@@ -2,6 +2,6 @@
   "name": "md-reader",
   "version": "1.0.0",
   "description": "Render md-reader show_mind_map results as a rich terminal tree/image",
-  "author": "manup-dev",
+  "author": "md-reader contributors",
   "homepage": "https://github.com/manup-dev/themarkdownreader"
 }
