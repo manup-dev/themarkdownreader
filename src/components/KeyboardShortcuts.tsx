@@ -321,7 +321,15 @@ export function KeyboardShortcuts() {
           const nodes: Text[] = []
           while (walker.nextNode()) nodes.push(walker.currentNode as Text)
           for (const node of nodes) {
-            if (node.parentElement?.closest('pre, code, h1, h2, h3, h4, h5, h6')) continue
+            // Cross-mode isolation (B9 follow-up): skip text already inside a
+            // live heatmap span. Nesting a bionic span inside a
+            // `[data-freq-highlight]` span would make heatmap's own
+            // off-toggle (which removes its whole inserted subtree) delete
+            // that nested bionic markup too — an unrelated mode's teardown
+            // silently eating this mode's content. Excluding the other
+            // mode's markup up front means neither mode's spans ever nest,
+            // so each mode's off-toggle only ever touches its own DOM.
+            if (node.parentElement?.closest('pre, code, h1, h2, h3, h4, h5, h6, [data-freq-highlight]')) continue
             const text = node.textContent ?? ''
             if (text.trim().length < 2) continue
             const frag = document.createDocumentFragment()
@@ -411,7 +419,12 @@ export function KeyboardShortcuts() {
           const nodesToProcess: Text[] = []
           while (walker.nextNode()) nodesToProcess.push(walker.currentNode as Text)
           for (const node of nodesToProcess) {
-            if (node.parentElement?.closest('pre, code')) continue
+            // Cross-mode isolation (B9 follow-up) — mirror of bionic's guard
+            // above: skip text already inside a live bionic span so heatmap
+            // spans never nest inside bionic ones (or vice versa), which
+            // would otherwise let one mode's off-toggle silently delete the
+            // other mode's still-active markup along with its own subtree.
+            if (node.parentElement?.closest('pre, code, [data-bionic]')) continue
             const content = node.textContent ?? ''
             const regex = new RegExp(`\\b(${topTerms.map(([t]) => t).join('|')})\\b`, 'gi')
             if (!regex.test(content)) continue
