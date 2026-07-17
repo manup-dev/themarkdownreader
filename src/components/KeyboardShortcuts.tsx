@@ -116,6 +116,122 @@ function restoreTrackedTextNodes(mode?: ReadingMode): void {
   }
 }
 
+// ─── B9 second follow-up: full-unwind-and-reapply for a single off-toggle ─
+// A mode-FILTERED restore (`restoreTrackedTextNodes('bionic')`, say) is only
+// safe when that mode's own mutation records form an unbroken, independent
+// history. They don't, once a second mode has run on top of the first: e.g.
+// heatmap splits an original text node into [prefix, highlight-span,
+// between, highlight-span, suffix] and records ALL of those pieces (plain
+// text included) as ITS `insertedNodes`. Bionic then walks the SAME article
+// and — quite correctly, per its own `[data-freq-highlight]` skip — leaves
+// the highlight spans alone, but happily replaces the plain-text pieces
+// (prefix/between/suffix), since those aren't inside a highlight span. That
+// creates its OWN bionic records for nodes heatmap's record still lists in
+// `insertedNodes`. When heatmap is later toggled off alone,
+// `restoreTrackedTextNodes('heatmap')` finds those specific pieces already
+// detached (bionic moved them again) — `n.parentNode === parent` is false,
+// so their removal silently no-ops — but heatmap's ORIGINAL full-length
+// text still gets unconditionally reinserted regardless, landing next to
+// bionic's still-live replacement spans for the very same substring.
+// Result: visible duplicated/garbled text, not just a missing decoration.
+//
+// `restoreTrackedTextNodes()` with NO mode filter does not have this bug —
+// Escape/clearReadingModes already prove that out — because it unwinds
+// EVERY record in true reverse-chronological order, so an interleaved
+// later mutation from the other mode is always undone before any earlier
+// mutation that depends on the node it touched. So: toggling one mode off
+// while the other might still be active always does a FULL unwind back to
+// pristine text (reusing that proven-correct primitive), then re-applies
+// the other mode fresh if it was active. Re-applying is deterministic (a
+// pure function of the pristine article's text), so it reproduces the
+// other mode's exact prior visible output — no flicker in content, only a
+// brief internal DOM rebuild.
+function applyBionic(article: HTMLElement): void {
+  const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
+  const nodes: Text[] = []
+  while (walker.nextNode()) nodes.push(walker.currentNode as Text)
+  for (const node of nodes) {
+    // Cross-mode isolation (B9 follow-up): skip text already inside a live
+    // heatmap span so a FRESH bionic application (while heatmap is active)
+    // never nests inside it — see the full-unwind-and-reapply note above
+    // for why nesting is the thing we must never let happen in the first
+    // place, rather than try to cleanly undo after the fact.
+    if (node.parentElement?.closest('pre, code, h1, h2, h3, h4, h5, h6, [data-freq-highlight]')) continue
+    const text = node.textContent ?? ''
+    if (text.trim().length < 2) continue
+    const frag = document.createDocumentFragment()
+    const words = text.split(/(\s+)/)
+    for (const word of words) {
+      if (/^\s+$/.test(word) || word.length < 3) {
+        frag.appendChild(document.createTextNode(word))
+      } else {
+        const boldLen = Math.ceil(word.length * 0.4)
+        const span = document.createElement('span')
+        span.setAttribute('data-bionic', '1')
+        const b = document.createElement('b')
+        b.textContent = word.slice(0, boldLen)
+        span.appendChild(b)
+        span.appendChild(document.createTextNode(word.slice(boldLen)))
+        frag.appendChild(span)
+      }
+    }
+    replaceTextNodeTracked('bionic', node, frag)
+  }
+}
+
+// Returns true if heatmap actually highlighted anything (there was at least
+// one term meeting the frequency bar) — callers that gate on "did this
+// keypress actually do something" (telemetry, early-return) need that;
+// callers re-applying after an unrelated mode's off-toggle don't care.
+function applyHeatmap(article: HTMLElement): boolean {
+  const text = article.textContent ?? ''
+  const words = text.toLowerCase().match(/\b[a-z]{4,}\b/g) ?? []
+  const freq = new Map<string, number>()
+  const stopWords = new Set(['this', 'that', 'with', 'from', 'have', 'been', 'will', 'your', 'they', 'their', 'which', 'when', 'what', 'each', 'other', 'about', 'more', 'than', 'also', 'only', 'into', 'some', 'very', 'just', 'like', 'over', 'such', 'most'])
+  for (const w of words) {
+    if (!stopWords.has(w)) freq.set(w, (freq.get(w) ?? 0) + 1)
+  }
+  // Get top 15 most frequent terms (appearing 3+ times)
+  const topTerms = [...freq.entries()].filter(([, c]) => c >= 3).sort((a, b) => b[1] - a[1]).slice(0, 15)
+  if (topTerms.length === 0) return false
+  const maxFreq = topTerms[0][1]
+  // Walk text nodes and highlight frequent terms
+  const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
+  const nodesToProcess: Text[] = []
+  while (walker.nextNode()) nodesToProcess.push(walker.currentNode as Text)
+  for (const node of nodesToProcess) {
+    // Cross-mode isolation (B9 follow-up) — mirror of bionic's guard above.
+    if (node.parentElement?.closest('pre, code, [data-bionic]')) continue
+    const content = node.textContent ?? ''
+    const regex = new RegExp(`\\b(${topTerms.map(([t]) => t).join('|')})\\b`, 'gi')
+    if (!regex.test(content)) continue
+    const frag = document.createDocumentFragment()
+    let lastIdx = 0
+    regex.lastIndex = 0
+    let m
+    while ((m = regex.exec(content)) !== null) {
+      if (m.index > lastIdx) frag.appendChild(document.createTextNode(content.slice(lastIdx, m.index)))
+      const span = document.createElement('span')
+      span.setAttribute('data-freq-highlight', '1')
+      const termFreq = freq.get(m[0].toLowerCase()) ?? 1
+      const intensity = Math.round((termFreq / maxFreq) * 100)
+      const isSepia = document.documentElement.classList.contains('sepia')
+      span.style.background = isSepia
+        ? `rgba(180,83,9,${0.08 + (intensity / 100) * 0.25})`
+        : `rgba(59,130,246,${0.08 + (intensity / 100) * 0.25})`
+      span.style.borderRadius = '2px'
+      span.style.padding = '0 1px'
+      span.title = `"${m[0]}" appears ${termFreq}× in this document`
+      span.textContent = m[0]
+      frag.appendChild(span)
+      lastIdx = regex.lastIndex
+    }
+    if (lastIdx < content.length) frag.appendChild(document.createTextNode(content.slice(lastIdx)))
+    replaceTextNodeTracked('heatmap', node, frag)
+  }
+  return true
+}
+
 // ─── B9/B10: full teardown of DOM-mutating reading modes ────────────────
 // Bionic, heatmap, word-count badges, and TL;DR all rewrite DOM that
 // react-markdown owns. Centralized teardown so Escape, the off-toggles, and
@@ -308,48 +424,22 @@ export function KeyboardShortcuts() {
           trackEvent('bionic_toggle')
           const article = document.querySelector('article')
           if (!article) return
-          // Toggle off — restore the exact original text nodes (B9: a
-          // freshly-created replacement node breaks React's fiber↔DOM
-          // identity and crashes the next reconciliation; see
-          // restoreTrackedTextNodes).
+          // Toggle off. If heatmap is ALSO active, a mode-scoped restore
+          // (restoreTrackedTextNodes('bionic')) can leave visibly
+          // duplicated/garbled text — heatmap's own mutation record can
+          // still reference text-node pieces bionic has since further
+          // split, and a filtered restore doesn't know how to unwind that
+          // interleaved history safely (see the full-unwind-and-reapply
+          // comment above applyBionic). Full-unwind everything back to
+          // pristine — the same primitive Escape/clearReadingModes already
+          // proves correct — then re-apply heatmap fresh if it was active.
           if (article.querySelector('[data-bionic]')) {
-            restoreTrackedTextNodes('bionic')
+            const heatmapWasActive = !!article.querySelector('[data-freq-highlight]')
+            restoreTrackedTextNodes()
+            if (heatmapWasActive) applyHeatmap(article)
             break
           }
-          // Apply bionic reading: bold first half of each word
-          const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
-          const nodes: Text[] = []
-          while (walker.nextNode()) nodes.push(walker.currentNode as Text)
-          for (const node of nodes) {
-            // Cross-mode isolation (B9 follow-up): skip text already inside a
-            // live heatmap span. Nesting a bionic span inside a
-            // `[data-freq-highlight]` span would make heatmap's own
-            // off-toggle (which removes its whole inserted subtree) delete
-            // that nested bionic markup too — an unrelated mode's teardown
-            // silently eating this mode's content. Excluding the other
-            // mode's markup up front means neither mode's spans ever nest,
-            // so each mode's off-toggle only ever touches its own DOM.
-            if (node.parentElement?.closest('pre, code, h1, h2, h3, h4, h5, h6, [data-freq-highlight]')) continue
-            const text = node.textContent ?? ''
-            if (text.trim().length < 2) continue
-            const frag = document.createDocumentFragment()
-            const words = text.split(/(\s+)/)
-            for (const word of words) {
-              if (/^\s+$/.test(word) || word.length < 3) {
-                frag.appendChild(document.createTextNode(word))
-              } else {
-                const boldLen = Math.ceil(word.length * 0.4)
-                const span = document.createElement('span')
-                span.setAttribute('data-bionic', '1')
-                const b = document.createElement('b')
-                b.textContent = word.slice(0, boldLen)
-                span.appendChild(b)
-                span.appendChild(document.createTextNode(word.slice(boldLen)))
-                frag.appendChild(span)
-              }
-            }
-            replaceTextNodeTracked('bionic', node, frag)
-          }
+          applyBionic(article)
           break
         }
         case 'm': {
@@ -396,62 +486,18 @@ export function KeyboardShortcuts() {
           trackEvent('heatmap_toggle')
           const article = document.querySelector('article')
           if (!article) return
-          // Toggle: if heatmap is on, remove it — restore the exact
-          // original text nodes (B9, see restoreTrackedTextNodes).
+          // Toggle: if heatmap is on, remove it. If bionic is ALSO active,
+          // full-unwind + reapply bionic fresh — same reasoning as the 'b'
+          // off-toggle above (see the comment above applyBionic): a
+          // mode-scoped restore can leave visibly duplicated/garbled text
+          // when the two modes' mutation histories are interleaved.
           if (article.querySelector('[data-freq-highlight]')) {
-            restoreTrackedTextNodes('heatmap')
+            const bionicWasActive = !!article.querySelector('[data-bionic]')
+            restoreTrackedTextNodes()
+            if (bionicWasActive) applyBionic(article)
             break
           }
-          // Build word frequency map from visible text
-          const text = article.textContent ?? ''
-          const words = text.toLowerCase().match(/\b[a-z]{4,}\b/g) ?? []
-          const freq = new Map<string, number>()
-          const stopWords = new Set(['this', 'that', 'with', 'from', 'have', 'been', 'will', 'your', 'they', 'their', 'which', 'when', 'what', 'each', 'other', 'about', 'more', 'than', 'also', 'only', 'into', 'some', 'very', 'just', 'like', 'over', 'such', 'most'])
-          for (const w of words) {
-            if (!stopWords.has(w)) freq.set(w, (freq.get(w) ?? 0) + 1)
-          }
-          // Get top 15 most frequent terms (appearing 3+ times)
-          const topTerms = [...freq.entries()].filter(([, c]) => c >= 3).sort((a, b) => b[1] - a[1]).slice(0, 15)
-          if (topTerms.length === 0) return
-          const maxFreq = topTerms[0][1]
-          // Walk text nodes and highlight frequent terms
-          const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
-          const nodesToProcess: Text[] = []
-          while (walker.nextNode()) nodesToProcess.push(walker.currentNode as Text)
-          for (const node of nodesToProcess) {
-            // Cross-mode isolation (B9 follow-up) — mirror of bionic's guard
-            // above: skip text already inside a live bionic span so heatmap
-            // spans never nest inside bionic ones (or vice versa), which
-            // would otherwise let one mode's off-toggle silently delete the
-            // other mode's still-active markup along with its own subtree.
-            if (node.parentElement?.closest('pre, code, [data-bionic]')) continue
-            const content = node.textContent ?? ''
-            const regex = new RegExp(`\\b(${topTerms.map(([t]) => t).join('|')})\\b`, 'gi')
-            if (!regex.test(content)) continue
-            const frag = document.createDocumentFragment()
-            let lastIdx = 0
-            regex.lastIndex = 0
-            let m
-            while ((m = regex.exec(content)) !== null) {
-              if (m.index > lastIdx) frag.appendChild(document.createTextNode(content.slice(lastIdx, m.index)))
-              const span = document.createElement('span')
-              span.setAttribute('data-freq-highlight', '1')
-              const termFreq = freq.get(m[0].toLowerCase()) ?? 1
-              const intensity = Math.round((termFreq / maxFreq) * 100)
-              const isSepia = document.documentElement.classList.contains('sepia')
-              span.style.background = isSepia
-                ? `rgba(180,83,9,${0.08 + (intensity / 100) * 0.25})`
-                : `rgba(59,130,246,${0.08 + (intensity / 100) * 0.25})`
-              span.style.borderRadius = '2px'
-              span.style.padding = '0 1px'
-              span.title = `"${m[0]}" appears ${termFreq}× in this document`
-              span.textContent = m[0]
-              frag.appendChild(span)
-              lastIdx = regex.lastIndex
-            }
-            if (lastIdx < content.length) frag.appendChild(document.createTextNode(content.slice(lastIdx)))
-            replaceTextNodeTracked('heatmap', node, frag)
-          }
+          if (!applyHeatmap(article)) return
           break
         }
         case 'i': {
