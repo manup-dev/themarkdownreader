@@ -208,11 +208,19 @@ function AppContent() {
           }
           // setActiveDocId so downstream consumers (CommentsPanel, highlight
           // rendering, analysis lookups) query the right Dexie row. Must
-          // fire before openInNewTab — setMarkdown (called internally) resets
-          // viewMode to 'read' which some effects key off, and those effects
-          // read activeDocId.
-          useStore.getState().setActiveDocId(result.docId)
+          // fire AFTER openInNewTab, mirroring openDocument's pattern
+          // (see useStore.ts). openInNewTab snapshots the *leaving* tab's
+          // activeDocId from current state before creating the new tab, and
+          // stamps activeDocId: null on the fresh tab/singular for new
+          // content (see payloadToSingulars/applyPayloadToTab) — calling
+          // setActiveDocId first would (a) mis-snapshot the share's docId
+          // onto the previous tab instead of the new one, and (b) then get
+          // immediately clobbered back to null by openInNewTab's own state
+          // update. Setting it after is safe: it only touches the singular,
+          // and that singular is what gets captured onto the new tab's
+          // record the next time it is snapshotted (e.g. on tab switch).
           openInNewTab({ kind: 'file', fileName: result.fileName, content: result.markdown })
+          useStore.getState().setActiveDocId(result.docId)
           useStore.getState().setRemoteShare(result.banner)
         } catch (err) {
           console.error('md-reader: Failed to load share URL:', err)

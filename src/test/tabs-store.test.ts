@@ -520,4 +520,39 @@ describe('useStore — per-tab activeDocId + chatMessages (B1/B3)', () => {
     expect(useStore.getState().activeDocId).toBe(42)
     expect(useStore.getState().chatMessages).toEqual([])
   })
+
+  // Regression for a share-loader clobber bug found in code review of this
+  // task: App.tsx's share-loader opens the shared doc via `openInNewTab`
+  // then calls `setActiveDocId(result.docId)` — mirroring how `openDocument`
+  // already does it (set the singular AFTER routing through tabs, never
+  // before). Calling setActiveDocId *before* openInNewTab would (a) get the
+  // share's docId mis-snapshotted onto the tab being LEFT (snapshotIntoTab
+  // reads current state, which would already carry the share's docId), and
+  // (b) get immediately clobbered back to null by openInNewTab's own
+  // payloadToSingulars-driven `activeDocId: null` for the fresh content.
+  it('share-loader ordering: activeDocId set after openInNewTab lands on the new tab, and the previous tab keeps its own docId', () => {
+    useStore.getState().openInNewTab({ kind: 'file', fileName: 'a.md', content: '# A' })
+    const tabA = useStore.getState().activeTabId!
+    useStore.getState().setActiveDocId(11)
+
+    // Simulate the (fixed) share-loader sequence: open the shared content in
+    // a new tab, THEN stamp its real docId — never the other way around.
+    useStore.getState().openInNewTab({ kind: 'file', fileName: 'shared.md', content: '# Shared' })
+    const tabShare = useStore.getState().activeTabId!
+    useStore.getState().setActiveDocId(99)
+
+    // The new (share) tab's singular reflects the share's docId immediately.
+    expect(useStore.getState().activeDocId).toBe(99)
+
+    // Switching back to A must NOT see the share's docId leak onto it —
+    // this is the exact clobber the buggy ordering produced.
+    useStore.getState().switchTab(tabA)
+    expect(useStore.getState().activeDocId).toBe(11)
+
+    // Switching to the share tab must restore the share's own docId — this
+    // is what "does not create a duplicate document" depends on: SelectionMenu
+    // only auto-creates a new library doc when activeDocId is falsy.
+    useStore.getState().switchTab(tabShare)
+    expect(useStore.getState().activeDocId).toBe(99)
+  })
 })
