@@ -150,21 +150,28 @@ export async function loadKokoro(onProgress?: ProgressCallback): Promise<void> {
   if (status === 'ready') return
   if (loadPromise) return loadPromise
 
-  // Wait for GPU lock to release (up to 20s) rather than failing immediately.
-  // Other model (Gemma) will release the lock when it finishes loading.
-  const w = window as unknown as { __gpuModelLock?: string }
-  const deadline = Date.now() + 20_000
-  while (w.__gpuModelLock && w.__gpuModelLock !== 'kokoro' && Date.now() < deadline) {
-    await new Promise<void>(r => setTimeout(r, 200))
-  }
-  if (w.__gpuModelLock && w.__gpuModelLock !== 'kokoro') {
-    console.log(`[kokoro-tts] Timed out waiting for GPU lock (${w.__gpuModelLock})`)
-    throw new Error('GPU busy — try again after current model finishes')
-  }
-  w.__gpuModelLock = 'kokoro'
-
   progressCb = onProgress ?? null
-  loadPromise = _load().finally(() => {
+
+  // Assign loadPromise SYNCHRONOUSLY, wrapping the GPU-lock wait too (A8).
+  // The wait is async: when it ran BEFORE the assignment, a second
+  // concurrent caller passed the `if (loadPromise)` guard above and
+  // started a second worker + model download, orphaning the first.
+  const w = window as unknown as { __gpuModelLock?: string }
+  loadPromise = (async () => {
+    // Wait for GPU lock to release (up to 20s) rather than failing
+    // immediately. Other model (Gemma) will release the lock when it
+    // finishes loading.
+    const deadline = Date.now() + 20_000
+    while (w.__gpuModelLock && w.__gpuModelLock !== 'kokoro' && Date.now() < deadline) {
+      await new Promise<void>(r => setTimeout(r, 200))
+    }
+    if (w.__gpuModelLock && w.__gpuModelLock !== 'kokoro') {
+      console.log(`[kokoro-tts] Timed out waiting for GPU lock (${w.__gpuModelLock})`)
+      throw new Error('GPU busy — try again after current model finishes')
+    }
+    w.__gpuModelLock = 'kokoro'
+    await _load()
+  })().finally(() => {
     if (status !== 'ready') {
       loadPromise = null
       if (w.__gpuModelLock === 'kokoro') w.__gpuModelLock = undefined

@@ -78,6 +78,17 @@ export class IFrameBridge {
     } catch {
       this.parentOrigin = ''
     }
+    if (!this.parentOrigin) {
+      // Couldn't determine parent origin — abort BEFORE registering any
+      // listeners (A7). The old order registered the message listener
+      // first, and onWindowMessage skipped the origin check when
+      // parentOrigin === '' — so in a sandboxed iframe (origin 'null',
+      // no referrer) any window could post HELLO + a MessagePort and
+      // take over the "aborted" bridge. The host will notice we never
+      // said READY and surface an error in its statusbar.
+      console.warn('[md-reader/iframe] no parent origin; aborting bridge')
+      return
+    }
     this.windowListener = (e: MessageEvent) => this.onWindowMessage(e)
     window.addEventListener('message', this.windowListener)
     // Close the port on bf-cache eviction so a restored iframe doesn't keep
@@ -93,12 +104,6 @@ export class IFrameBridge {
       this.port = null
     }
     window.addEventListener('pagehide', this.pagehideListener)
-    if (!this.parentOrigin) {
-      // Couldn't determine parent origin — abort early. The host will
-      // notice we never said READY and surface an error in its statusbar.
-      console.warn('[md-reader/iframe] no parent origin; aborting bridge')
-      return
-    }
     // The host appends `?h=<nonce>` to the iframe URL on every panel
     // construction; echoing it in READY proves to the host that *this*
     // iframe document was loaded by *this* panel. Without it, a same-origin
@@ -158,7 +163,9 @@ export class IFrameBridge {
   }
 
   private onWindowMessage(e: MessageEvent) {
-    if (this.parentOrigin && e.origin !== this.parentOrigin) return
+    // Hard-reject when no origin was pinned (defense-in-depth: with the
+    // reordered start() this listener is never registered in that state).
+    if (!this.parentOrigin || e.origin !== this.parentOrigin) return
     if (!isEnvelope(e.data)) return
     const env = e.data
     if (env.v !== PROTOCOL_VERSION) {
