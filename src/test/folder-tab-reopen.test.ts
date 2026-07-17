@@ -129,3 +129,41 @@ describe('reopenFolderTab', () => {
     expect(showToastMock).not.toHaveBeenCalled()
   })
 })
+
+describe('closeTab → folder tab fallback (B2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useStore.getState().reset()  // clears module-scope body caches
+  })
+
+  it('closing a file tab that activates a cache-less folder tab triggers reopenFolderTab', async () => {
+    const folderTab = {
+      id: 'ftB2', kind: 'folder', title: 'my-docs', folderName: 'my-docs',
+      handleKey: 'hkB2', activeFilePath: 'README.md',
+      viewMode: 'read', scrollProgress: 0, createdAt: 1, lastAccessedAt: 1,
+    }
+    const fileTab = {
+      id: 'fileB2', kind: 'file', title: 'note.md', fileName: 'note.md',
+      viewMode: 'read', scrollProgress: 0, createdAt: 2, lastAccessedAt: 2,
+    }
+    useStore.setState({
+      tabs: [folderTab as never, fileTab as never],
+      activeTabId: 'fileB2',
+      markdown: '# note', fileName: 'note.md',
+      folderFiles: null, folderHandle: null, folderFileContents: null,
+    })
+    getHandleMock.mockResolvedValue({ name: 'my-docs' })
+    reopenDirectoryMock.mockResolvedValue([
+      { path: 'README.md', content: '# Readme', lastModified: 0 },
+    ])
+
+    useStore.getState().closeTab('fileB2')
+
+    // The folder tab became active with no in-session body cache → the store
+    // must fall back to reopenFolderTab (like switchTab does at its step 4)
+    // instead of stranding the user on the Upload screen.
+    await vi.waitFor(() => expect(useStore.getState().folderFiles).toHaveLength(1))
+    expect(getHandleMock).toHaveBeenCalledWith('hkB2')
+    expect(useStore.getState().markdown).toBe('# Readme')
+  })
+})

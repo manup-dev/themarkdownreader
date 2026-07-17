@@ -18,6 +18,10 @@ export interface Tab {
   // file-kind
   fileName?: string
   contentKey?: string
+  // Library doc id (Dexie `documents` PK) this tab's content was saved under.
+  // Travels with the tab so highlights/comments/scroll-restore keys attach to
+  // the right document after switchTab/closeTab. undefined/null = not in library.
+  activeDocId?: number | null
 }
 
 export type TabPayload =

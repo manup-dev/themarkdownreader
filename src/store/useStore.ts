@@ -78,12 +78,18 @@ const folderBodyCache = new Map<string, {
   folderFileContents: DocumentState['folderFileContents']
 }>()
 const fileBodyCache = new Map<string, string>()
+// Per-tab chat history. Same lifecycle as the body caches above: primed on
+// snapshot, read on hydrate, dropped on closeTab/reset. Chat is doc-scoped
+// (see the contract at the chatMessages declaration), so it must travel
+// with tabs rather than leak across them (B3).
+const tabChatCache = new Map<string, ChatMessage[]>()
 
 // Tab snapshot / hydrate helpers — pure functions over the state shape,
 // plus the module-scope body caches above (which act as an in-session bridge
 // for per-tab folder/file content that doesn't live on the Tab record).
 function snapshotIntoTab(tab: Tab, state: DocumentState): Tab {
   const now = Date.now()
+  tabChatCache.set(tab.id, state.chatMessages)
   if (tab.kind === 'folder') {
     folderBodyCache.set(tab.id, {
       folderFiles: state.folderFiles,
@@ -94,6 +100,7 @@ function snapshotIntoTab(tab: Tab, state: DocumentState): Tab {
       activeFilePath: state.activeFilePath ?? tab.activeFilePath ?? null,
       viewMode: state.viewMode,
       scrollProgress: state.readingProgress,
+      activeDocId: state.activeDocId,
       lastAccessedAt: now,
     }
   }
@@ -103,10 +110,11 @@ function snapshotIntoTab(tab: Tab, state: DocumentState): Tab {
       ...tab,
       viewMode: state.viewMode,
       scrollProgress: state.readingProgress,
+      activeDocId: state.activeDocId,
       lastAccessedAt: now,
     }
   }
-  return { ...tab, lastAccessedAt: now }
+  return { ...tab, activeDocId: state.activeDocId, lastAccessedAt: now }
 }
 
 function hydrateFromTab(tab: Tab): Partial<DocumentState> {
@@ -126,6 +134,8 @@ function hydrateFromTab(tab: Tab): Partial<DocumentState> {
       fileName: tab.activeFilePath
         ? (tab.activeFilePath.split('/').pop() ?? null)
         : null,
+      activeDocId: tab.activeDocId ?? null,
+      chatMessages: tabChatCache.get(tab.id) ?? [],
     }
   }
   if (tab.kind === 'file') {
@@ -139,6 +149,8 @@ function hydrateFromTab(tab: Tab): Partial<DocumentState> {
       folderFileContents: null,
       folderHandle: null,
       markdown: body,
+      activeDocId: tab.activeDocId ?? null,
+      chatMessages: tabChatCache.get(tab.id) ?? [],
     }
   }
   // empty
@@ -146,6 +158,7 @@ function hydrateFromTab(tab: Tab): Partial<DocumentState> {
     markdown: '', fileName: null, activeFilePath: null,
     folderFiles: null, folderFileContents: null, folderHandle: null,
     viewMode: 'read', readingProgress: 0,
+    activeDocId: null, chatMessages: [],
   }
 }
 
@@ -164,6 +177,8 @@ function payloadToSingulars(payload: TabPayload): Partial<DocumentState> {
       activeFilePath: first?.path ?? null,
       markdown: first?.content ?? '',
       fileName: first?.name ?? null,
+      activeDocId: null,   // fresh content in the tab is not (yet) a library doc
+      chatMessages: [],    // chat is doc-scoped — new doc, new conversation
     }
   }
   return {
@@ -173,6 +188,8 @@ function payloadToSingulars(payload: TabPayload): Partial<DocumentState> {
     folderFiles: null,
     folderFileContents: null,
     activeFilePath: null,
+    activeDocId: null,   // fresh content in the tab is not (yet) a library doc
+    chatMessages: [],    // chat is doc-scoped — new doc, new conversation
   }
 }
 
@@ -189,6 +206,7 @@ function applyPayloadToTab(tab: Tab, payload: TabPayload): Tab {
       activeFilePath: payload.files[0]?.path ?? null,
       fileName: undefined,
       contentKey: undefined,
+      activeDocId: null,
       lastAccessedAt: now,
     }
   }
@@ -202,6 +220,7 @@ function applyPayloadToTab(tab: Tab, payload: TabPayload): Tab {
     folderName: undefined,
     handleKey: undefined,
     activeFilePath: undefined,
+    activeDocId: null,
     lastAccessedAt: now,
   }
 }
@@ -542,6 +561,7 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   reset: () => {
     folderBodyCache.clear()
     fileBodyCache.clear()
+    tabChatCache.clear()
     const fresh = emptyTab()
     set({
       markdown: '', fileName: null, toc: [], readingProgress: 0, activeSection: null,
@@ -655,6 +675,8 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
       folderHandle: null,
       viewMode: 'read',
       readingProgress: 0,
+      activeDocId: null,
+      chatMessages: [],
     })
     return t.id
   },
@@ -674,9 +696,12 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     // (see src/lib/recents.ts).
     folderBodyCache.delete(id)
     fileBodyCache.delete(id)
+    tabChatCache.delete(id)
     if (next.length === 0) {
       const fresh = emptyTab()
-      set({ tabs: [fresh], activeTabId: fresh.id })
+      // Reset doc-scoped singulars too — previously the closed tab's
+      // markdown/activeDocId/chatMessages leaked into the fresh empty tab.
+      set({ tabs: [fresh], activeTabId: fresh.id, ...hydrateFromTab(fresh) })
       return
     }
     set({ tabs: next, activeTabId: newActive })
@@ -693,6 +718,13 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
               set({ markdown: row.body })
             }
           })
+        }
+        // Folder-kind fallback (B2), mirroring switchTab step 4: with no
+        // in-session folder cache, hydrateFromTab leaves folderFiles null,
+        // which would drop the user on the Upload screen. Re-read the
+        // directory from the persisted handle instead.
+        if (target.kind === 'folder' && get().folderFiles === null) {
+          void get().reopenFolderTab(target.id)
         }
       }
     }
@@ -792,9 +824,11 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
         folderFileContents: extras.folderFileContents ?? null,
       })
       fileBodyCache.delete(updated.id)
+      tabChatCache.delete(updated.id)
     } else {
       fileBodyCache.set(updated.id, payload.content)
       folderBodyCache.delete(updated.id)
+      tabChatCache.delete(updated.id)
     }
     void persistPayload(updated, payload)
   },

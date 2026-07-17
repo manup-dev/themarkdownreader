@@ -450,3 +450,74 @@ describe('useStore — drift fixes (review-driven)', () => {
     expect(all).toHaveLength(1)
   })
 })
+
+describe('useStore — per-tab activeDocId + chatMessages (B1/B3)', () => {
+  beforeEach(() => {
+    useStore.getState().reset()          // clears module body/chat caches too
+    useStore.setState({
+      tabs: [], activeTabId: null,
+      markdown: '', fileName: null,
+      folderHandle: null, folderFiles: null, folderFileContents: null, activeFilePath: null,
+      viewMode: 'read',
+      activeDocId: null,
+      chatMessages: [],
+    })
+  })
+
+  it('opening a payload in a new tab clears activeDocId and chatMessages', () => {
+    useStore.getState().openInNewTab({ kind: 'file', fileName: 'a.md', content: '# A' })
+    useStore.getState().setActiveDocId(7)
+    useStore.getState().appendChatMessage({ role: 'user', content: 'about A?', timestamp: 1 })
+    useStore.getState().openInNewTab({ kind: 'file', fileName: 'b.md', content: '# B' })
+    expect(useStore.getState().activeDocId).toBeNull()
+    expect(useStore.getState().chatMessages).toEqual([])
+  })
+
+  it('activeDocId travels with its tab across switchTab', () => {
+    useStore.getState().openInNewTab({ kind: 'file', fileName: 'a.md', content: '# A' })
+    const tabA = useStore.getState().activeTabId!
+    useStore.getState().setActiveDocId(42)
+    useStore.getState().openInNewTab({ kind: 'file', fileName: 'b.md', content: '# B' })
+    expect(useStore.getState().activeDocId).toBeNull()
+    useStore.getState().switchTab(tabA)
+    expect(useStore.getState().activeDocId).toBe(42)
+  })
+
+  it('chatMessages travel with their tab across switchTab', () => {
+    useStore.getState().openInNewTab({ kind: 'file', fileName: 'a.md', content: '# A' })
+    const tabA = useStore.getState().activeTabId!
+    useStore.getState().appendChatMessage({ role: 'user', content: 'question about A', timestamp: 1 })
+    useStore.getState().openInNewTab({ kind: 'file', fileName: 'b.md', content: '# B' })
+    useStore.getState().appendChatMessage({ role: 'user', content: 'question about B', timestamp: 2 })
+    useStore.getState().switchTab(tabA)
+    expect(useStore.getState().chatMessages.map((m) => m.content)).toEqual(['question about A'])
+    expect(useStore.getState().fileName).toBe('a.md')
+  })
+
+  it('closeTab restores the neighbor tab\'s activeDocId and chatMessages', () => {
+    useStore.getState().openInNewTab({ kind: 'file', fileName: 'a.md', content: '# A' })
+    useStore.getState().setActiveDocId(11)
+    useStore.getState().appendChatMessage({ role: 'user', content: 'chat A', timestamp: 1 })
+    useStore.getState().openInNewTab({ kind: 'file', fileName: 'b.md', content: '# B' })
+    useStore.getState().setActiveDocId(22)
+    useStore.getState().closeTab(useStore.getState().activeTabId!)
+    expect(useStore.getState().activeDocId).toBe(11)
+    expect(useStore.getState().chatMessages.map((m) => m.content)).toEqual(['chat A'])
+  })
+
+  it('closing the last tab resets doc-scoped singulars', () => {
+    useStore.getState().openInNewTab({ kind: 'file', fileName: 'a.md', content: '# A' })
+    useStore.getState().setActiveDocId(11)
+    useStore.getState().appendChatMessage({ role: 'user', content: 'chat A', timestamp: 1 })
+    useStore.getState().closeTab(useStore.getState().activeTabId!)
+    expect(useStore.getState().activeDocId).toBeNull()
+    expect(useStore.getState().chatMessages).toEqual([])
+    expect(useStore.getState().markdown).toBe('')
+  })
+
+  it('openDocument still stamps activeDocId after routing through tabs', () => {
+    useStore.getState().openDocument('# Doc', 'doc.md', 42)
+    expect(useStore.getState().activeDocId).toBe(42)
+    expect(useStore.getState().chatMessages).toEqual([])
+  })
+})
