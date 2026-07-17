@@ -583,7 +583,7 @@ async function chatOpenRouterStream(
         max_tokens: effectiveMaxTokens,
         temperature: temperature ?? PROMPT_CONFIG.temperature,
       }),
-      signal: signal ?? AbortSignal.timeout(OPENROUTER_TIMEOUT),
+      signal: signalWithTimeout(signal, OPENROUTER_TIMEOUT),
     })
 
     if (!res.ok) {
@@ -695,6 +695,76 @@ async function chatOpenRouterStream(
   throw lastRateLimitError ?? new Error('OpenRouter error 429: all free models currently rate-limited upstream')
 }
 
+// ─── Streaming/token helpers ───────────────────────────────────────────────
+
+/**
+ * Stateful <think>…</think> stream filter (A9). Ollama reasoning models
+ * (qwen3) wrap chain-of-thought in think tags; the RETURN value of
+ * chatOllamaStream strips them, but raw tokens used to leak to onToken —
+ * the streamed UI showed CoT that contradicted the settled result.
+ * push() returns only the displayable portion of each token (buffering
+ * partial tags across token boundaries); flush() returns any text still
+ * buffered at stream end. Exported for tests.
+ */
+export function createThinkTagFilter(): { push: (token: string) => string; flush: () => string } {
+  const OPEN = '<think>'
+  const CLOSE = '</think>'
+  let buf = ''
+  let inThink = false
+  const partialSuffixLen = (s: string, tag: string): number => {
+    const max = Math.min(s.length, tag.length - 1)
+    for (let n = max; n > 0; n--) {
+      if (s.endsWith(tag.slice(0, n))) return n
+    }
+    return 0
+  }
+  return {
+    push(token: string): string {
+      buf += token
+      let out = ''
+      for (;;) {
+        if (inThink) {
+          const close = buf.indexOf(CLOSE)
+          if (close === -1) {
+            buf = buf.slice(buf.length - partialSuffixLen(buf, CLOSE))
+            return out
+          }
+          buf = buf.slice(close + CLOSE.length)
+          inThink = false
+        } else {
+          const open = buf.indexOf(OPEN)
+          if (open === -1) {
+            const keep = partialSuffixLen(buf, OPEN)
+            out += buf.slice(0, buf.length - keep)
+            buf = buf.slice(buf.length - keep)
+            return out
+          }
+          out += buf.slice(0, open)
+          buf = buf.slice(open + OPEN.length)
+          inThink = true
+        }
+      }
+    },
+    flush(): string {
+      const rest = inThink ? '' : buf
+      buf = ''
+      inThink = false
+      return rest
+    },
+  }
+}
+
+/**
+ * Combine an optional caller signal with a network timeout (A10). A
+ * caller-supplied signal must ADD a cancellation source, not silently
+ * disable the 60s/90s timeout the way `signal ?? AbortSignal.timeout(…)`
+ * did. Exported for tests.
+ */
+export function signalWithTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs)
+  return signal ? AbortSignal.any([signal, timeout]) : timeout
+}
+
 // ─── Ollama streaming chat ─────────────────────────────────────────────────
 
 async function chatOllamaStream(
@@ -723,7 +793,7 @@ async function chatOllamaStream(
       keep_alive: '30m',
       options,
     }),
-    signal: signal ?? AbortSignal.timeout(OLLAMA_TIMEOUT),
+    signal: signalWithTimeout(signal, OLLAMA_TIMEOUT),
   })
 
   if (!res.ok) throw new Error(`Ollama error: ${res.status}`)
@@ -732,6 +802,7 @@ async function chatOllamaStream(
   if (!reader) throw new Error('No response body')
 
   const decoder = new TextDecoder()
+  const thinkFilter = createThinkTagFilter()
   let full = ''
   let buffer = ''
   let tokensSinceYield = 0
@@ -750,7 +821,11 @@ async function chatOllamaStream(
         const token = json.message?.content ?? ''
         if (token) {
           full += token
-          onToken?.(token)
+          if (onToken) {
+            // Keep onToken consistent with the (think-stripped) return value.
+            const visible = thinkFilter.push(token)
+            if (visible) onToken(visible)
+          }
           tokensSinceYield++
         }
       } catch { /* skip malformed */ }
@@ -760,6 +835,10 @@ async function chatOllamaStream(
       tokensSinceYield = 0
       await new Promise<void>(r => setTimeout(r, 0))
     }
+  }
+  if (onToken) {
+    const tail = thinkFilter.flush()
+    if (tail) onToken(tail)
   }
   // Strip Qwen3-style thinking tags from output
   return full.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
@@ -817,7 +896,7 @@ export async function chatFast(
   if (activeBackend === 'gemma4') {
     const modelState = getModelState()
     if (modelState.status === 'ready') {
-      try { return await gemmaChat(messages, tokenCb, signal) } catch { /* fall through */ }
+      try { return await gemmaChat(messages, tokenCb, signal, effectiveMaxTokens) } catch { /* fall through */ }
     } else {
       // Model not loaded — prefer server backends instead of triggering download
       if (await checkOllamaHealth()) return chatOllamaStream(messages, tokenCb, signal, effectiveMaxTokens, temperature, repeatPenalty, model)
@@ -873,7 +952,7 @@ export async function chat(
       } else if (modelState.status !== 'ready') {
         await loadGemmaModel()
       }
-      return await gemmaChat(messages, onToken, signal)
+      return await gemmaChat(messages, onToken, signal, maxTokens)
     } catch (e) {
       console.warn('Gemma 4 failed, trying fallbacks:', e)
       try {
@@ -892,6 +971,9 @@ export async function chat(
     } catch {
       backendDetected = false
       if (await checkOllamaHealth()) return chatOllamaStream(messages, onToken, signal, maxTokens)
+      // Parity with the gemma4 failure path: a configured OpenRouter key
+      // must also rescue a WebLLM failure (A11).
+      if (await checkOpenRouter()) return chatOpenRouterStream(messages, onToken, signal, maxTokens, undefined, reasoning)
       throw new Error('No AI backend available')
     }
   }

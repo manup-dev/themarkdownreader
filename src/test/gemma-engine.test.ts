@@ -37,6 +37,7 @@ import {
   unloadGemma,
   onGemmaProgress,
 } from '../lib/inference/gemma-engine'
+import { PROMPT_CONFIG } from '../lib/prompts'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -176,5 +177,31 @@ describe('gemmaChat', () => {
     await expect(
       gemmaChat([{ role: 'user', content: 'hi' }], undefined, controller.signal),
     ).rejects.toMatchObject({ name: 'AbortError' })
+  })
+})
+
+describe('gemmaChat maxTokens + abort (A14)', () => {
+  it('forwards a caller maxTokens to model.generate', async () => {
+    await gemmaChat([{ role: 'user', content: 'hi' }], undefined, undefined, 1234)
+    const opts = mockGenerate.mock.calls[0][1] as Record<string, unknown>
+    expect(opts.max_new_tokens).toBe(1234)
+  })
+
+  it('defaults max_new_tokens to PROMPT_CONFIG.maxTokens when not provided', async () => {
+    await gemmaChat([{ role: 'user', content: 'hi' }])
+    const opts = mockGenerate.mock.calls[0][1] as Record<string, unknown>
+    expect(opts.max_new_tokens).toBe(PROMPT_CONFIG.maxTokens)
+  })
+
+  it('passes an abort-aware callback_function even without onToken', async () => {
+    const controller = new AbortController()
+    await gemmaChat([{ role: 'user', content: 'hi' }], undefined, controller.signal)
+    const opts = mockGenerate.mock.calls[0][1] as {
+      callback_function?: (beams: Array<{ output_token_ids: number[] }>) => unknown
+    }
+    expect(typeof opts.callback_function).toBe('function')
+    controller.abort()
+    // Returning false tells transformers.js to stop generating mid-stream.
+    expect(opts.callback_function!([{ output_token_ids: [1, 2, 3, 4, 5, 6] }])).toBe(false)
   })
 })

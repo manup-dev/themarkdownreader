@@ -296,6 +296,7 @@ export async function gemmaChat(
   messages: ChatMessage[],
   onToken?: (token: string) => void,
   signal?: AbortSignal,
+  maxTokens?: number,
 ): Promise<string> {
   if (status !== 'ready') {
     await loadGemmaModel()
@@ -321,34 +322,37 @@ export async function gemmaChat(
   // Track last decoded text for streaming delta
   let lastDecodedLength = 0
 
-  const callbackFunction = onToken
-    ? (beams: Array<{ output_token_ids: number[] }>) => {
-        if (signal?.aborted) return false  // returning false stops generation
+  // ALWAYS install a callback so cancellation is observed mid-generation
+  // even for non-streaming calls (A14) — the old code only created it when
+  // onToken existed, so cancelled non-streaming calls burned the full run.
+  const callbackFunction = (beams: Array<{ output_token_ids: number[] }>) => {
+    if (signal?.aborted) return false  // returning false stops generation
 
-        const currentTokenIds = beams[0]?.output_token_ids
-        if (!currentTokenIds) return
+    if (!onToken) return
+    const currentTokenIds = beams[0]?.output_token_ids
+    if (!currentTokenIds) return
 
-        // Only process new tokens beyond the input prompt
-        const newTokenIds = currentTokenIds.slice(inputLength)
-        outputTokenIds.length = 0
-        outputTokenIds.push(...newTokenIds)
+    // Only process new tokens beyond the input prompt
+    const newTokenIds = currentTokenIds.slice(inputLength)
+    outputTokenIds.length = 0
+    outputTokenIds.push(...newTokenIds)
 
-        // Decode full new sequence so far, then emit the delta
-        const decodedSoFar: string = tokenizer.decode(newTokenIds, {
-          skip_special_tokens: true,
-        })
-        const delta = decodedSoFar.slice(lastDecodedLength)
-        lastDecodedLength = decodedSoFar.length
-        if (delta) onToken(delta)
-      }
-    : undefined
+    // Decode full new sequence so far, then emit the delta
+    const decodedSoFar: string = tokenizer.decode(newTokenIds, {
+      skip_special_tokens: true,
+    })
+    const delta = decodedSoFar.slice(lastDecodedLength)
+    lastDecodedLength = decodedSoFar.length
+    if (delta) onToken(delta)
+  }
 
-  // Run generation
+  // Run generation. maxTokens threads the reasoning budget computed in
+  // ai.ts chat() (A14) — the hard PROMPT_CONFIG cap truncated gemma Q&A.
   const output = await model.generate(inputIds, {
-    max_new_tokens: PROMPT_CONFIG.maxTokens,
+    max_new_tokens: maxTokens ?? PROMPT_CONFIG.maxTokens,
     temperature: PROMPT_CONFIG.temperature,
     do_sample: PROMPT_CONFIG.temperature > 0,
-    ...(callbackFunction ? { callback_function: callbackFunction } : {}),
+    callback_function: callbackFunction,
   })
 
   if (signal?.aborted) {
