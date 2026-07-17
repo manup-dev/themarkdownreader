@@ -50,3 +50,4 @@
 - Chunk max size: 800 chars for RAG retrieval
 - Use `window.confirm()` for destructive actions
 - Toast notifications via DOM append with `.toast-notify` class
+- npm is the authoritative package manager (`package-lock.json`); `yarn.lock` exists only for the JupyterLab workspace tooling — never regenerate or commit changes to it

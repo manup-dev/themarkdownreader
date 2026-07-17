@@ -1,3 +1,9 @@
+# ───────────────────────────────────────────────────────────────────────────
+# UNOFFICIAL MIRROR CONFIG — the official deploy is GitHub Pages
+# (.github/workflows/deploy-pages.yml). This file, and vercel.json (strict
+# JSON — cannot carry this comment), exist only so a Netlify/Vercel mirror
+# can be spun up without surprises. Keep behavior consistent with Pages.
+# ───────────────────────────────────────────────────────────────────────────
 [build]
   command = "npm run build"
   publish = "dist"
@@ -5,7 +11,13 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    X-Frame-Options = "DENY"
+    # No X-Frame-Options / restrictive frame-ancestors: md-reader ships an
+    # iframe + postMessage embed feature (JupyterLab extension, mdonline
+    # editor — see src/lib/iframe-bridge.ts and the trustedOrigins checks in
+    # src/components/Upload.tsx). GitHub Pages sends no framing headers, so
+    # mirrors must not block framing either; in-app origin pinning is the
+    # actual security boundary.
+    Content-Security-Policy = "frame-ancestors *"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
