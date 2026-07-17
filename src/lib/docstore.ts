@@ -75,6 +75,7 @@ export interface StoredPodcastScript {
   id?: number
   title: string
   contentHash: string
+  duration?: 'quick' | 'detailed'
   segments: string // JSON stringified PodcastSegment[]
   scriptLines: string // JSON stringified ScriptLine[]
   createdAt: number
@@ -713,11 +714,14 @@ export async function getDocumentChunks(docId: number): Promise<StoredChunk[]> {
 export async function searchAcrossDocuments(
   query: string,
   topK = 10,
-): Promise<Array<{ docId: number; docFileName: string; sectionPath: string; text: string; score: number }>> {
+): Promise<Array<{ id: number; docId: number; docFileName: string; sectionPath: string; text: string; score: number }>> {
   await loadOrRebuildIndex()
   if (!searchIndex) return []
 
   return searchIndex.search(query).slice(0, topK).map((r) => ({
+    // MiniSearch doc id IS the db.chunks primary key (rebuildIndex adds
+    // `{ ...c, id: c.id! }`). Exposed so analysis.ts can store chunk pks (A3).
+    id: r.id as number,
     docId: r.docId as number,
     docFileName: r.docFileName as string,
     sectionPath: r.sectionPath as string,

@@ -51,6 +51,10 @@ export interface PodcastScript {
   scriptLines: ScriptLine[]
   scope: 'single' | 'deep' | 'project'
   persona: 'overview' | 'teacher' | 'interview'
+  /** Persisted so the cache lookup `(s.duration ?? 'quick') === duration`
+   * can distinguish quick from detailed scripts (A4). Optional: legacy
+   * cached records without it are treated as 'quick'. */
+  duration?: 'quick' | 'detailed'
   sourceDocIds: number[]
   createdAt: number
 }
@@ -707,7 +711,9 @@ export async function generatePodcast(
   // Fast path: if markdown has 2+ H2/H3 headings, use them directly — skip LLM outline call
   const headings = chunks
     .filter(c => /^#{2,3}\s/.test(c.text))
-    .map(c => c.text.replace(/^#{1,6}\s+/, '').trim())
+    // Chunks are heading + up to 800 chars of body — keep ONLY the heading
+    // line, or multi-line blobs leak into transitions and prompts (A5).
+    .map(c => c.text.split('\n')[0].replace(/^#{1,6}\s+/, '').trim())
     .filter(h => h.length > 3)
     .slice(0, maxThemes)
 
@@ -874,6 +880,7 @@ export async function generatePodcast(
     scriptLines: allLines,
     scope,
     persona,
+    duration,
     sourceDocIds: options?.docId !== undefined ? [options.docId] : [],
     createdAt: Date.now(),
   }
@@ -949,13 +956,14 @@ export async function generateDeepPodcast(
     pauseBefore: 400,
   }
 
+  // buildPodcastSegments emits NO wrapper intro/outro for a non-empty script
+  // — slicing (1, -1) dropped the first and last real dialogue lines (A6).
   const newSegments = buildPodcastSegments(allNewLines, currentScript.title)
-  const contentSegments = newSegments.slice(1, -1)
 
   const deepScript: PodcastScript = {
     ...currentScript,
     scope: 'deep',
-    segments: [...currentScript.segments.slice(0, -1), bridgeSegment, ...contentSegments, currentScript.segments[currentScript.segments.length - 1]],
+    segments: [...currentScript.segments.slice(0, -1), bridgeSegment, ...newSegments, currentScript.segments[currentScript.segments.length - 1]],
     scriptLines: [...currentScript.scriptLines, ...allNewLines],
     sourceDocIds: [...currentScript.sourceDocIds, ...relatedDocIds.slice(0, processed)],
     createdAt: Date.now(),

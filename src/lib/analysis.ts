@@ -5,7 +5,7 @@
  */
 
 import type { AnalyzedChunk, ChunkContentType, DocumentAnalysis, Entity, Theme } from './docstore'
-import { getAnalysis, saveAnalysis, getDocLinks, searchAcrossDocuments } from './docstore'
+import { getAnalysis, saveAnalysis, getDocLinks, searchAcrossDocuments, getDocumentChunks } from './docstore'
 import { chatFast, type ChatMessage, getActiveBackend } from './ai'
 import { PROMPTS, PROMPT_CONFIG } from './prompts'
 import { estimateDifficulty } from './markdown'
@@ -190,11 +190,17 @@ export async function analyzeDocument(
   report('Annotating chunks…')
   await yieldToMain()
 
-  // 2. Annotate chunks (deterministic) — use simple line-based chunking
-  const rawChunks = markdown
-    .split(/\n\n+/)
-    .map((text, i) => ({ id: i, text: text.trim() }))
-    .filter((c) => c.text.length > 0)
+  // 2. Annotate the document's STORED chunks so AnalyzedChunk.chunkId lives
+  //    in the db.chunks primary-key keyspace — podcast.ts looks annotations
+  //    up via `analysis.chunks.find(ac => ac.chunkId === stored.id)` (A3).
+  //    Paragraph-split fallback only when the doc has no stored chunks.
+  const storedChunks = await getDocumentChunks(docId)
+  const rawChunks = storedChunks.length > 0
+    ? storedChunks.map((c) => ({ id: c.id, text: c.text }))
+    : markdown
+        .split(/\n\n+/)
+        .map((text, i) => ({ id: i, text: text.trim() }))
+        .filter((c) => c.text.length > 0)
 
   const annotatedChunks = annotateChunks(rawChunks)
   await yieldToMain()
@@ -254,7 +260,7 @@ export async function analyzeDocument(
     if (signal?.aborted) break
     try {
       const results = await searchAcrossDocuments(theme.title, 5)
-      theme.chunkIds = results.map((r) => r.docId)
+      theme.chunkIds = results.map((r) => r.id)
     } catch {
       // Non-fatal: leave chunkIds empty
     }

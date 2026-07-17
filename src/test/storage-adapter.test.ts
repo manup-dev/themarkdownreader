@@ -205,7 +205,7 @@ describe('DexieAdapter', () => {
   // --- Search ---
   describe('search', () => {
     it('searchAcrossDocuments delegates to ds.searchAcrossDocuments', async () => {
-      const hits = [{ docId: 1, docFileName: 'a.md', sectionPath: '', text: 'result', score: 0.9 }]
+      const hits = [{ id: 1, docId: 1, docFileName: 'a.md', sectionPath: '', text: 'result', score: 0.9 }]
       vi.mocked(ds.searchAcrossDocuments).mockResolvedValue(hits)
 
       const out = await adapter.searchAcrossDocuments('query', 5)
