@@ -7,9 +7,16 @@ export default defineConfig({
   testIgnore: ['**/tools/**'],
   timeout: 30000,
   retries: 1,
+  // CI's "Upload Playwright report" step (.github/workflows/ci.yml) uploads
+  // playwright-report/ on failure, but that directory only exists if an
+  // html reporter is configured — without this, the upload step silently
+  // no-ops (upload-artifact defaults if-no-files-found to 'warn') and a red
+  // CI run leaves no debuggable artifact behind.
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: 'http://localhost:4174',
     screenshot: 'only-on-failure',
+    trace: 'retain-on-failure',
   },
   webServer: {
     // Build first so the gate never runs against a stale (or absent) dist/.
