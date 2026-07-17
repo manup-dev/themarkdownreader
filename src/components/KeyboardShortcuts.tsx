@@ -44,6 +44,53 @@ const SHORTCUTS = [
   ]},
 ]
 
+// ─── B5: reader scroll container ─────────────────────────────────────────
+// The reader's scrollable pane lives INSIDE #main-content (App.tsx).
+// A bare document.querySelector('[class*="overflow-y-auto"]') grabbed the
+// sidebar (OutlinePanel/FileExplorer render an overflow-y-auto pane earlier
+// in the DOM). #main-content itself is not scrollable, so we select the
+// first overflow-y-auto descendant.
+function getReaderScrollContainer(): HTMLElement | null {
+  return document.querySelector('#main-content [class*="overflow-y-auto"]')
+}
+
+// ─── B9/B10: full teardown of DOM-mutating reading modes ────────────────
+// Bionic, heatmap, word-count badges, and TL;DR all rewrite DOM that
+// react-markdown owns. Centralized teardown so Escape, the off-toggles, and
+// the content-change guard clear the SAME artifact set — previously Escape
+// forgot the word-count badges and TL;DR leaked cursor/title/click handlers.
+const tldrHandlers = new Map<HTMLElement, () => void>()
+
+function clearReadingModes(): void {
+  document.querySelectorAll('[data-bionic]').forEach((el) => {
+    const parent = el.parentNode
+    if (!parent) return
+    parent.replaceChild(document.createTextNode(el.textContent ?? ''), el)
+    parent.normalize()
+  })
+  document.querySelectorAll('[data-freq-highlight]').forEach((el) => {
+    const parent = el.parentNode
+    if (!parent) return
+    parent.replaceChild(document.createTextNode(el.textContent ?? ''), el)
+    parent.normalize()
+  })
+  document.querySelectorAll('[data-word-count-badge]').forEach((el) => el.remove())
+  const article = document.querySelector('article')
+  if (article?.classList.contains('tldr-mode')) {
+    article.classList.remove('tldr-mode')
+    article.querySelectorAll('[data-tldr-hidden]').forEach((el) => {
+      ;(el as HTMLElement).style.display = ''
+      el.removeAttribute('data-tldr-hidden')
+    })
+  }
+  for (const [heading, handler] of tldrHandlers) {
+    heading.removeEventListener('click', handler)
+    heading.style.cursor = ''
+    heading.title = ''
+  }
+  tldrHandlers.clear()
+}
+
 export function KeyboardShortcuts() {
   const toc = useStore((s) => s.toc)
   const markdown = useStore((s) => s.markdown)
@@ -84,19 +131,25 @@ export function KeyboardShortcuts() {
 
   useEffect(() => {
     const handleSpaceDown = (e: KeyboardEvent) => {
-      if (e.key !== ' ' || e.repeat) return
+      if (e.key !== ' ') return
       const target = e.target as HTMLElement
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
       if (viewMode !== 'read') return
-
+      // Held key → repeat events keep firing; keep the page from scrolling
+      // under the preview but don't restart the hold timer.
+      if (e.repeat) {
+        if (spaceDownRef.current) e.preventDefault()
+        return
+      }
+      const preview = getNextSectionPreview()
+      if (!preview) return
+      // preventDefault must be synchronous — inside the 300ms timeout the
+      // event's default action (scroll) has long since happened (B6).
+      e.preventDefault()
       spaceDownRef.current = true
       spaceHoldTimerRef.current = window.setTimeout(() => {
-        e.preventDefault()
-        const preview = getNextSectionPreview()
-        if (preview) {
-          setGlanceDismissing(false)
-          setGlancePreview(preview)
-        }
+        setGlanceDismissing(false)
+        setGlancePreview(preview)
       }, 300)
     }
 
@@ -129,8 +182,6 @@ export function KeyboardShortcuts() {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
-
-      trackEvent('keyboard_shortcut')
 
       switch (e.key) {
         case 'j': {
@@ -165,21 +216,19 @@ export function KeyboardShortcuts() {
           break
         }
         case 'p': {
-          if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-            const gated = isViewModeGated('podcast')
-            if (gated && !enabledFeatures.has(gated)) break
-            e.preventDefault()
-            setViewMode('podcast')
-          }
+          if (e.ctrlKey || e.metaKey || e.altKey) return
+          const gated = isViewModeGated('podcast')
+          if (gated && !enabledFeatures.has(gated)) return
+          e.preventDefault()
+          setViewMode('podcast')
           break
         }
         case 'v': {
-          if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-            const gated = isViewModeGated('diagram')
-            if (gated && !enabledFeatures.has(gated)) break
-            e.preventDefault()
-            setViewMode('diagram')
-          }
+          if (e.ctrlKey || e.metaKey || e.altKey) return
+          const gated = isViewModeGated('diagram')
+          if (gated && !enabledFeatures.has(gated)) return
+          e.preventDefault()
+          setViewMode('diagram')
           break
         }
         case 'b': {
@@ -201,7 +250,7 @@ export function KeyboardShortcuts() {
               el.style.background = set.has(activeSection) ? (isSepia ? 'rgba(180,83,9,0.15)' : 'rgba(251,191,36,0.15)') : ''
               setTimeout(() => { el.style.background = '' }, 800)
             }
-            return
+            break
           }
           // Plain 'b' — bionic reading mode
           if (viewMode !== 'read') return
@@ -215,7 +264,7 @@ export function KeyboardShortcuts() {
               parent.replaceChild(document.createTextNode(el.textContent ?? ''), el)
               parent.normalize()
             })
-            return
+            break
           }
           // Apply bionic reading: bold first half of each word
           const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
@@ -296,7 +345,7 @@ export function KeyboardShortcuts() {
               parent.replaceChild(document.createTextNode(el.textContent ?? ''), el)
               parent.normalize()
             })
-            return
+            break
           }
           // Build word frequency map from visible text
           const text = article.textContent ?? ''
@@ -396,7 +445,7 @@ export function KeyboardShortcuts() {
           if (e.ctrlKey || e.metaKey) return
           if (viewMode !== 'read') return
           trackEvent('auto_scroll_toggle')
-          const reader = document.querySelector('[class*="overflow-y-auto"]') as HTMLElement
+          const reader = getReaderScrollContainer()
           if (!reader) return
           if (autoScrollRef.current) {
             clearInterval(autoScrollRef.current)
@@ -429,7 +478,7 @@ export function KeyboardShortcuts() {
           if (!article) return
           if (article.querySelector('[data-word-count-badge]')) {
             article.querySelectorAll('[data-word-count-badge]').forEach((el) => el.remove())
-            return
+            break
           }
           const children = Array.from(article.children) as HTMLElement[]
           for (const child of children) {
@@ -458,6 +507,14 @@ export function KeyboardShortcuts() {
               ;(el as HTMLElement).style.display = ''
               el.removeAttribute('data-tldr-hidden')
             })
+            // B10: symmetric teardown — remove the expand handlers and the
+            // cursor/tooltip affordances they installed on headings.
+            for (const [heading, handler] of tldrHandlers) {
+              heading.removeEventListener('click', handler)
+              heading.style.cursor = ''
+              heading.title = ''
+            }
+            tldrHandlers.clear()
           } else {
             article.classList.add('tldr-mode')
             const children = Array.from(article.children) as HTMLElement[]
@@ -480,7 +537,9 @@ export function KeyboardShortcuts() {
                   child.style.cursor = ''
                   child.title = ''
                   child.removeEventListener('click', handler)
+                  tldrHandlers.delete(child)
                 }
+                tldrHandlers.set(child, handler)
                 child.addEventListener('click', handler)
               }
             }
@@ -493,20 +552,10 @@ export function KeyboardShortcuts() {
           setFocusMode(false)
           document.body.classList.remove('focus-paragraph')
           document.querySelectorAll('.fp-active, .fp-adjacent').forEach((el) => { el.classList.remove('fp-active', 'fp-adjacent') })
-          // Also clear heatmap
-          document.querySelectorAll('[data-freq-highlight]').forEach((el) => {
-            const parent = el.parentNode!
-            parent.replaceChild(document.createTextNode(el.textContent ?? ''), el)
-            parent.normalize()
-          })
-          // Also clear bionic reading
-          document.querySelectorAll('[data-bionic]').forEach((el) => { const p = el.parentNode!; p.replaceChild(document.createTextNode(el.textContent ?? ''), el); p.normalize() })
-          // Also clear TL;DR mode
-          const articleEl = document.querySelector('article')
-          if (articleEl?.classList.contains('tldr-mode')) {
-            articleEl.classList.remove('tldr-mode')
-            articleEl.querySelectorAll('[data-tldr-hidden]').forEach((el) => { ;(el as HTMLElement).style.display = ''; el.removeAttribute('data-tldr-hidden') })
-          }
+          // B9/B10: full teardown of every DOM reading mode — bionic, heatmap,
+          // word-count badges (previously forgotten), and TL;DR including the
+          // heading cursor/title/click handlers (previously leaked).
+          clearReadingModes()
           break
         }
         case 'F11': {
@@ -540,11 +589,10 @@ export function KeyboardShortcuts() {
         }
         case 'G': {
           // Shift+G → jump to bottom
-          if (e.shiftKey) {
-            e.preventDefault()
-            const reader = document.querySelector('[class*="overflow-y-auto"]') as HTMLElement
-            if (reader) reader.scrollTo({ top: reader.scrollHeight, behavior: 'smooth' })
-          }
+          if (!e.shiftKey) return
+          e.preventDefault()
+          const reader = getReaderScrollContainer()
+          if (reader) reader.scrollTo({ top: reader.scrollHeight, behavior: 'smooth' })
           break
         }
         case 'g': {
@@ -552,7 +600,7 @@ export function KeyboardShortcuts() {
           const now = Date.now()
           if (lastKeyRef.current.key === 'g' && now - lastKeyRef.current.time < 500) {
             e.preventDefault()
-            const reader = document.querySelector('[class*="overflow-y-auto"]') as HTMLElement
+            const reader = getReaderScrollContainer()
             if (reader) reader.scrollTo({ top: 0, behavior: 'smooth' })
             lastKeyRef.current = { key: '', time: 0 }
           } else {
@@ -560,7 +608,12 @@ export function KeyboardShortcuts() {
           }
           break
         }
+        default:
+          return
       }
+      // B11: only count keys a shortcut actually handled. Unhandled paths
+      // `return` above (skipping this); handled cases `break` into it.
+      trackEvent('keyboard_shortcut')
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -588,7 +641,7 @@ export function KeyboardShortcuts() {
 
   // Focus paragraph mode: update highlighted paragraph on scroll
   useEffect(() => {
-    const reader = document.querySelector('[class*="overflow-y-auto"]') as HTMLElement
+    const reader = getReaderScrollContainer()
     if (!reader) return
     const update = () => {
       if (!document.body.classList.contains('focus-paragraph')) return
@@ -621,6 +674,19 @@ export function KeyboardShortcuts() {
         autoScrollRef.current = null
       }
     }
+  }, [])
+
+  // B9 crash guard: bionic/heatmap/badges replace text nodes that
+  // react-markdown owns; if the document changes while artifacts are live,
+  // React's commit throws NotFoundError removing nodes we swapped out.
+  // useStore.subscribe fires synchronously inside set() — BEFORE React
+  // re-renders — so the original nodes are restored in time. (A useEffect
+  // on markdown would run after the crashing commit.)
+  useEffect(() => {
+    const unsub = useStore.subscribe((state, prev) => {
+      if (state.markdown !== prev.markdown) clearReadingModes()
+    })
+    return unsub
   }, [])
 
   // Cancel auto-scroll on manual scroll (wheel or touch)
