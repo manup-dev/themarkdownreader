@@ -12,7 +12,7 @@ import path from 'node:path'
  *   - src/lib/remark-excalidraw.ts
  */
 
-const SAMPLE = path.resolve('.playwright-mcp/test-diagram.excalidraw')
+const SAMPLE = path.resolve('e2e/fixtures/test-diagram.excalidraw')
 
 test.describe('Excalidraw integration', () => {
   test.setTimeout(60_000)

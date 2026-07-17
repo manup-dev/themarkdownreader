@@ -1,0 +1,33 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com",
+  "elements": [
+    {
+      "id": "rect-1", "type": "rectangle",
+      "x": 100, "y": 100, "width": 220, "height": 80, "angle": 0,
+      "strokeColor": "#1e1e1e", "backgroundColor": "#a5d8ff",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid",
+      "roughness": 1, "opacity": 100, "groupIds": [], "frameId": null,
+      "roundness": { "type": 3 }, "seed": 1, "version": 1, "versionNonce": 1,
+      "isDeleted": false, "boundElements": [{ "id": "text-1", "type": "text" }],
+      "updated": 1700000000000, "link": null, "locked": false
+    },
+    {
+      "id": "text-1", "type": "text",
+      "x": 130, "y": 128, "width": 160, "height": 24, "angle": 0,
+      "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid",
+      "roughness": 1, "opacity": 100, "groupIds": [], "frameId": null,
+      "roundness": null, "seed": 2, "version": 1, "versionNonce": 2,
+      "isDeleted": false, "boundElements": null,
+      "updated": 1700000000000, "link": null, "locked": false,
+      "text": "e2e fixture diagram", "fontSize": 20, "fontFamily": 1,
+      "textAlign": "center", "verticalAlign": "middle",
+      "containerId": "rect-1", "originalText": "e2e fixture diagram",
+      "autoResize": true, "lineHeight": 1.2
+    }
+  ],
+  "appState": { "gridSize": null, "viewBackgroundColor": "#ffffff" },
+  "files": {}
+}

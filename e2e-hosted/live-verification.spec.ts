@@ -57,7 +57,7 @@ test.describe('Live github.io deploy verification', () => {
   })
 
   test('.excalidraw upload routes to Excalidraw viewer (not Reader)', async ({ browser }) => {
-    const sample = path.resolve('.playwright-mcp/test-diagram.excalidraw')
+    const sample = path.resolve('e2e/fixtures/test-diagram.excalidraw')
     expect(fs.existsSync(sample)).toBe(true)
 
     const ctx = await browser.newContext()

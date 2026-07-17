@@ -2,6 +2,9 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  // Zero-assertion capture utilities live in e2e/tools — not part of the gate.
+  // Run them via: npx playwright test --config playwright.tools.config.ts
+  testIgnore: ['**/tools/**'],
   timeout: 30000,
   retries: 1,
   use: {
@@ -9,8 +12,10 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: 'npx vite preview --port 4174',
+    // Build first so the gate never runs against a stale (or absent) dist/.
+    command: 'npm run build && npx vite preview --port 4174',
     port: 4174,
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI,
+    timeout: 240_000,
   },
 })

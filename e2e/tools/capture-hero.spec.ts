@@ -3,7 +3,7 @@ import { test } from '@playwright/test'
 // Records the 15s hero loop as video (storyboard:
 // docs/launch/hero-gif-storyboard.md). Convert to GIF with the ffmpeg
 // command at the bottom of this file. NOT part of the regular suite —
-// run explicitly: npx playwright test e2e/capture-hero.spec.ts
+// Run: npx playwright test --config playwright.tools.config.ts e2e/tools/capture-hero.spec.ts
 test.use({
   viewport: { width: 1280, height: 760 },
   video: { mode: 'on', size: { width: 1280, height: 760 } },

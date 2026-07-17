@@ -5,6 +5,9 @@ import path from 'node:path'
 /**
  * One-off visual proof: load a real harness markdown file and capture a
  * full-page screenshot showing the mermaid diagrams rendered inline.
+ *
+ * NOT part of the regular suite —
+ * Run: npx playwright test --config playwright.tools.config.ts e2e/tools/mermaid-visual-proof.spec.ts
  */
 
 test('visual proof — 00-overview.md mermaid renders inline', async ({ page }) => {

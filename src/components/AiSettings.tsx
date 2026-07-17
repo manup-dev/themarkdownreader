@@ -42,12 +42,22 @@ export function AiSettings({ onClose }: { onClose: () => void }) {
   }, [])
 
   useEffect(() => {
-    checkOllamaHealth().then(setOllamaReachable)
-    detectBestBackend().then((b) => setActiveBackend(b as Backend))
+    let cancelled = false
+    checkOllamaHealth()
+      .then((ok) => { if (!cancelled) setOllamaReachable(ok) })
+      .catch(() => {})
+    detectBestBackend()
+      .then((b) => { if (!cancelled) setActiveBackend(b as Backend) })
+      .catch(() => {})
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
-    getStorageBreakdown().then(setStorage)
+    let cancelled = false
+    getStorageBreakdown()
+      .then((s) => { if (!cancelled) setStorage(s) })
+      .catch(() => {})
+    return () => { cancelled = true }
   }, [])
 
   const handleTestConnection = useCallback(async () => {
