@@ -19,6 +19,7 @@ import { trackEvent } from '../lib/telemetry'
 import { shouldShowFirstTimeTip } from '../lib/first-run'
 import { resolveAnchor } from '../lib/anchor'
 import { detectArtifactType } from '../lib/artifact-type'
+import { buildSectionHash, parseSectionFromHash } from '../lib/section-hash'
 
 /** Recursively extract plain text from React children (handles bold, italic, code, etc.) */
 function childrenToText(children: React.ReactNode): string {
@@ -349,10 +350,8 @@ export function Reader() {
   // The hash may also carry a folder file ref like `#read?f=docs/api.md`,
   // so the section pattern accepts either form (path-style or query-style).
   useEffect(() => {
-    const hash = window.location.hash
-    const match = hash.match(/#read[?/]section=([^&]+)/) ?? hash.match(/[?&]section=([^&]+)/)
-    if (match) {
-      const sectionId = decodeURIComponent(match[1])
+    const sectionId = parseSectionFromHash(window.location.hash)
+    if (sectionId) {
       requestAnimationFrame(() => {
         const el = document.getElementById(sectionId)
         if (el) el.scrollIntoView({ behavior: 'smooth' })
@@ -360,19 +359,16 @@ export function Reader() {
     }
   }, [markdown])
 
-  // Feature 17: Update URL hash as user reads. Preserve any existing query
-  // string (e.g. the folder file ref `?f=<path>`) so section scrolling
-  // doesn't clobber the file the user is reading inside a folder.
+  // Feature 17: Update URL hash as user reads. URLSearchParams (inside
+  // buildSectionHash) does the single encoding — the old manual
+  // encodeURIComponent double-encoded non-ASCII ids (B14). Pass the CURRENT
+  // history state through: replacing it with null wiped App's history-sync
+  // state ({viewMode, activeTabId, …}) and made the next Back press a no-op.
   useEffect(() => {
     if (activeSection) {
-      const current = window.location.hash
-      const qIdx = current.indexOf('?')
-      const existingQuery = qIdx === -1 ? '' : current.slice(qIdx + 1)
-      const params = new URLSearchParams(existingQuery)
-      params.set('section', encodeURIComponent(activeSection))
-      const newHash = `#read?${params.toString()}`
+      const newHash = buildSectionHash(window.location.hash, activeSection)
       if (window.location.hash !== newHash) {
-        window.history.replaceState(null, '', newHash)
+        window.history.replaceState(window.history.state, '', newHash)
       }
     }
   }, [activeSection])
@@ -1315,20 +1311,14 @@ export function Reader() {
     return () => { el.removeEventListener('mouseover', handleOver); el.removeEventListener('mouseout', handleOut) }
   }, [footnoteMap])
 
-  // Double-click word to search
+  // Double-click word to search — store-driven prefill (B4)
   useEffect(() => {
     const el = contentRef.current
     if (!el) return
     const handleDblClick = () => {
       const sel = window.getSelection()?.toString().trim()
       if (sel && sel.length > 1 && sel.length < 50 && !sel.includes('\n')) {
-        // Dispatch Ctrl+K to open search, then fill it
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
-        // Fill search after overlay opens
-        setTimeout(() => {
-          const input = document.querySelector('[placeholder="Search in document..."]') as HTMLInputElement
-          if (input) { input.value = sel; input.dispatchEvent(new Event('input', { bubbles: true })) }
-        }, 100)
+        useStore.getState().setPendingSearchQuery(sel)
       }
     }
     el.addEventListener('dblclick', handleDblClick)

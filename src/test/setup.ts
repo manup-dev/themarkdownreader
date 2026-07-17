@@ -21,3 +21,10 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
     dispatchEvent: () => false,
   }) as MediaQueryList
 }
+
+// jsdom does not implement Element.scrollIntoView — components that
+// auto-scroll on mount/update (e.g. Chat's messages-end anchor) throw
+// "scrollIntoView is not a function" as soon as they render in tests.
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {}
+}

@@ -424,16 +424,12 @@ export function SelectionMenu() {
               <button
                 onClick={() => {
                   if (!menu) return
-                  const chatFab = document.querySelector('[data-chat-fab]') as HTMLButtonElement
-                  if (chatFab) chatFab.click()
-                  setTimeout(() => {
-                    const input = document.querySelector('[placeholder*="Ask a question"]') as HTMLInputElement
-                    if (input) {
-                      input.value = `Explain this passage: "${menu.text.slice(0, 200)}"`
-                      input.dispatchEvent(new Event('input', { bubbles: true }))
-                      input.focus()
-                    }
-                  }, 200)
+                  // B4: store-driven prefill. App opens the chat panel when
+                  // this is set; Chat moves it into its controlled input.
+                  // (The old data-chat-fab click toggled the FAB menu, not
+                  // chat, and the synthetic 'input' event was swallowed by
+                  // React's controlled-input value tracker.)
+                  useStore.getState().setPendingChatInput(`Explain this passage: "${menu.text.slice(0, 200)}"`)
                   setMenu(null)
                 }}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"

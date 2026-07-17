@@ -100,6 +100,21 @@ export function SearchOverlay() {
     }
   }, [])
 
+  // B4: programmatic search prefill (Reader double-click). Store-driven —
+  // the old synthetic Ctrl+K KeyboardEvent + input-event dispatch never
+  // survived React's controlled-input value tracker, and it queried the
+  // placeholder "Search in document..." which only exists outside read view.
+  const pendingSearchQuery = useStore((s) => s.pendingSearchQuery)
+  useEffect(() => {
+    if (pendingSearchQuery !== null && pendingSearchQuery.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reacting to an external (store) signal, not deriving from props/state
+      setOpen(true)
+      setQuery(pendingSearchQuery)
+      doSearch(pendingSearchQuery)
+      useStore.getState().setPendingSearchQuery(null)
+    }
+  }, [pendingSearchQuery, doSearch])
+
   const navigateMatch = useCallback((direction: 'prev' | 'next') => {
     if (matches.length === 0) return
 
@@ -149,7 +164,7 @@ export function SearchOverlay() {
     : []
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Search document" className="fixed top-14 right-4 z-40 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 rounded-xl shadow-xl w-80 animate-scale-in">
+    <div role="dialog" aria-modal="true" aria-label="Search" className="fixed top-14 right-4 z-40 bg-white dark:bg-gray-900 sepia:bg-sepia-50 border border-gray-200 dark:border-gray-800 sepia:border-sepia-200 rounded-xl shadow-xl w-80 animate-scale-in">
       <div className="p-2 flex items-center gap-2">
         <Search className="h-4 w-4 text-gray-400 shrink-0" />
         <input

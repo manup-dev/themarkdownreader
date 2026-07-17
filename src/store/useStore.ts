@@ -352,6 +352,14 @@ export interface DocumentState {
   setChatMessages: (messages: ChatMessage[]) => void
   appendChatMessage: (message: ChatMessage) => void
   clearChatMessages: () => void
+  /** B4: text to inject into the Chat input (set by SelectionMenu "Chat").
+   *  App opens the chat panel on it; Chat consumes it and resets to null. */
+  pendingChatInput: string | null
+  setPendingChatInput: (value: string | null) => void
+  /** B4: query to open the SearchOverlay with (set by Reader dblclick).
+   *  SearchOverlay consumes it and resets to null. */
+  pendingSearchQuery: string | null
+  setPendingSearchQuery: (value: string | null) => void
   enabledFeatures: Set<string>
   toggleFeature: (id: string) => void
   refreshFeatureFlags: () => void
@@ -472,6 +480,10 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   setChatMessages: (messages) => set({ chatMessages: messages }),
   appendChatMessage: (message) => set((s) => ({ chatMessages: [...s.chatMessages, message] })),
   clearChatMessages: () => set({ chatMessages: [] }),
+  pendingChatInput: null,
+  setPendingChatInput: (value) => set({ pendingChatInput: value }),
+  pendingSearchQuery: null,
+  setPendingSearchQuery: (value) => set({ pendingSearchQuery: value }),
   enabledFeatures: resolveEnabledFeatures(),
 
   setMarkdown: (md, fileName) => {

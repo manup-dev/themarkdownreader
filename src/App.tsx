@@ -95,6 +95,16 @@ function AppContent() {
   const sidebarOpen = !sidebarCollapsed
   const [chatOpen, setChatOpen] = useState(false)
   const [commentsOpen, setCommentsOpen] = useState(false)
+  // B4: open the chat panel when a prefill arrives (SelectionMenu "Chat").
+  // Replaces the old data-chat-fab click hack, which toggled the FAB menu
+  // rather than the chat panel. Chat itself consumes and clears the field.
+  const pendingChatInput = useStore((s) => s.pendingChatInput)
+  useEffect(() => {
+    if (pendingChatInput) {
+      setChatOpen(true)
+      setCommentsOpen(false)
+    }
+  }, [pendingChatInput])
   const [commentCount, setCommentCount] = useState(0)
   const [focusMode, setFocusMode] = useState(false)
   const [fabMenuOpen, setFabMenuOpen] = useState(false)

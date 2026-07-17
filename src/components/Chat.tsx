@@ -60,6 +60,16 @@ export function Chat() {
     setChatMessages(next)
   }, [setChatMessages])
   const [input, setInput] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  // B4: programmatic prefill from SelectionMenu ("Chat" on a selection).
+  const pendingChatInput = useStore((s) => s.pendingChatInput)
+  useEffect(() => {
+    if (pendingChatInput !== null && pendingChatInput.length > 0) {
+      setInput(pendingChatInput)
+      useStore.getState().setPendingChatInput(null)
+      inputRef.current?.focus()
+    }
+  }, [pendingChatInput])
   const [loading, setLoading] = useState(false)
   const [streamingText, setStreamingText] = useState('')
   const [backend, setBackend] = useState<string>('detecting...')
@@ -496,6 +506,7 @@ export function Chat() {
       <div className="p-3 border-t border-gray-200 dark:border-gray-800">
         <div className="flex gap-2">
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}

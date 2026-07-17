@@ -237,6 +237,19 @@ describe('<SelectionMenu> — simplified primary actions', () => {
     expect(screen.getByRole('button', { name: /find in document/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /save to glossary/i })).toBeInTheDocument()
   })
+
+  it('clicking Chat routes the prefill through store state (no DOM dispatch)', async () => {
+    renderWithProvider(<SelectionMenu />)
+    const host = fakeSelection('some deep passage')
+    fireEvent.mouseUp(document, { target: host })
+    await waitFor(() => screen.getByRole('button', { name: /chat/i }))
+
+    fireEvent.click(screen.getByRole('button', { name: /chat/i }))
+
+    expect(useStore.getState().pendingChatInput).toBe('Explain this passage: "some deep passage"')
+    // Menu closes after handing off
+    expect(screen.queryByRole('button', { name: /^highlight$/i })).not.toBeInTheDocument()
+  })
 })
 
 /**
