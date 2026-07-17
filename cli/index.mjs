@@ -2,7 +2,7 @@
 
 import { createServer } from 'http'
 import { readFileSync, existsSync } from 'fs'
-import { resolve, join } from 'path'
+import { resolve, join, basename } from 'path'
 import { fileURLToPath } from 'url'
 import sirv from 'sirv'
 import open from 'open'
@@ -14,14 +14,28 @@ const VERSION = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf-8'
 // ─── Parse args ────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2)
-const flags = { port: 4173, help: false, noOpen: false }
+const flags = { port: 4173, help: false, noOpen: false, version: false }
 const files = []
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--help' || args[i] === '-h') flags.help = true
+  else if (args[i] === '--version' || args[i] === '-v') flags.version = true
   else if (args[i] === '--no-open') flags.noOpen = true
-  else if (args[i] === '--port' || args[i] === '-p') flags.port = parseInt(args[++i], 10)
+  else if (args[i] === '--port' || args[i] === '-p') {
+    const raw = args[++i]
+    if (raw === undefined || !/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > 65535) {
+      console.error(`Error: --port requires an integer between 1 and 65535 (got: ${raw ?? 'nothing'})`)
+      console.error('Usage: mdr --port 8080')
+      process.exit(1)
+    }
+    flags.port = Number(raw)
+  }
   else files.push(args[i])
+}
+
+if (flags.version) {
+  console.log(`md-reader v${VERSION}`)
+  process.exit(0)
 }
 
 if (flags.help) {
@@ -37,6 +51,7 @@ if (flags.help) {
   Options:
     -p, --port <n>   Port to serve on (default: 4173)
     --no-open        Don't auto-open the browser
+    -v, --version    Print the version and exit
     -h, --help       Show this help
 
   AI backends (auto-detected):
@@ -92,7 +107,7 @@ async function main() {
       process.exit(1)
     }
     markdownContent = readFileSync(filePath, 'utf-8')
-    fileName = files[0].split('/').pop()
+    fileName = basename(files[0])
   } else {
     const stdin = await readStdin()
     if (stdin) {
@@ -119,13 +134,26 @@ async function main() {
     serve(req, res)
   })
 
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Error: port ${flags.port} is already in use.`)
+      console.error(`Try another port: mdr --port ${flags.port + 1}`)
+    } else {
+      console.error(`Error: ${err.message}`)
+    }
+    process.exit(1)
+  })
+
   server.listen(flags.port, () => {
     const url = `http://localhost:${flags.port}`
+    // The app only fetches piped/file content when ?cli=true is present —
+    // print the SAME url we auto-open so --no-open / SSH users can copy it.
+    const openUrl = markdownContent ? `${url}?cli=true` : url
 
     console.log()
     console.log(`  \x1b[1mmd-reader\x1b[0m v${VERSION}`)
     console.log()
-    console.log(`  \x1b[2m→\x1b[0m Local:   \x1b[36m${url}\x1b[0m`)
+    console.log(`  \x1b[2m→\x1b[0m Local:   \x1b[36m${openUrl}\x1b[0m`)
 
     if (markdownContent) {
       console.log(`  \x1b[2m→\x1b[0m File:    ${fileName}`)
@@ -142,7 +170,6 @@ async function main() {
     console.log()
 
     if (!flags.noOpen) {
-      const openUrl = markdownContent ? `${url}?cli=true` : url
       open(openUrl)
     }
   })
