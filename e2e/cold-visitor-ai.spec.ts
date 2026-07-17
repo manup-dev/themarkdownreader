@@ -1,9 +1,37 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
-// Headless Chromium has no WebGPU and no Ollama → detection lands on 'none',
-// exactly like a Safari/Firefox/mobile PH visitor. The app must offer a
-// recovery path, not a dead "No AI backend available" message.
+// Simulate a visitor with genuinely no AI backend available — no WebGPU, no
+// reachable Ollama — exactly like a Safari/Firefox/mobile PH visitor. The app
+// must offer a recovery path, not a dead "No AI backend available" message.
+//
+// Relying on the *execution environment* to naturally lack WebGPU/Ollama is
+// unreliable: a dev machine with a local Ollama container makes backend
+// detection resolve to 'ollama', and modern headless Chromium (especially
+// `playwright install --with-deps`, which pulls in software rendering libs)
+// can report WebGPU as available via a software adapter — both silently skip
+// this test's "no backend" scenario instead of failing loudly. Force the
+// cold-visitor condition deterministically instead of hoping the host lacks
+// these capabilities.
+//
+// `serviceWorkers: 'block'` (set per-test below) is required for the Ollama
+// route mock to actually take effect: this app registers a service worker
+// (src/main.tsx) that, once active, intercepts fetch() calls — including
+// the cross-origin ${OLLAMA_BASE_URL}/api/tags health check — at a layer
+// below page.route(), letting the request reach the real network (and a
+// real dev-machine Ollama container) regardless of the mock. Blocking
+// service workers keeps the health-check fetch on the page's normal
+// network path where page.route() can reliably intercept it.
+async function simulateNoAiBackend(page: Page) {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true })
+  })
+  await page.route(/\/api\/tags(\?|$)/, (route) => route.abort())
+}
+
+test.use({ serviceWorkers: 'block' })
+
 test('cold visitor with no AI backend gets a guided setup path', async ({ page }) => {
+  await simulateNoAiBackend(page)
   await page.goto('/?demo=true')
   await page.getByRole('button', { name: 'Skip tour' }).click()
 
@@ -21,6 +49,7 @@ test('cold visitor with no AI backend gets a guided setup path', async ({ page }
 })
 
 test('Coach view shows the same setup prompt instead of a vague error', async ({ page }) => {
+  await simulateNoAiBackend(page)
   await page.goto('/?demo=true')
   await page.getByRole('button', { name: 'Skip tour' }).click()
   await page.getByRole('button', { name: /^Coach/ }).click()
