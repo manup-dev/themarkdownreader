@@ -5,6 +5,7 @@ import { useAdapter } from '../provider/hooks'
 import { SAMPLE_MARKDOWN } from '../lib/sample-doc'
 import { RecentsList } from './RecentsList'
 import { isTrustedEmbedOrigin } from '../lib/trusted-origins'
+import { wordsReadToday } from '../lib/reading-metrics'
 
 type Mode = 'home' | 'editor'
 
@@ -37,6 +38,24 @@ export function Upload() {
   const [error, setError] = useState<string | null>(null)
   const [starDismissed, setStarDismissed] = useState(() => !!localStorage.getItem('md-reader-star-dismissed'))
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Reading streak (B12): computed in an effect, never during render (the
+  // old code wrote localStorage inside a JSX IIFE), and only bumped when the
+  // user actually read words today — a mere visit no longer extends it.
+  const [docsReadCount] = useState(() => parseInt(localStorage.getItem('md-reader-docs-read') ?? '0'))
+  const [streak, setStreak] = useState(() => parseInt(localStorage.getItem('md-reader-streak') ?? '0'))
+  useEffect(() => {
+    const today = new Date().toDateString()
+    const lastDate = localStorage.getItem('md-reader-streak-date')
+    if (lastDate === today) return          // already counted today
+    if (wordsReadToday() === 0) return      // nothing actually read today
+    const yesterday = new Date(Date.now() - 86400000).toDateString()
+    const prev = parseInt(localStorage.getItem('md-reader-streak') ?? '0')
+    const next = lastDate === yesterday ? prev + 1 : 1
+    localStorage.setItem('md-reader-streak', String(next))
+    localStorage.setItem('md-reader-streak-date', today)
+    setStreak(next)
+  }, [])
 
   const loadFile = useCallback(
     (file: File) => {
@@ -232,24 +251,12 @@ export function Upload() {
         {/* ── Hero area (above the fold) ─────────────────────────── */}
         <div className="text-center space-y-2">
           {/* Reading streak — compact */}
-          {(() => {
-            const count = parseInt(localStorage.getItem('md-reader-docs-read') ?? '0')
-            const today = new Date().toDateString()
-            const lastDate = localStorage.getItem('md-reader-streak-date')
-            let streak = parseInt(localStorage.getItem('md-reader-streak') ?? '0')
-            if (lastDate !== today && count > 0) {
-              const yesterday = new Date(Date.now() - 86400000).toDateString()
-              streak = lastDate === yesterday ? streak + 1 : 1
-              localStorage.setItem('md-reader-streak', String(streak))
-              localStorage.setItem('md-reader-streak-date', today)
-            }
-            return (count > 0 || streak > 0) ? (
-              <div className="flex items-center justify-center gap-3 text-xs text-gray-400 dark:text-gray-500">
-                {count > 0 && <span>{count} document{count !== 1 ? 's' : ''} read</span>}
-                {streak > 0 && <span className="text-amber-500">{streak > 3 ? '\u{1F525} ' : ''}{streak}-day streak</span>}
-              </div>
-            ) : null
-          })()}
+          {(docsReadCount > 0 || streak > 0) ? (
+            <div className="flex items-center justify-center gap-3 text-xs text-gray-400 dark:text-gray-500">
+              {docsReadCount > 0 && <span>{docsReadCount} document{docsReadCount !== 1 ? 's' : ''} read</span>}
+              {streak > 0 && <span className="text-amber-500">{streak > 3 ? '\u{1F525} ' : ''}{streak}-day streak</span>}
+            </div>
+          ) : null}
           <p className="text-xs font-semibold tracking-[0.2em] uppercase text-gray-400 dark:text-gray-500">
             md-reader
           </p>

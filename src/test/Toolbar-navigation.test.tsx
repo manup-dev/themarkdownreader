@@ -79,7 +79,8 @@ describe('<Toolbar> — back-to-upload navigation', () => {
       expect(s.activeDocId).toBeNull()
     })
 
-    it('clicking Home from a folder returns to the upload screen (no dialog)', () => {
+    it('clicking Home from a folder confirms via window.confirm, then returns to the upload screen', () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
       useStore.getState().setFolderSession(null, [
         { path: 'a.md', name: 'a.md', content: '# A' },
         { path: 'b.md', name: 'b.md', content: '# B' },
@@ -87,10 +88,12 @@ describe('<Toolbar> — back-to-upload navigation', () => {
       renderToolbar()
       fireEvent.click(screen.getByRole('button', { name: /go to upload screen/i }))
       const s = useStore.getState()
+      expect(confirmSpy).toHaveBeenCalledTimes(1)
       expect(s.folderFiles).toBeNull()
       expect(s.markdown).toBe('')
-      // No confirm dialog was opened
+      // Still no custom DOM dialog — Home uses window.confirm() (repo convention)
       expect(screen.queryByText(/close folder and return to home/i)).not.toBeInTheDocument()
+      confirmSpy.mockRestore()
     })
 
     it('clicking Home from workspace mode exits workspace', () => {
@@ -171,6 +174,40 @@ describe('<Toolbar> — back-to-upload navigation', () => {
       fireEvent.click(screen.getByRole('button', { name: /close folder/i }))
       expect(screen.queryByText(/close folder and return to home/i)).not.toBeInTheDocument()
       expect(useStore.getState().folderFiles).toBeNull()
+    })
+  })
+
+  describe('Home button confirm (B15)', () => {
+    it('asks before discarding an unsaved document, and aborts on decline', () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      useStore.setState({ markdown: '# unsaved', fileName: 'draft.md', activeDocId: null })
+      renderToolbar()
+      fireEvent.click(screen.getByRole('button', { name: /go to upload screen/i }))
+      expect(confirmSpy).toHaveBeenCalledTimes(1)
+      expect(useStore.getState().markdown).toBe('# unsaved')  // declined → nothing discarded
+      confirmSpy.mockRestore()
+    })
+
+    it('asks when multiple tabs would be discarded, proceeds on accept', () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      useStore.getState().openInNewTab({ kind: 'file', fileName: 'a.md', content: '# A' })
+      useStore.getState().openInNewTab({ kind: 'file', fileName: 'b.md', content: '# B' })
+      renderToolbar()
+      fireEvent.click(screen.getByRole('button', { name: /go to upload screen/i }))
+      expect(confirmSpy).toHaveBeenCalledTimes(1)
+      expect(useStore.getState().tabs).toHaveLength(1)  // reset → one fresh empty tab
+      expect(useStore.getState().markdown).toBe('')
+      confirmSpy.mockRestore()
+    })
+
+    it('does not confirm for a saved single document', () => {
+      const confirmSpy = vi.spyOn(window, 'confirm')
+      useStore.setState({ markdown: '# saved', fileName: 'doc.md', activeDocId: 42, tabs: [], activeTabId: null })
+      renderToolbar()
+      fireEvent.click(screen.getByRole('button', { name: /go to upload screen/i }))
+      expect(confirmSpy).not.toHaveBeenCalled()
+      expect(useStore.getState().markdown).toBe('')
+      confirmSpy.mockRestore()
     })
   })
 })

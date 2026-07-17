@@ -20,6 +20,7 @@ import { shouldShowFirstTimeTip } from '../lib/first-run'
 import { resolveAnchor } from '../lib/anchor'
 import { detectArtifactType } from '../lib/artifact-type'
 import { buildSectionHash, parseSectionFromHash } from '../lib/section-hash'
+import { recordWordsRead, pruneWordsReadStorage } from '../lib/reading-metrics'
 
 /** Recursively extract plain text from React children (handles bold, italic, code, etc.) */
 function childrenToText(children: React.ReactNode): string {
@@ -696,12 +697,10 @@ export function Reader() {
     if (docKey && now - lastSaveRef.current > 2000) {
       lastSaveRef.current = now
       queueStorageWrite(`md-reader-scroll-${docKey}`, String(progress))
-      // Track daily words read
-      const today = new Date().toDateString()
-      const todayKey = `md-reader-words-today-${today}`
-      const wordsRead = Math.round(words * (progress / 100))
-      const prev = parseInt(localStorage.getItem(todayKey) ?? '0')
-      if (wordsRead > prev) queueStorageWrite(todayKey, String(wordsRead))
+      // Track daily words read — per-doc contribution, summed per day (B13).
+      // The old code stored a single per-doc max, so every doc switch reset
+      // the day's total to whichever doc was scrolled last.
+      recordWordsRead(docKey, Math.round(words * (progress / 100)))
     }
   }, [setReadingProgress, words, docKey, queueStorageWrite])
 
@@ -711,6 +710,10 @@ export function Reader() {
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
   }, [handleScroll])
+
+  // B13: reap dated daily-words keys older than the retention window — they
+  // were previously written forever and never removed.
+  useEffect(() => { pruneWordsReadStorage() }, [])
 
   // Flush pending storage writes on unmount
   useEffect(() => () => flushStorage(), [flushStorage])

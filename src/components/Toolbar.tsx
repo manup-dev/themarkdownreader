@@ -203,6 +203,17 @@ export function Toolbar() {
 
   const goHome = useCallback(() => {
     const store = useStore.getState()
+    // B15: Home is destructive (reset() wipes all tabs, the folder session,
+    // and any unsaved doc) while the adjacent X confirms carefully. Confirm
+    // whenever something would actually be discarded; a saved single doc
+    // (re-openable from the library/recents) goes home silently.
+    const discardsUnsavedDoc = !!store.markdown && !store.activeDocId
+    const discardsFolder = store.folderFiles !== null
+    const discardsTabs = store.tabs.length > 1
+    if (discardsUnsavedDoc || discardsFolder || discardsTabs) {
+      const ok = window.confirm('Go back to the home screen? Open tabs will be closed and any unsaved document will be discarded.')
+      if (!ok) return
+    }
     if (store.folderFiles !== null) store.closeFolderSession()
     store.reset()
     window.location.hash = ''
