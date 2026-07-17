@@ -47,6 +47,47 @@ const ShareDialog = lazy(() => import('./components/ShareDialog').then((m) => ({
 const RemoteBanner = lazy(() => import('./components/RemoteBanner').then((m) => ({ default: m.RemoteBanner })))
 const RepoBrowser = lazy(() => import('./components/RepoBrowser').then((m) => ({ default: m.RepoBrowser })))
 
+// Applies view/tts/section hash params after a document was loaded from a
+// hash payload. Shared by the #file= (local dev /api/file) and #md= (inline,
+// hosted default) intake paths so both support the full MCP tool surface.
+function applyHashViewParams(md: string, params: URLSearchParams) {
+  const view = (params.get('view') || 'read') as ViewMode
+  const tts = params.get('tts') === 'true'
+  const section = params.get('section')
+
+  useStore.getState().setViewMode(view)
+
+  // Compute TOC locally — the store's toc is populated by Reader's
+  // useEffect which hasn't run yet at this point
+  const toc = extractToc(md)
+
+  // Start TTS if requested
+  if (tts) {
+    import('./lib/tts').then(({ tts: ttsEngine }) => {
+      ttsEngine.loadMarkdown(md)
+      if (section) {
+        const matchIdx = toc.findIndex((t) =>
+          t.text.toLowerCase().includes(section.toLowerCase())
+        )
+        ttsEngine.play(matchIdx >= 0 ? matchIdx : 0)
+      } else {
+        ttsEngine.play(0)
+      }
+      useStore.getState().setTtsPlaying(true)
+    }).catch(() => { /* TTS module load failed — non-critical */ })
+  }
+
+  // Navigate to section if specified (for coach view)
+  if (section && !tts) {
+    const match = toc.find((t) =>
+      t.text.toLowerCase().includes(section.toLowerCase())
+    )
+    if (match) {
+      useStore.getState().setActiveSection(match.id)
+    }
+  }
+}
+
 function LazyFallback() {
   return (
     <div className="flex-1 flex items-center justify-center">
@@ -174,76 +215,87 @@ function AppContent() {
     }
   }, [])
 
-  // Browser extension: handle incoming markdown from extension
+  // Browser extension + MCP hosted default: handle incoming markdown
   useEffect(() => {
-    const hash = window.location.hash
-
-    // Handle #md=<base64> — inline markdown payload from extension
-    if (hash.startsWith('#md=')) {
-      const encoded = hash.slice(4)
+    // #md=<base64>[&view=…&tts=true&section=…] — inline payload from the
+    // browser extension or the MCP server's hosted-default delivery. The
+    // payload is base64 of JSON{markdown,fileName}; base64 never contains
+    // '&', so everything after the first '&' is ordinary view params.
+    const handleInlineHash = (): boolean => {
+      const hash = window.location.hash
+      if (!hash.startsWith('#md=')) return false
+      const [encoded, ...paramParts] = hash.slice(4).split('&')
+      const params = new URLSearchParams(paramParts.join('&'))
       window.history.replaceState(null, '', window.location.pathname)
       try {
         const json = decodeURIComponent(escape(atob(encoded)))
         const { markdown: md, fileName } = JSON.parse(json)
-        if (md) openInNewTab({ kind: 'file', fileName: fileName || 'document.md', content: md })
+        if (md) {
+          openInNewTab({ kind: 'file', fileName: fileName || 'document.md', content: md })
+          applyHashViewParams(md, params)
+        }
       } catch (err) {
         console.error('md-reader: Failed to decode extension payload:', err)
       }
-      return
+      return true
     }
 
-    // Handle share URLs: #url=<doc>[&annot=<url|base64>][&hash=…] or
-    // #repo=<owner/name>&path=…. The share-loader does SSRF-guarded fetch
-    // for both doc and annotation sidecar, imports the events as local
-    // Dexie rows (so the existing UI renders them), and returns banner
-    // data for the RemoteBanner component.
-    const hasShareParams = /[#&?](url|repo)=/.test(hash)
-    if (hasShareParams) {
-      // Snapshot the full URL NOW. The history-syncing effect lower in this
-      // file will rewrite the hash to `#<viewMode>` before the dynamic
-      // import resolves, so the loader needs the URL up-front rather than
-      // reading window.location.href at call time.
-      const capturedHref = window.location.href
-      import('./lib/share-loader').then(async ({ loadShareFromHash }) => {
-        try {
-          const result = await loadShareFromHash({ href: capturedHref })
-          if (!result) return
-          if (result.kind === 'folder') {
-            // Folder share — clear any persisted doc so the RepoBrowser
-            // (gated on !markdown) actually renders, and clear remoteShare
-            // since this isn't a single-doc read.
-            useStore.getState().setMarkdown('')
-            useStore.getState().setRemoteShare(null)
-            setRepoBrowserHref(result.href)
-            return
+    if (!handleInlineHash()) {
+      const hash = window.location.hash
+
+      // Handle share URLs: #url=<doc>[&annot=<url|base64>][&hash=…] or
+      // #repo=<owner/name>&path=…. The share-loader does SSRF-guarded fetch
+      // for both doc and annotation sidecar, imports the events as local
+      // Dexie rows (so the existing UI renders them), and returns banner
+      // data for the RemoteBanner component.
+      const hasShareParams = /[#&?](url|repo)=/.test(hash)
+      if (hasShareParams) {
+        // Snapshot the full URL NOW. The history-syncing effect lower in this
+        // file will rewrite the hash to `#<viewMode>` before the dynamic
+        // import resolves, so the loader needs the URL up-front rather than
+        // reading window.location.href at call time.
+        const capturedHref = window.location.href
+        import('./lib/share-loader').then(async ({ loadShareFromHash }) => {
+          try {
+            const result = await loadShareFromHash({ href: capturedHref })
+            if (!result) return
+            if (result.kind === 'folder') {
+              // Folder share — clear any persisted doc so the RepoBrowser
+              // (gated on !markdown) actually renders, and clear remoteShare
+              // since this isn't a single-doc read.
+              useStore.getState().setMarkdown('')
+              useStore.getState().setRemoteShare(null)
+              setRepoBrowserHref(result.href)
+              return
+            }
+            // setActiveDocId so downstream consumers (CommentsPanel, highlight
+            // rendering, analysis lookups) query the right Dexie row. Must
+            // fire AFTER openInNewTab, mirroring openDocument's pattern
+            // (see useStore.ts). openInNewTab snapshots the *leaving* tab's
+            // activeDocId from current state before creating the new tab, and
+            // stamps activeDocId: null on the fresh tab/singular for new
+            // content (see payloadToSingulars/applyPayloadToTab) — calling
+            // setActiveDocId first would (a) mis-snapshot the share's docId
+            // onto the previous tab instead of the new one, and (b) then get
+            // immediately clobbered back to null by openInNewTab's own state
+            // update. Setting it after is safe: it only touches the singular,
+            // and that singular is what gets captured onto the new tab's
+            // record the next time it is snapshotted (e.g. on tab switch).
+            openInNewTab({ kind: 'file', fileName: result.fileName, content: result.markdown })
+            useStore.getState().setActiveDocId(result.docId)
+            useStore.getState().setRemoteShare(result.banner)
+          } catch (err) {
+            console.error('md-reader: Failed to load share URL:', err)
+            setShareLoadError((err as Error)?.message || 'Could not load the shared document.')
           }
-          // setActiveDocId so downstream consumers (CommentsPanel, highlight
-          // rendering, analysis lookups) query the right Dexie row. Must
-          // fire AFTER openInNewTab, mirroring openDocument's pattern
-          // (see useStore.ts). openInNewTab snapshots the *leaving* tab's
-          // activeDocId from current state before creating the new tab, and
-          // stamps activeDocId: null on the fresh tab/singular for new
-          // content (see payloadToSingulars/applyPayloadToTab) — calling
-          // setActiveDocId first would (a) mis-snapshot the share's docId
-          // onto the previous tab instead of the new one, and (b) then get
-          // immediately clobbered back to null by openInNewTab's own state
-          // update. Setting it after is safe: it only touches the singular,
-          // and that singular is what gets captured onto the new tab's
-          // record the next time it is snapshotted (e.g. on tab switch).
-          openInNewTab({ kind: 'file', fileName: result.fileName, content: result.markdown })
-          useStore.getState().setActiveDocId(result.docId)
-          useStore.getState().setRemoteShare(result.banner)
-        } catch (err) {
-          console.error('md-reader: Failed to load share URL:', err)
-          setShareLoadError((err as Error)?.message || 'Could not load the shared document.')
-        }
-      })
-      return
-    }
+        })
+        return
+      }
 
-    // Handle #ext-pending — large file fallback, wait for postMessage
-    if (hash === '#ext-pending') {
-      window.history.replaceState(null, '', window.location.pathname)
+      // Handle #ext-pending — large file fallback, wait for postMessage
+      if (hash === '#ext-pending') {
+        window.history.replaceState(null, '', window.location.pathname)
+      }
     }
 
     // Listen for postMessage from extension (large file fallback).
@@ -256,7 +308,12 @@ function AppContent() {
       }
     }
     window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
+    // Reused tab: a new #md= arriving via hashchange loads without a reload
+    window.addEventListener('hashchange', handleInlineHash)
+    return () => {
+      window.removeEventListener('message', handleMessage)
+      window.removeEventListener('hashchange', handleInlineHash)
+    }
   }, [openInNewTab])
 
   // Demo mode: ?demo=true loads sample document for first-time visitors
@@ -296,9 +353,6 @@ function AppContent() {
       // Parse hash params: #file=<path>&view=<mode>&tts=true&section=<heading>
       const params = new URLSearchParams(hash.slice(1))
       const filePath = params.get('file')
-      const view = (params.get('view') || 'read') as ViewMode
-      const tts = params.get('tts') === 'true'
-      const section = params.get('section')
 
       if (!filePath) return
 
@@ -316,37 +370,7 @@ function AppContent() {
         })
         .then((md) => {
           openInNewTab({ kind: 'file', fileName, content: md })
-          useStore.getState().setViewMode(view)
-
-          // Compute TOC locally — the store's toc is populated by Reader's
-          // useEffect which hasn't run yet at this point
-          const toc = extractToc(md)
-
-          // Start TTS if requested
-          if (tts) {
-            import('./lib/tts').then(({ tts: ttsEngine }) => {
-              ttsEngine.loadMarkdown(md)
-              if (section) {
-                const matchIdx = toc.findIndex((t) =>
-                  t.text.toLowerCase().includes(section.toLowerCase())
-                )
-                ttsEngine.play(matchIdx >= 0 ? matchIdx : 0)
-              } else {
-                ttsEngine.play(0)
-              }
-              useStore.getState().setTtsPlaying(true)
-            }).catch(() => { /* TTS module load failed — non-critical */ })
-          }
-
-          // Navigate to section if specified (for coach view)
-          if (section && !tts) {
-            const match = toc.find((t) =>
-              t.text.toLowerCase().includes(section.toLowerCase())
-            )
-            if (match) {
-              useStore.getState().setActiveSection(match.id)
-            }
-          }
+          applyHashViewParams(md, params)
         })
         .catch((err) => console.error('md-reader: MCP file load failed:', err))
     }

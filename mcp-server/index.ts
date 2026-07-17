@@ -4,7 +4,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import fs from 'fs'
 import path from 'path'
 import { z } from 'zod'
-import { buildReaderUrl } from './url'
+import { buildReaderUrl, buildInlineReaderUrl, INLINE_URL_MAX } from './url'
+import { readOwnVersion } from './version'
 import { extractTasks, buildTaskPrompt } from './plan'
 import { diffMarkdown, buildDiffSummary } from './diff'
 // Single source of truth for markdown → tree (shared with the terminal renderers).
@@ -16,6 +17,10 @@ const PROJECT_ROOT = process.cwd()
 // Default to the hosted app so `npx md-reader-mcp` works for users who never
 // cloned this repo. Local dev overrides with MD_READER_URL=http://localhost:5183.
 const MD_READER_URL = process.env.MD_READER_URL || 'https://manup-dev.github.io/themarkdownreader'
+
+// No explicit MD_READER_URL ⇒ hosted default ⇒ the app cannot fetch local
+// files (#file= needs the Vite-dev-only /api/file) — deliver content inline.
+const USING_HOSTED_DEFAULT = !process.env.MD_READER_URL
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -48,6 +53,68 @@ async function checkHealth(): Promise<void> {
   }
 }
 
+/** Resolve the VS Code CLI from PATH — never a hardcoded install path (C7). */
+async function resolveCodeCli(): Promise<string | null> {
+  const { execFileSync } = await import('child_process')
+  const probe = process.platform === 'win32' ? 'where' : 'which'
+  try {
+    const out = execFileSync(probe, ['code'], { encoding: 'utf-8', timeout: 2000 })
+    return out.split('\n').map((l) => l.trim()).filter(Boolean)[0] ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Poll until `file` disappears (extension pickup) or timeout elapses. */
+async function waitForUnlink(file: string, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (fs.existsSync(file)) {
+    if (Date.now() > deadline) return false
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  return true
+}
+
+/**
+ * Host a one-page redirect on 127.0.0.1 that forwards the browser to the
+ * hosted app with the full #md= payload. Exists because large payloads
+ * exceed OS command-line limits for `open`, while browsers accept
+ * multi-megabyte fragments (Chrome caps URLs at ~2 MB). unref'd so it never
+ * keeps the MCP process alive; it serves for the life of the process.
+ */
+async function serveRedirectUrl(targetUrl: string): Promise<string> {
+  const { createServer } = await import('http')
+  const html = `<!doctype html><meta charset="utf-8"><title>md-reader</title><script>location.replace(${JSON.stringify(targetUrl)})</script>`
+  return new Promise((resolve, reject) => {
+    const httpServer = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      res.end(html)
+    })
+    httpServer.on('error', reject)
+    httpServer.listen(0, '127.0.0.1', () => {
+      httpServer.unref()
+      const { port } = httpServer.address() as { port: number }
+      resolve(`http://127.0.0.1:${port}/`)
+    })
+  })
+}
+
+/**
+ * Display-only URL for tool output when openView didn't itself yield a
+ * browser URL (vscode success / health-check failure). Hosted default
+ * inlines the content; oversized payloads fall back to the (local-only)
+ * #file= form rather than bloating the tool result with megabytes of base64.
+ */
+function buildBrowserFallbackUrl(absPath: string, view: string, extra?: Record<string, string>): string {
+  const relativePath = path.relative(PROJECT_ROOT, absPath)
+  if (USING_HOSTED_DEFAULT) {
+    const markdown = fs.readFileSync(absPath, 'utf-8')
+    const inline = buildInlineReaderUrl(MD_READER_URL, markdown, path.basename(absPath), view, extra)
+    if (inline.length <= INLINE_URL_MAX) return inline
+  }
+  return buildReaderUrl(MD_READER_URL, relativePath, view, extra)
+}
+
 async function openView(absPath: string, view: string, extra?: Record<string, string>): Promise<string> {
   const relativePath = path.relative(PROJECT_ROOT, absPath)
 
@@ -57,20 +124,41 @@ async function openView(absPath: string, view: string, extra?: Record<string, st
   // VS Code integration: write view file + open file via code CLI
   // The extension's onDidChangeActiveTextEditor reads .md-reader-view and opens the panel
   const viewFile = path.join(PROJECT_ROOT, '.md-reader-view')
-  if (!skipVscode) try {
-    fs.writeFileSync(viewFile, view)
-    const { execFileSync } = await import('child_process')
-    execFileSync('/snap/bin/code', [absPath], { stdio: 'ignore', timeout: 3000 })
-    return `vscode: opened ${relativePath} in ${view} view`
-  } catch {
-    try { fs.unlinkSync(viewFile) } catch { /* ignore */ }
-    // code CLI not available — fall back to browser
+  if (!skipVscode) {
+    const codeBin = await resolveCodeCli()
+    if (codeBin) {
+      try {
+        fs.writeFileSync(viewFile, view)
+        const { execFileSync } = await import('child_process')
+        execFileSync(codeBin, [absPath], { stdio: 'ignore', timeout: 3000 })
+        // Only claim vscode success once the extension actually consumed the
+        // request: it deletes .md-reader-view on pickup
+        // (vscode-extension/src/extension.ts, onDidChangeActiveTextEditor).
+        if (await waitForUnlink(viewFile, 2000)) {
+          return `vscode: opened ${relativePath} in ${view} view`
+        }
+      } catch { /* spawn failed — fall through to browser */ }
+      // Extension absent or spawn failed: remove the litter, then fall back.
+      try { fs.unlinkSync(viewFile) } catch { /* already gone */ }
+    }
   }
 
   // Browser fallback: health check + open in default browser
   await checkHealth()
 
-  const url = buildReaderUrl(MD_READER_URL, relativePath, view, extra)
+  let url: string
+  if (USING_HOSTED_DEFAULT) {
+    // Hosted Pages app can't resolve #file= paths — inline the content (C2).
+    const markdown = fs.readFileSync(absPath, 'utf-8')
+    url = buildInlineReaderUrl(MD_READER_URL, markdown, path.basename(absPath), view, extra)
+    if (url.length > INLINE_URL_MAX) {
+      // Too long for the OS `open` command line — hand the payload to the
+      // browser via a local one-page redirect instead.
+      url = await serveRedirectUrl(url)
+    }
+  } else {
+    url = buildReaderUrl(MD_READER_URL, relativePath, view, extra)
+  }
 
   const { default: open } = await import('open')
   await open(url)
@@ -100,7 +188,7 @@ function findSubtree(node: TreeNode, sectionText: string): TreeNode | null {
 
 const server = new McpServer({
   name: 'md-reader',
-  version: '0.1.0',
+  version: readOwnVersion(),
 })
 
 // Tool 1: show_mind_map
@@ -125,24 +213,18 @@ server.tool(
     // Attempt to open browser (best-effort, non-blocking)
     let browserUrl: string
     try {
-      const relativePath = path.relative(PROJECT_ROOT, absPath)
       const extra: Record<string, string> = {}
       if (section) extra.section = section
       const result = await openView(absPath, 'mindmap', extra)
       // If openView returns a vscode: string, construct the browser URL anyway
-      if (result.startsWith('vscode:')) {
-        const params = new URLSearchParams({ file: relativePath, view: 'mindmap', ...extra })
-        browserUrl = `${MD_READER_URL}/#${params.toString()}`
-      } else {
-        browserUrl = result
-      }
+      browserUrl = result.startsWith('vscode:')
+        ? buildBrowserFallbackUrl(absPath, 'mindmap', extra)
+        : result
     } catch {
       // Construct fallback browser URL without health check
-      const relativePath = path.relative(PROJECT_ROOT, absPath)
       const extra: Record<string, string> = {}
       if (section) extra.section = section
-      const params = new URLSearchParams({ file: relativePath, view: 'mindmap', ...extra })
-      browserUrl = `${MD_READER_URL}/#${params.toString()}`
+      browserUrl = buildBrowserFallbackUrl(absPath, 'mindmap', extra)
     }
 
     const resultJson = JSON.stringify({
@@ -239,7 +321,7 @@ server.tool(
   async ({ path: inputPath }) => {
     const absPath = validateMdPath(inputPath)
     await checkHealth()
-    openView(absPath, 'podcast')
+    await openView(absPath, 'podcast')
     return {
       content: [
         {
@@ -266,7 +348,7 @@ server.tool(
     const extra: Record<string, string> = {}
     if (section) extra.section = section
     if (type) extra.diagramType = type
-    openView(absPath, 'diagram', Object.keys(extra).length ? extra : undefined)
+    await openView(absPath, 'diagram', Object.keys(extra).length ? extra : undefined)
     return {
       content: [
         {

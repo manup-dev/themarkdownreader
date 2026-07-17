@@ -5,6 +5,7 @@
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 // Use this repo's own README as the fixture — guaranteed to exist and have headings.
@@ -26,6 +27,12 @@ server.stdout.on('data', (d) => {
   out += d.toString()
 
   if (phase === 'init' && out.includes('"serverInfo"')) {
+    // C3: the handshake must self-report the real package version.
+    const pkgVersion = JSON.parse(readFileSync(path.join(root, 'mcp-server/package.json'), 'utf-8')).version
+    const initLine = out.split('\n').find((l) => l.includes('"serverInfo"'))
+    if (!initLine.includes(`"version":"${pkgVersion}"`)) {
+      return fail(`serverInfo version !== mcp-server/package.json (${pkgVersion}): ${initLine.slice(0, 300)}`)
+    }
     phase = 'tool'
     out = '' // reset buffer for the tool response
     send({ jsonrpc: '2.0', method: 'notifications/initialized' })

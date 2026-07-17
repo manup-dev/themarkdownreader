@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "description": "MCP server exposing md-reader visual tools (mind map, treemap, knowledge graph, podcast, share URLs) for Claude Code",
+  "author": "md-reader contributors",
   "license": "MIT",
   "repository": {
     "type": "git",
