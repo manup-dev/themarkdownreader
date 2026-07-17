@@ -23,7 +23,12 @@ export default defineConfig({
   },
   webServer: {
     // Build first so the gate never runs against a stale (or absent) dist/.
-    command: 'npm run build && npx vite preview --port 4174',
+    // `env -u GITHUB_ACTIONS` matches release-cli.yml's existing workaround:
+    // vite.config.ts switches `base` to '/themarkdownreader/' whenever
+    // GITHUB_ACTIONS is set (true in every Actions job, not just the Pages
+    // deploy), which breaks root-relative page.goto('/...') calls against
+    // `vite preview` serving at the root here.
+    command: 'env -u GITHUB_ACTIONS sh -c "npm run build && npx vite preview --port 4174"',
     port: 4174,
     reuseExistingServer: !process.env.CI,
     timeout: 240_000,
