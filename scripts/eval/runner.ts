@@ -1103,6 +1103,17 @@ async function runEvals() {
   console.log(`  Judge model:     ${JUDGE_MODEL}`)
   console.log('━'.repeat(60))
 
+  // Fail fast when the eval backend is down — a score-0 "green" run is a lie.
+  try {
+    const ping = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(3000) })
+    if (!ping.ok) throw new Error(`HTTP ${ping.status}`)
+  } catch (e) {
+    console.error(`\n❌ Eval backend unreachable at ${OLLAMA_URL} (${e instanceof Error ? e.message : String(e)})`)
+    console.error('   Start it with ./startup.sh (Docker Ollama) or point OLLAMA_URL at a live instance.')
+    process.exitCode = 1
+    return
+  }
+
   const startAll = Date.now()
 
   for (const testCase of GROUND_TRUTH.testCases) {
@@ -1152,7 +1163,7 @@ async function runEvals() {
           result = await evalPodcastAccuracy(testCase)
           break
         default:
-          result = { id: testCase.id, feature: testCase.feature, passed: true, score: -1, details: 'No evaluator implemented yet', duration: 0 }
+          result = { id: testCase.id, feature: testCase.feature, passed: false, score: -1, details: 'No evaluator implemented yet (skipped)', duration: 0 }
       }
     } catch (e) {
       result = {
@@ -1219,4 +1230,7 @@ async function runEvals() {
   console.log('━'.repeat(60))
 }
 
-runEvals().catch(console.error)
+runEvals().catch((e) => {
+  console.error(e)
+  process.exitCode = 1
+})

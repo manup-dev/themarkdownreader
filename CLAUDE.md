@@ -8,7 +8,7 @@
 ### Commands
 - `npm run dev` — Vite dev server (port 5183)
 - `npm run build` — TypeScript check + Vite build
-- `npm run test` — Unit tests (vitest, 48 tests across 6 files)
+- `npm run test` — Unit tests (vitest; 698 tests across 72 files as of 2026-07-17 — counts drift, treat as approximate)
 - `npm run typecheck` — TypeScript check only (no emit)
 - `npm run eval` — AI accuracy benchmark (Karpathy loop)
 - `npm run lint` — ESLint
@@ -21,7 +21,7 @@
 
 ## Eval Loop (Karpathy Loop)
 - Run `npm run eval` to measure accuracy (current best: **96/100**, 15/15 tests)
-- Log results in `scripts/eval/results.tsv` after each experiment
+- Log results in `scripts/eval/results.tsv` after each experiment (local-only — this path is gitignored)
 - If score improves → keep changes. If equal/worse → revert
 - Tested features: TOC (100), Stats (100), Summary (~87), Q&A (100), KG (90), Links (100), Coach (~75)
 - Weakest: Coach explanation quality (~75/100) — next optimization target
@@ -32,8 +32,8 @@
 - **Eval runner**: `scripts/eval/runner.ts`
 - **Ground truth**: `scripts/eval/ground-truth.json`
 - **Test corpus**: `scripts/eval/test-corpus/`
-- **Results log**: `scripts/eval/results.tsv`
-- **UX backlog**: `docs/features/TODOS.md` (88 items shipped across 8 rounds)
+- **Results log**: `scripts/eval/results.tsv` (local-only, gitignored)
+- **UX backlog**: `docs/features/TODOS.md` (88 items shipped across 8 rounds; local-only, gitignored)
 
 ## Architecture
 - **Framework**: React 19 + Tailwind CSS 4 + Zustand
