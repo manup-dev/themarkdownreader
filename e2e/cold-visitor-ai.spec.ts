@@ -23,7 +23,16 @@ import { test, expect, type Page } from '@playwright/test'
 // network path where page.route() can reliably intercept it.
 async function simulateNoAiBackend(page: Page) {
   await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true })
+    try {
+      Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true })
+    } catch {
+      // Some Chromium builds may expose `gpu` as a non-configurable own
+      // property; fall back to a prototype-level override so the app's
+      // `!navigator.gpu` check still sees it as absent either way.
+      try {
+        Object.defineProperty(Object.getPrototypeOf(navigator), 'gpu', { get: () => undefined, configurable: true })
+      } catch { /* best-effort — checkWebGPU() also races a 2s timeout as a backstop */ }
+    }
   })
   await page.route(/\/api\/tags(\?|$)/, (route) => route.abort())
 }
