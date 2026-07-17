@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore'
 import { useAdapter } from '../provider/hooks'
 import { SAMPLE_MARKDOWN } from '../lib/sample-doc'
 import { RecentsList } from './RecentsList'
+import { isTrustedEmbedOrigin } from '../lib/trusted-origins'
 
 type Mode = 'home' | 'editor'
 
@@ -19,16 +20,10 @@ export function Upload() {
   useEffect(() => {
     // Note: #url= hash handling is done in App.tsx so it works even when Upload isn't mounted
 
-    // Handle postMessage from browser extension or mdonline collaborative editor
+    // Handle postMessage from browser extension or mdonline collaborative
+    // editor — shared allowlist with App.tsx (src/lib/trusted-origins.ts).
     const handleMessage = (event: MessageEvent) => {
-      const trustedOrigins = [
-        window.location.origin,
-        'https://github.com',
-        // mdonline collaborative editor (same machine, different port)
-        'http://localhost:5180',
-        'http://localhost:5173',
-      ]
-      if (!trustedOrigins.includes(event.origin)) return
+      if (!isTrustedEmbedOrigin(event.origin)) return
       if (event.data?.type === 'md-reader-load' && event.data.markdown) {
         setMarkdown(event.data.markdown, event.data.fileName || 'document.md')
       }

@@ -22,6 +22,7 @@ import { TabBar } from './components/TabBar'
 import { FEATURE_FLAGS, resolveEnabledFeatures, enableFeature as enableFeatureFlag, disableFeature as disableFeatureFlag, resetFeatures } from './lib/feature-flags'
 import { MdReaderProvider } from './provider'
 import { DexieAdapter } from './adapters/dexie-adapter'
+import { isTrustedEmbedOrigin } from './lib/trusted-origins'
 
 const dexieAdapter = new DexieAdapter()
 
@@ -245,8 +246,11 @@ function AppContent() {
       window.history.replaceState(null, '', window.location.pathname)
     }
 
-    // Listen for postMessage from extension (large file fallback)
+    // Listen for postMessage from extension (large file fallback).
+    // B7: pin the sender origin — without this ANY opener/embedder could
+    // inject a document (content spoofing). Same list as Upload.tsx.
     const handleMessage = (event: MessageEvent) => {
+      if (!isTrustedEmbedOrigin(event.origin)) return
       if (event.data?.type === 'md-reader-load' && event.data.markdown) {
         openInNewTab({ kind: 'file', fileName: event.data.fileName || 'document.md', content: event.data.markdown })
       }
@@ -631,7 +635,11 @@ function AppContent() {
           </div>
         )}
         <Suspense fallback={null}>
-          <RemoteBanner />
+          {/* B8: a chunk 404 after a redeploy must degrade to "no banner",
+              not crash the app to the root fallback. */}
+          <ErrorBoundary name="Remote Banner" fallback={null}>
+            <RemoteBanner />
+          </ErrorBoundary>
         </Suspense>
         <div className="flex-1 flex min-h-0 min-w-0">
           {/* Sidebar toggle — visible in any unified-shell view so users
@@ -866,10 +874,12 @@ function AppContent() {
           mounted so the first open pays the cost; keeps first paint lean. */}
       <Suspense fallback={null}>
         {shareDialogOpen && (
-          <ShareDialog
-            open={shareDialogOpen}
-            onClose={() => setShareDialogOpen(false)}
-          />
+          <ErrorBoundary name="Share Dialog">
+            <ShareDialog
+              open={shareDialogOpen}
+              onClose={() => setShareDialogOpen(false)}
+            />
+          </ErrorBoundary>
         )}
       </Suspense>
     </div>
