@@ -51,6 +51,9 @@ jobs:
           node scripts/test-mcp-stdio.mjs
           node scripts/test-plugin-hook-e2e.mjs
 
+      - name: MCP server unit tests
+        run: npm run test:mcp
+
       - name: Plugin hook fresh-install smoke (no node_modules)
         run: bash scripts/test-plugin-hook-fresh-install.sh
 
@@ -107,7 +110,7 @@ jobs:
 
       - name: Package extension
         working-directory: vscode-extension
-        run: npx @vscode/vsce package
+        run: npx @vscode/vsce@3.9.2 package
 
       - name: Upload VSIX
         uses: actions/upload-artifact@v4

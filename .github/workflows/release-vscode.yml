@@ -37,6 +37,9 @@ jobs:
       - name: Build webview
         run: npx vite build
         working-directory: vscode-extension/webview
+      - name: WDIO e2e gate (must pass before publish)
+        run: xvfb-run -a npm run test:e2e
+        working-directory: vscode-extension
       - name: Publish to Marketplace
-        run: npx @vscode/vsce publish -p ${{ secrets.VSCE_PAT }}
+        run: npx @vscode/vsce@3.9.2 publish -p ${{ secrets.VSCE_PAT }}
         working-directory: vscode-extension

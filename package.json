@@ -56,6 +56,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:extension": "node scripts/test-extension-manifest.mjs",
+    "test:mcp": "vitest run --config mcp-server/vitest.config.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -b",
     "eval": "tsx scripts/eval/runner.ts",
