@@ -2,7 +2,10 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "target": "ES2023",
-    "lib": ["ES2023"],
+    // DOM is required: scripts/eval imports src/lib/* which transitively reaches
+    // browser-only modules (useStore, tts). This used to leak in implicitly via a
+    // hoisted @types/jsdom; declare it explicitly so the build doesn't depend on hoisting.
+    "lib": ["ES2023", "DOM"],
     "module": "ESNext",
     "types": ["node", "vite/client"],
     "skipLibCheck": true,

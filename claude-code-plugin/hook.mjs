@@ -7856,7 +7856,8 @@ function parseLinkDestination(str, start, max) {
     }
     if (code2 === 92 && pos + 1 < max) {
       if (str.charCodeAt(pos + 1) === 32) {
-        break;
+        pos++;
+        continue;
       }
       pos += 2;
       continue;
@@ -8432,7 +8433,8 @@ function linkify(state) {
     if (blockTokens[j].type !== "inline" || !state.md.linkify.pretest(blockTokens[j].content)) {
       continue;
     }
-    let tokens = blockTokens[j].children;
+    const tokens = blockTokens[j].children;
+    const replacements = [];
     let htmlLinkLevel = 0;
     for (let i = tokens.length - 1; i >= 0; i--) {
       const currentToken = tokens[i];
@@ -8507,14 +8509,35 @@ function linkify(state) {
           token.level = level;
           nodes.push(token);
         }
-        blockTokens[j].children = tokens = arrayReplaceAt(tokens, i, nodes);
+        replacements.push({ index: i, nodes });
       }
+    }
+    if (replacements.length > 0) {
+      let newTokensLength = tokens.length;
+      for (const replacement of replacements) {
+        newTokensLength += replacement.nodes.length - 1;
+      }
+      const newTokens = new Array(newTokensLength);
+      let replacementIndex = 0;
+      let newTokenIndex = 0;
+      replacements.reverse();
+      for (let i = 0; i < tokens.length; i++) {
+        const replacement = replacements[replacementIndex];
+        if (replacement?.index === i) {
+          for (const node of replacement.nodes) {
+            newTokens[newTokenIndex++] = node;
+          }
+          replacementIndex++;
+        } else {
+          newTokens[newTokenIndex++] = tokens[i];
+        }
+      }
+      blockTokens[j].children = newTokens;
     }
   }
 }
 var init_linkify = __esm({
   "../node_modules/markdown-it/lib/rules_core/linkify.mjs"() {
-    init_utils();
   }
 });
 
@@ -8586,6 +8609,16 @@ var init_replacements = __esm({
 });
 
 // ../node_modules/markdown-it/lib/rules_core/smartquotes.mjs
+function truncateStack(stack, heads, length) {
+  while (stack.length > length) {
+    const item = stack.pop();
+    if (item.isSingleQuote) {
+      heads.single = item.prevSameQuoteIdx;
+    } else {
+      heads.double = item.prevSameQuoteIdx;
+    }
+  }
+}
 function addReplacement(replacements, tokenIdx, pos, ch) {
   if (!replacements[tokenIdx]) {
     replacements[tokenIdx] = [];
@@ -8606,6 +8639,7 @@ function applyReplacements(str, replacements) {
 function process_inlines(tokens, state) {
   let j;
   const stack = [];
+  const heads = { single: -1, double: -1 };
   const replacements = {};
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
@@ -8615,7 +8649,7 @@ function process_inlines(tokens, state) {
         break;
       }
     }
-    stack.length = j + 1;
+    truncateStack(stack, heads, j + 1);
     if (token.type !== "text") {
       continue;
     }
@@ -8689,36 +8723,41 @@ function process_inlines(tokens, state) {
           continue;
         }
         if (canClose) {
-          for (j = stack.length - 1; j >= 0; j--) {
-            let item = stack[j];
-            if (stack[j].level < thisLevel) {
-              break;
+          j = isSingle ? heads.single : heads.double;
+          if (j >= 0 && stack[j].level === thisLevel) {
+            const item = stack[j];
+            let openQuote;
+            let closeQuote;
+            if (isSingle) {
+              openQuote = state.md.options.quotes[2];
+              closeQuote = state.md.options.quotes[3];
+            } else {
+              openQuote = state.md.options.quotes[0];
+              closeQuote = state.md.options.quotes[1];
             }
-            if (item.single === isSingle && stack[j].level === thisLevel) {
-              item = stack[j];
-              let openQuote;
-              let closeQuote;
-              if (isSingle) {
-                openQuote = state.md.options.quotes[2];
-                closeQuote = state.md.options.quotes[3];
-              } else {
-                openQuote = state.md.options.quotes[0];
-                closeQuote = state.md.options.quotes[1];
-              }
-              addReplacement(replacements, i, t.index, closeQuote);
-              addReplacement(replacements, item.token, item.pos, openQuote);
-              stack.length = j;
-              continue OUTER;
-            }
+            addReplacement(replacements, i, t.index, closeQuote);
+            addReplacement(replacements, item.tokenIdx, item.contentPos, openQuote);
+            truncateStack(stack, heads, j);
+            continue OUTER;
           }
         }
         if (canOpen) {
+          if (stack.length >= MAX_OPENERS) {
+            return;
+          }
           stack.push({
-            token: i,
-            pos: t.index,
-            single: isSingle,
-            level: thisLevel
+            tokenIdx: i,
+            contentPos: t.index,
+            isSingleQuote: isSingle,
+            level: thisLevel,
+            // stack index of the previous opener of the same quote type, -1 if none
+            prevSameQuoteIdx: isSingle ? heads.single : heads.double
           });
+          if (isSingle) {
+            heads.single = stack.length - 1;
+          } else {
+            heads.double = stack.length - 1;
+          }
         } else if (canClose && isSingle) {
           addReplacement(replacements, i, t.index, APOSTROPHE);
         }
@@ -8739,13 +8778,14 @@ function smartquotes(state) {
     process_inlines(state.tokens[blkIdx].children, state);
   }
 }
-var QUOTE_TEST_RE, QUOTE_RE, APOSTROPHE;
+var QUOTE_TEST_RE, QUOTE_RE, APOSTROPHE, MAX_OPENERS;
 var init_smartquotes = __esm({
   "../node_modules/markdown-it/lib/rules_core/smartquotes.mjs"() {
     init_utils();
     QUOTE_TEST_RE = /['"]/;
     QUOTE_RE = /['"]/g;
     APOSTROPHE = "\u2019";
+    MAX_OPENERS = 1e3;
   }
 });
 
@@ -9686,95 +9726,119 @@ var init_list = __esm({
 });
 
 // ../node_modules/markdown-it/lib/rules_block/reference.mjs
+function countCodePoints(str) {
+  let length = str.length;
+  for (let i = 0; i < str.length - 1; i++) {
+    const high = str.charCodeAt(i);
+    if (high < 55296 || high > 56319) {
+      continue;
+    }
+    const low = str.charCodeAt(i + 1);
+    if (low >= 56320 && low <= 57343) {
+      length--;
+      i++;
+    }
+  }
+  return length;
+}
+function lineEnd(state, line) {
+  return Math.min(state.eMarks[line] + 1, state.src.length);
+}
+function getNextLinePos(state, nextLine) {
+  const endLine = state.lineMax;
+  if (nextLine >= endLine || state.isEmpty(nextLine)) {
+    return -1;
+  }
+  let isContinuation = false;
+  if (state.sCount[nextLine] - state.blkIndent > 3) {
+    isContinuation = true;
+  }
+  if (state.sCount[nextLine] < 0) {
+    isContinuation = true;
+  }
+  if (!isContinuation) {
+    const terminatorRules = state.md.block.ruler.getRules("reference");
+    const oldParentType = state.parentType;
+    state.parentType = "reference";
+    let terminate = false;
+    for (let i = 0, l = terminatorRules.length; i < l; i++) {
+      if (terminatorRules[i](state, nextLine, endLine, true)) {
+        terminate = true;
+        break;
+      }
+    }
+    state.parentType = oldParentType;
+    if (terminate) {
+      return -1;
+    }
+  }
+  return state.bMarks[nextLine] + state.tShift[nextLine];
+}
 function reference(state, startLine, _endLine, silent) {
+  const src = state.src;
   let pos = state.bMarks[startLine] + state.tShift[startLine];
-  let max = state.eMarks[startLine];
   let nextLine = startLine + 1;
   if (state.sCount[startLine] - state.blkIndent >= 4) {
     return false;
   }
-  if (state.src.charCodeAt(pos) !== 91) {
+  if (src.charCodeAt(pos) !== 91) {
     return false;
   }
-  function getNextLine(nextLine2) {
-    const endLine = state.lineMax;
-    if (nextLine2 >= endLine || state.isEmpty(nextLine2)) {
-      return null;
-    }
-    let isContinuation = false;
-    if (state.sCount[nextLine2] - state.blkIndent > 3) {
-      isContinuation = true;
-    }
-    if (state.sCount[nextLine2] < 0) {
-      isContinuation = true;
-    }
-    if (!isContinuation) {
-      const terminatorRules = state.md.block.ruler.getRules("reference");
-      const oldParentType = state.parentType;
-      state.parentType = "reference";
-      let terminate = false;
-      for (let i = 0, l = terminatorRules.length; i < l; i++) {
-        if (terminatorRules[i](state, nextLine2, endLine, true)) {
-          terminate = true;
-          break;
-        }
-      }
-      state.parentType = oldParentType;
-      if (terminate) {
-        return null;
-      }
-    }
-    const pos2 = state.bMarks[nextLine2] + state.tShift[nextLine2];
-    const max2 = state.eMarks[nextLine2];
-    return state.src.slice(pos2, max2 + 1);
-  }
-  let str = state.src.slice(pos, max + 1);
-  max = str.length;
+  let max = lineEnd(state, startLine);
+  let rawLabel = "";
   let labelEnd = -1;
-  for (pos = 1; pos < max; pos++) {
-    const ch = str.charCodeAt(pos);
+  let segmentStart = ++pos;
+  while (pos < max) {
+    if (rawLabel.length + pos - segmentStart > MAX_LABEL_LENGTH * 2) {
+      return false;
+    }
+    let ch = src.charCodeAt(pos);
     if (ch === 91) {
       return false;
-    } else if (ch === 93) {
+    }
+    if (ch === 93) {
       labelEnd = pos;
       break;
-    } else if (ch === 10) {
-      const lineContent = getNextLine(nextLine);
-      if (lineContent !== null) {
-        str += lineContent;
-        max = str.length;
-        nextLine++;
-      }
-    } else if (ch === 92) {
-      pos++;
-      if (pos < max && str.charCodeAt(pos) === 10) {
-        const lineContent = getNextLine(nextLine);
-        if (lineContent !== null) {
-          str += lineContent;
-          max = str.length;
-          nextLine++;
-        }
-      }
     }
+    if (ch === 92) {
+      ch = src.charCodeAt(++pos);
+    }
+    if (ch === 10 && pos < max) {
+      const nextPos = getNextLinePos(state, nextLine);
+      if (nextPos < 0) {
+        return false;
+      }
+      rawLabel += src.slice(segmentStart, max);
+      pos = segmentStart = nextPos;
+      max = lineEnd(state, nextLine++);
+      continue;
+    }
+    pos++;
   }
-  if (labelEnd < 0 || str.charCodeAt(labelEnd + 1) !== 58) {
+  if (labelEnd < 0 || src.charCodeAt(labelEnd + 1) !== 58) {
     return false;
   }
-  for (pos = labelEnd + 2; pos < max; pos++) {
-    const ch = str.charCodeAt(pos);
+  rawLabel += src.slice(segmentStart, labelEnd);
+  if (rawLabel.length > MAX_LABEL_LENGTH && countCodePoints(rawLabel) > MAX_LABEL_LENGTH) {
+    return false;
+  }
+  pos = labelEnd + 2;
+  while (pos < max) {
+    const ch = src.charCodeAt(pos);
     if (ch === 10) {
-      const lineContent = getNextLine(nextLine);
-      if (lineContent !== null) {
-        str += lineContent;
-        max = str.length;
-        nextLine++;
+      const nextPos = getNextLinePos(state, nextLine);
+      if (nextPos < 0) {
+        break;
       }
+      pos = nextPos;
+      max = lineEnd(state, nextLine++);
     } else if (isSpace(ch)) {
+      pos++;
     } else {
       break;
     }
   }
-  const destRes = state.md.helpers.parseLinkDestination(str, pos, max);
+  const destRes = state.md.helpers.parseLinkDestination(src, pos, max);
   if (!destRes.ok) {
     return false;
   }
@@ -9784,55 +9848,57 @@ function reference(state, startLine, _endLine, silent) {
   }
   pos = destRes.pos;
   const destEndPos = pos;
+  const destEndMax = max;
   const destEndLineNo = nextLine;
-  const start = pos;
-  for (; pos < max; pos++) {
-    const ch = str.charCodeAt(pos);
+  while (pos < max) {
+    const ch = src.charCodeAt(pos);
     if (ch === 10) {
-      const lineContent = getNextLine(nextLine);
-      if (lineContent !== null) {
-        str += lineContent;
-        max = str.length;
-        nextLine++;
+      const nextPos = getNextLinePos(state, nextLine);
+      if (nextPos < 0) {
+        break;
       }
+      pos = nextPos;
+      max = lineEnd(state, nextLine++);
     } else if (isSpace(ch)) {
+      pos++;
     } else {
       break;
     }
   }
-  let titleRes = state.md.helpers.parseLinkTitle(str, pos, max);
+  const titleStart = pos;
+  let titleRes = state.md.helpers.parseLinkTitle(src, pos, max);
   while (titleRes.can_continue) {
-    const lineContent = getNextLine(nextLine);
-    if (lineContent === null) break;
-    str += lineContent;
-    pos = max;
-    max = str.length;
-    nextLine++;
-    titleRes = state.md.helpers.parseLinkTitle(str, pos, max, titleRes);
+    const nextPos = getNextLinePos(state, nextLine);
+    if (nextPos < 0) break;
+    pos = nextPos;
+    max = lineEnd(state, nextLine++);
+    titleRes = state.md.helpers.parseLinkTitle(src, pos, max, titleRes);
   }
   let title;
-  if (pos < max && start !== pos && titleRes.ok) {
+  if (titleStart !== destEndPos && titleRes.ok) {
     title = titleRes.str;
     pos = titleRes.pos;
   } else {
     title = "";
     pos = destEndPos;
+    max = destEndMax;
     nextLine = destEndLineNo;
   }
   while (pos < max) {
-    const ch = str.charCodeAt(pos);
+    const ch = src.charCodeAt(pos);
     if (!isSpace(ch)) {
       break;
     }
     pos++;
   }
-  if (pos < max && str.charCodeAt(pos) !== 10) {
+  if (pos < max && src.charCodeAt(pos) !== 10) {
     if (title) {
       title = "";
       pos = destEndPos;
+      max = destEndMax;
       nextLine = destEndLineNo;
       while (pos < max) {
-        const ch = str.charCodeAt(pos);
+        const ch = src.charCodeAt(pos);
         if (!isSpace(ch)) {
           break;
         }
@@ -9840,10 +9906,10 @@ function reference(state, startLine, _endLine, silent) {
       }
     }
   }
-  if (pos < max && str.charCodeAt(pos) !== 10) {
+  if (pos < max && src.charCodeAt(pos) !== 10) {
     return false;
   }
-  const label = normalizeReference(str.slice(1, labelEnd));
+  const label = normalizeReference(rawLabel);
   if (!label) {
     return false;
   }
@@ -9859,9 +9925,11 @@ function reference(state, startLine, _endLine, silent) {
   state.line = nextLine;
   return true;
 }
+var MAX_LABEL_LENGTH;
 var init_reference = __esm({
   "../node_modules/markdown-it/lib/rules_block/reference.mjs"() {
     init_utils();
+    MAX_LABEL_LENGTH = 999;
   }
 });
 
@@ -10018,7 +10086,7 @@ var init_html_block = __esm({
       [/^<(script|pre|style|textarea)(?=(\s|>|$))/i, /<\/(script|pre|style|textarea)>/i, true],
       [/^<!--/, /-->/, true],
       [/^<\?/, /\?>/, true],
-      [/^<![A-Z]/, />/, true],
+      [/^<![A-Za-z]/, />/, true],
       [/^<!\[CDATA\[/, /\]\]>/, true],
       [new RegExp("^</?(" + html_blocks_default.join("|") + ")(?=(\\s|/?>|$))", "i"), /^$/, true],
       [new RegExp(HTML_OPEN_CLOSE_TAG_RE.source + "\\s*$"), /^$/, false]
@@ -10291,6 +10359,7 @@ function StateInline(src, md, env, outTokens) {
   this._prev_delimiters = [];
   this.backticks = {};
   this.backticksScanned = false;
+  this.skipHtmlSpecial = false;
   this.linkLevel = 0;
 }
 var state_inline_default;
@@ -10426,6 +10495,12 @@ var init_text = __esm({
 });
 
 // ../node_modules/markdown-it/lib/rules_inline/linkify.mjs
+function isAsciiAlpha(code2) {
+  return code2 >= 65 && code2 <= 90 || code2 >= 97 && code2 <= 122;
+}
+function isSchemeChar(code2) {
+  return code2 >= 65 && code2 <= 90 || code2 >= 97 && code2 <= 122 || code2 >= 48 && code2 <= 57 || code2 === 43 || code2 === 45 || code2 === 46;
+}
 function linkify2(state, silent) {
   if (!state.md.options.linkify) return false;
   if (state.linkLevel > 0) return false;
@@ -10435,13 +10510,17 @@ function linkify2(state, silent) {
   if (state.src.charCodeAt(pos) !== 58) return false;
   if (state.src.charCodeAt(pos + 1) !== 47) return false;
   if (state.src.charCodeAt(pos + 2) !== 47) return false;
-  const match2 = state.pending.match(SCHEME_RE);
-  if (!match2) return false;
-  const proto = match2[1];
-  const link2 = state.md.linkify.matchAtStart(state.src.slice(pos - proto.length));
+  const protoMin = pos - Math.min(10, state.pending.length, pos);
+  let protoStart = pos;
+  while (protoStart > protoMin && isSchemeChar(state.src.charCodeAt(protoStart - 1))) {
+    protoStart--;
+  }
+  if (protoStart === pos || !isAsciiAlpha(state.src.charCodeAt(protoStart))) return false;
+  const protoLength = pos - protoStart;
+  const link2 = state.md.linkify.matchAtStart(state.src.slice(protoStart));
   if (!link2) return false;
   let url = link2.url;
-  if (url.length <= proto.length) return false;
+  if (url.length <= protoLength) return false;
   let urlEnd = url.length;
   while (urlEnd > 0 && url.charCodeAt(urlEnd - 1) === 42) {
     urlEnd--;
@@ -10452,7 +10531,7 @@ function linkify2(state, silent) {
   const fullUrl = state.md.normalizeLink(url);
   if (!state.md.validateLink(fullUrl)) return false;
   if (!silent) {
-    state.pending = state.pending.slice(0, -proto.length);
+    state.pending = state.pending.slice(0, -protoLength);
     const token_o = state.push("link_open", "a", 1);
     token_o.attrs = [["href", fullUrl]];
     token_o.markup = "linkify";
@@ -10463,13 +10542,11 @@ function linkify2(state, silent) {
     token_c.markup = "linkify";
     token_c.info = "auto";
   }
-  state.pos += url.length - proto.length;
+  state.pos += url.length - protoLength;
   return true;
 }
-var SCHEME_RE;
 var init_linkify2 = __esm({
   "../node_modules/markdown-it/lib/rules_inline/linkify.mjs"() {
-    SCHEME_RE = /(?:^|[^a-z0-9.+-])([a-z][a-z0-9.+-]*)$/i;
   }
 });
 
@@ -11123,6 +11200,41 @@ function isLetter(ch) {
   const lc = ch | 32;
   return lc >= 97 && lc <= 122;
 }
+function scanSpecial(state, pos) {
+  const src = state.src;
+  let start;
+  let terminator;
+  if (src.startsWith("<!--", pos)) {
+    if (src.startsWith(">", pos + 4)) {
+      return pos + 5;
+    }
+    if (src.startsWith("->", pos + 4)) {
+      return pos + 6;
+    }
+    start = pos + 4;
+    terminator = "-->";
+  } else if (src.startsWith("<![CDATA[", pos)) {
+    start = pos + 9;
+    terminator = "]]>";
+  } else if (src.charCodeAt(pos + 1) === 63) {
+    start = pos + 2;
+    terminator = "?>";
+  } else if (isLetter(src.charCodeAt(pos + 2))) {
+    start = pos + 3;
+    terminator = ">";
+  } else {
+    return -1;
+  }
+  if (state.skipHtmlSpecial) {
+    return -1;
+  }
+  const end2 = src.indexOf(terminator, start);
+  if (end2 < 0) {
+    state.skipHtmlSpecial = true;
+    return -1;
+  }
+  return end2 + terminator.length;
+}
 function html_inline(state, silent) {
   if (!state.md.options.html) {
     return false;
@@ -11132,21 +11244,26 @@ function html_inline(state, silent) {
   if (state.src.charCodeAt(pos) !== 60 || pos + 2 >= max) {
     return false;
   }
+  let end2;
   const ch = state.src.charCodeAt(pos + 1);
-  if (ch !== 33 && ch !== 63 && ch !== 47 && !isLetter(ch)) {
+  if (ch === 33 || ch === 63) {
+    end2 = scanSpecial(state, pos);
+  } else if (ch === 47 || isLetter(ch)) {
+    const match2 = state.src.slice(pos).match(HTML_OPEN_CLOSE_TAG_RE);
+    end2 = match2 ? pos + match2[0].length : -1;
+  } else {
     return false;
   }
-  const match2 = state.src.slice(pos).match(HTML_TAG_RE);
-  if (!match2) {
+  if (end2 < 0) {
     return false;
   }
   if (!silent) {
     const token = state.push("html_inline", "", 0);
-    token.content = match2[0];
+    token.content = state.src.slice(pos, end2);
     if (isLinkOpen2(token.content)) state.linkLevel++;
     if (isLinkClose2(token.content)) state.linkLevel--;
   }
-  state.pos += match2[0].length;
+  state.pos = end2;
   return true;
 }
 var init_html_inline = __esm({

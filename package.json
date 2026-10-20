@@ -32,7 +32,7 @@
     "tts"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12"
   },
   "workspaces": [
     "packages/*"
@@ -41,13 +41,26 @@
   "overrides": {
     "protobufjs": "^7.5.6",
     "@protobufjs/utf8": "^1.1.1",
-    "dompurify": "^3.3.4",
-    "nanoid": "^5.0.9",
+    "dompurify": "^3.4.17",
+    "nanoid": "^5.1.16",
     "picomatch": "^4.0.3",
-    "postcss": "^8.5.10",
+    "postcss": "^8.5.31",
     "yaml": "^2.9.0",
-    "fast-uri": "^3.1.2",
-    "lodash-es": "^4.18.1"
+    "fast-uri": "^3.1.9",
+    "lodash-es": "^4.18.1",
+    "sharp": "^0.35.5",
+    "adm-zip": "^0.6.1",
+    "tar": "^7.5.22",
+    "sass": "^1.98.0",
+    "cheerio": {
+      "undici": "^6.29.1"
+    },
+    "@jupyterlab/filebrowser": {
+      "jest-environment-jsdom": "^30.5.2"
+    },
+    "immutable": "^5.1.9",
+    "markdown-it": "^14.3.3",
+    "sanitize-html": "^2.18.1"
   },
   "scripts": {
     "dev": "vite",
