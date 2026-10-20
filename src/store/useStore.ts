@@ -275,6 +275,16 @@ export type FolderSortMode = 'name-asc' | 'name-desc' | 'mtime-desc' | 'mtime-as
 const expandedKey = (folder: string) => `md-reader-folder-expanded:${folder}`
 const manualOrderKey = (folder: string) => `md-reader-folder-order:${folder}`
 
+/**
+ * Folder name used to scope per-folder localStorage state. Taken from the active
+ * folder tab so handle-less folders (webkitdirectory fallback) keep their real
+ * name; for handle-backed folders it equals handle.name.
+ */
+export function folderKeyOf(s: Pick<DocumentState, 'tabs' | 'activeTabId' | 'folderHandle'>): string {
+  const tab = s.tabs.find((t) => t.id === s.activeTabId)
+  return (tab?.kind === 'folder' && tab.folderName) || s.folderHandle?.name || '__cache__'
+}
+
 function loadExpandedDirs(folder: string): string[] {
   if (typeof localStorage === 'undefined') return []
   try { return JSON.parse(localStorage.getItem(expandedKey(folder)) ?? '[]') } catch { return [] }
@@ -385,7 +395,9 @@ export interface DocumentState {
   // Unified view actions
   setFolderSession: (
     handle: FileSystemDirectoryHandle | null,
-    files: Array<{ path: string; name: string; content: string; lastModified?: number }>
+    files: Array<{ path: string; name: string; content: string; lastModified?: number }>,
+    /** Folder name when there is no handle (webkitdirectory fallback). */
+    name?: string,
   ) => void
   setActiveFile: (path: string | null) => void
   closeFolderSession: () => void
@@ -602,8 +614,8 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   folderExpandedDirs: [],
   folderManualOrder: {},
 
-  setFolderSession: (handle, files) => {
-    const folderName = handle?.name ?? '__cache__'
+  setFolderSession: (handle, files, name) => {
+    const folderName = handle?.name ?? name ?? '__cache__'
     // Determine chosen file using the same logic as before:
     // persisted active-file, then README, then first.
     const persisted = typeof localStorage !== 'undefined'
@@ -922,7 +934,7 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     })
     // Persist scoped by folder name so a reload restores the last-viewed file.
     // Also mark this file as viewed for the collection-completion banner.
-    const folderKey = get().folderHandle?.name ?? '__cache__'
+    const folderKey = folderKeyOf(get())
     // Auto-expand ancestor folders so the newly active file is visible even
     // if it lives in a collapsed branch.
     const ancestors = ancestorDirs(path)
@@ -980,7 +992,7 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
     }
     // Selecting a named sort clears any manual drag-order.
     if (mode !== 'custom') {
-      const folderKey = get().folderHandle?.name ?? '__cache__'
+      const folderKey = folderKeyOf(get())
       saveManualOrder(folderKey, {})
       set({ folderSortMode: mode, folderManualOrder: {} })
     } else {
@@ -989,7 +1001,7 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   },
 
   toggleFolderDir: (path) => {
-    const folderKey = get().folderHandle?.name ?? '__cache__'
+    const folderKey = folderKeyOf(get())
     const cur = new Set(get().folderExpandedDirs)
     if (cur.has(path)) cur.delete(path); else cur.add(path)
     const dirs = [...cur]
@@ -998,7 +1010,7 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   },
 
   setFolderManualOrder: (dir, order) => {
-    const folderKey = get().folderHandle?.name ?? '__cache__'
+    const folderKey = folderKeyOf(get())
     const next = { ...get().folderManualOrder, [dir]: order }
     saveManualOrder(folderKey, next)
     if (typeof localStorage !== 'undefined') {

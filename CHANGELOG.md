@@ -2,6 +2,15 @@
 
 All notable changes to md-reader are documented here.
 
+## 2026-10-20 — Open Folder fix, CI + security audit fixes
+
+- **Open Folder works in Firefox, Safari and Brave.** Browsers without `showDirectoryPicker` dead-ended on an empty "No folder open" screen (Upload page), silently did nothing (Mode menu), or hid the button (Library). `openDirectory()` now falls back to an `<input webkitdirectory>` picker. Handle-less folders keep their real name, so opening a second folder gets its own tab instead of re-focusing the first, and per-folder progress/expand state stays scoped correctly.
+
+- **Node ≥ 22.12 required** (`engines`, `.nvmrc`). jsdom and postcss now `require()` ES modules, which only works on Node 22.12+; on Node 20 `npm test` and `npm run build` crash with `ERR_REQUIRE_ESM`. The `security-audit` workflow was still on Node 20 and is moved to 22 to match the rest of CI.
+- **Security audit gate green**: production tree goes from 23 high → 0 high/critical via `overrides` (nanoid, postcss, fast-uri, sharp, adm-zip, tar, immutable, dompurify, markdown-it, sanitize-html; sass pinned past the `braces` chain; cheerio's nested undici; JupyterLab filebrowser's stray jest-environment-jsdom → 30). katex (moderate) is left at 0.16 — its fix is a 0.x minor that may change math rendering.
+- `tsconfig.node.json` now declares the `DOM` lib explicitly; `scripts/eval` reaches browser modules and previously only type-checked because a hoisted `@types/jsdom` leaked DOM types in.
+- `claude-code-plugin/hook.mjs` regenerated (bundles the patched markdown-it).
+
 ## 2026-07-16 — Launch readiness
 
 First coordinated release across all surfaces: npm CLI (`npx md-reader`), MCP server (`md-reader-mcp`), VS Code extension, browser extension, and Claude Code plugin — all at 1.0.0. Repo hygiene pass: private root package, portable e2e fixtures, no machine-specific paths.

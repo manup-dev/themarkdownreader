@@ -4,7 +4,7 @@ import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap,
 import { AiSettings } from './AiSettings'
 import { OPEN_AI_SETTINGS_EVENT } from '../lib/ai-settings-event'
 import { AiLoadingIndicator } from './AiLoadingIndicator'
-import { useStore, type Theme, type ViewMode } from '../store/useStore'
+import { useStore, folderKeyOf, type Theme, type ViewMode } from '../store/useStore'
 import { useAdapter } from '../provider/hooks'
 import { getActiveBackend } from '../lib/ai'
 import { trackEvent } from '../lib/telemetry'
@@ -29,7 +29,8 @@ export function Toolbar() {
   const workspaceMode = useStore((s) => s.workspaceMode)
   const markdown = useStore((s) => s.markdown)
   const folderFiles = useStore((s) => s.folderFiles)
-  const folderHandle = useStore((s) => s.folderHandle)
+  const folderKey = useStore(folderKeyOf)
+  const folderLabel = folderKey === '__cache__' ? 'folder' : folderKey
   const activeFilePath = useStore((s) => s.activeFilePath)
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useStore((s) => s.toggleSidebar)
@@ -276,10 +277,10 @@ export function Toolbar() {
             return (
               <span
                 className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate max-w-[28rem] flex items-center gap-1"
-                title={`${folderHandle?.name ?? 'folder'}${pathLabel ? '/' + pathLabel : ''}`}
+                title={`${folderLabel}${pathLabel ? '/' + pathLabel : ''}`}
               >
                 <FolderOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                <span className="text-gray-500 dark:text-gray-400 shrink-0">{folderHandle?.name ?? 'folder'}</span>
+                <span className="text-gray-500 dark:text-gray-400 shrink-0">{folderLabel}</span>
                 {pathLabel && (
                   <>
                     <span className="text-gray-300 dark:text-gray-600 shrink-0">/</span>
@@ -505,7 +506,7 @@ export function Toolbar() {
                       content: f.content,
                       lastModified: f.lastModified,
                     }))
-                    useStore.getState().setFolderSession(result.handle ?? null, files)
+                    useStore.getState().setFolderSession(result.handle, files, result.name)
                     // Override auto-select if current file is in the folder —
                     // the user stays on the document they were reading.
                     if (currentFileName) {

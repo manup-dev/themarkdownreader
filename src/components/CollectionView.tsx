@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react'
 import { FileText, Layers, ChevronRight, CheckCircle2, Hash, FolderOpen } from 'lucide-react'
-import { useStore } from '../store/useStore'
+import { useStore, folderKeyOf } from '../store/useStore'
 import { sortFolderFiles } from '../lib/folder-sort'
 
 /**
@@ -18,7 +18,7 @@ import { sortFolderFiles } from '../lib/folder-sort'
 export function CollectionView() {
   const folderFiles = useStore(s => s.folderFiles)
   const folderFileContents = useStore(s => s.folderFileContents)
-  const folderHandle = useStore(s => s.folderHandle)
+  const folderKey = useStore(folderKeyOf)
   const folderSortMode = useStore(s => s.folderSortMode)
   const setActiveFile = useStore(s => s.setActiveFile)
   const setViewMode = useStore(s => s.setViewMode)
@@ -61,10 +61,10 @@ export function CollectionView() {
 
   // Collection completion: based on md-reader-viewed-files:<folderName>
   const viewedMap = useMemo(() => {
-    const key = `md-reader-viewed-files:${folderHandle?.name ?? '__cache__'}`
+    const key = `md-reader-viewed-files:${folderKey}`
     try { return JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, boolean> }
     catch { return {} }
-  }, [folderHandle, folderFiles])
+  }, [folderKey, folderFiles])
   const viewedCount = folderFiles?.filter(f => viewedMap[f.path]).length ?? 0
   const totalCount = folderFiles?.length ?? 0
   const allViewed = totalCount > 0 && viewedCount === totalCount

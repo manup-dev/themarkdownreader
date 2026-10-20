@@ -20,15 +20,18 @@ export interface DirectoryFile {
 
 /**
  * Open a directory picker and read all markdown files.
- * Returns the files and a handle that can be stored for re-access.
+ * Returns the files and a handle that can be stored for re-access. In browsers
+ * without showDirectoryPicker (Firefox, Safari, Brave) this falls back to a
+ * <input webkitdirectory> picker; `handle` is then null (no re-read/watch).
+ * Returns null if the user cancels.
  */
 export async function openDirectory(): Promise<{
   name: string
   files: DirectoryFile[]
-  handle: FileSystemDirectoryHandle
+  handle: FileSystemDirectoryHandle | null
 } | null> {
   if (!('showDirectoryPicker' in window)) {
-    return null // Use fallback
+    return pickDirectoryViaInput()
   }
 
   try {
@@ -58,6 +61,44 @@ export async function reopenDirectory(handle: FileSystemDirectoryHandle): Promis
   return readDirectoryRecursive(handle, '')
 }
 
+const FOLDER_FILE_RE = /\.(md|markdown|excalidraw)$/i
+
+/** Skip hidden directories, node_modules and build output. */
+function isSkippedDir(name: string): boolean {
+  return name.startsWith('.') || name === 'node_modules' || name === 'dist'
+}
+
+/**
+ * Fallback picker: a transient <input webkitdirectory>. Resolves null on cancel.
+ * Must be called within the user gesture that triggered the open, like
+ * showDirectoryPicker.
+ */
+function pickDirectoryViaInput(): Promise<{
+  name: string
+  files: DirectoryFile[]
+  handle: null
+} | null> {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.webkitdirectory = true
+    input.multiple = true
+    input.style.display = 'none'
+    const cleanup = () => input.remove()
+    input.addEventListener('cancel', () => { cleanup(); resolve(null) })
+    input.addEventListener('change', () => {
+      const list = input.files
+      cleanup()
+      if (!list || list.length === 0) { resolve(null); return }
+      const first = (list[0] as File & { webkitRelativePath?: string }).webkitRelativePath ?? ''
+      const name = first.includes('/') ? first.split('/')[0] : 'Folder'
+      readFileList(list).then((files) => resolve({ name, files, handle: null }), reject)
+    })
+    document.body.appendChild(input)
+    input.click()
+  })
+}
+
 /**
  * Recursively read all .md/.markdown files from a directory handle.
  */
@@ -70,7 +111,7 @@ async function readDirectoryRecursive(
   for await (const entry of (dirHandle as unknown as FSHandle).values()) {
     const entryPath = basePath ? `${basePath}/${entry.name}` : entry.name
 
-    if (entry.kind === 'file' && /\.(md|markdown|excalidraw)$/i.test(entry.name)) {
+    if (entry.kind === 'file' && FOLDER_FILE_RE.test(entry.name)) {
       const fileHandle = entry as FileSystemFileHandle
       const file = await fileHandle.getFile()
       const content = await file.text()
@@ -80,8 +121,7 @@ async function readDirectoryRecursive(
         lastModified: file.lastModified,
       })
     } else if (entry.kind === 'directory') {
-      // Skip hidden directories and node_modules
-      if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist') continue
+      if (isSkippedDir(entry.name)) continue
       const subDir = entry as FileSystemDirectoryHandle
       const subFiles = await readDirectoryRecursive(subDir, entryPath)
       files.push(...subFiles)
@@ -191,15 +231,24 @@ export function hasDirectoryAccess(): boolean {
 
 /**
  * Fallback: read files from a <input webkitdirectory> file list.
+ * webkitRelativePath includes the picked folder's own name ("notes/sub/a.md");
+ * it's stripped so paths match the showDirectoryPicker branch ("sub/a.md"), and
+ * the same hidden/node_modules/dist directories are skipped.
  */
 export function readFileList(files: FileList): Promise<DirectoryFile[]> {
+  const entries = Array.from(files).flatMap((f) => {
+    if (!FOLDER_FILE_RE.test(f.name)) return []
+    const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name
+    const segments = rel.split('/')
+    if (segments.length > 1) segments.shift()
+    if (segments.slice(0, -1).some(isSkippedDir)) return []
+    return [{ file: f, path: segments.join('/') }]
+  })
   return Promise.all(
-    Array.from(files)
-      .filter((f) => /\.(md|markdown|excalidraw)$/i.test(f.name))
-      .map(async (f) => ({
-        path: (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name,
-        content: await f.text(),
-        lastModified: f.lastModified,
-      })),
+    entries.map(async ({ file, path }) => ({
+      path,
+      content: await file.text(),
+      lastModified: file.lastModified,
+    })),
   )
 }

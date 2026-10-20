@@ -3,7 +3,7 @@ import { Trash2, Upload as UploadIcon, FolderOpen, Database, Search, Loader2, Sp
 import { useStore } from '../store/useStore'
 import { useAdapter } from '../provider/hooks'
 import type { StoredDocument } from '../types/storage-adapter'
-import { openDirectory, hasDirectoryAccess } from '../lib/fs-access'
+import { openDirectory } from '../lib/fs-access'
 import { generateCollectionOverview, askAcrossDocuments } from '../lib/correlate'
 import { estimateDifficulty } from '../lib/markdown'
 import { trackEvent } from '../lib/telemetry'
@@ -184,7 +184,7 @@ export function Workspace() {
       content: f.content,
       lastModified: f.lastModified,
     }))
-    useStore.getState().setFolderSession(result.handle ?? null, files)
+    useStore.getState().setFolderSession(result.handle, files, result.name)
     // Drop the user directly into reading the first file (not the Collection
     // dashboard). They can click the Collection tab anytime for the dashboard.
     setViewMode('read')
@@ -367,15 +367,13 @@ export function Workspace() {
                   <UploadIcon className="h-4 w-4" />
                   Choose Files
                 </button>
-                {hasDirectoryAccess() && (
-                  <button
-                    onClick={handleDirectory}
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 text-sm rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors font-medium"
-                  >
-                    <FolderOpen className="h-4 w-4" />
-                    Choose Folder
-                  </button>
-                )}
+                <button
+                  onClick={handleDirectory}
+                  className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 text-sm rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors font-medium"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  Choose Folder
+                </button>
               </div>
               <p className="text-[10px] text-gray-400 mt-3">
                 Supported: .md, .markdown, .txt, .excalidraw

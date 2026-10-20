@@ -408,15 +408,8 @@ export function Upload() {
           </button>
           <button
             onClick={async () => {
-              const { openDirectory, hasDirectoryAccess } = await import('../lib/fs-access')
+              const { openDirectory } = await import('../lib/fs-access')
               const { saveCollectionCache } = await import('../lib/docstore')
-              if (!hasDirectoryAccess()) {
-                // Browsers without showDirectoryPicker (e.g. Firefox) — fall back to
-                // the Library view, which offers a webkitdirectory file-input.
-                setWorkspaceMode(true)
-                setViewMode('collection')
-                return
-              }
               try {
                 const result = await openDirectory()
                 if (!result) return
@@ -432,7 +425,7 @@ export function Upload() {
                   content: f.content,
                   lastModified: f.lastModified,
                 }))
-                useStore.getState().setFolderSession(result.handle ?? null, files)
+                useStore.getState().setFolderSession(result.handle, files, result.name)
                 setViewMode('collection')
               } catch (e) {
                 setError(e instanceof Error ? e.message : 'Failed to open folder')

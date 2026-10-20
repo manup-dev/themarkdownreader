@@ -6,7 +6,7 @@ import remarkMath from 'remark-math'
 import { remarkBoxTables } from '../lib/remark-box-tables'
 import { remarkCitations } from '../lib/remark-cite'
 import { markdownUrlTransform } from '../lib/markdown-url-transform'
-import { useStore } from '../store/useStore'
+import { useStore, folderKeyOf } from '../store/useStore'
 import { resolveImageBlobUrl } from '../lib/fs-access'
 import ScrollMinimap from './ScrollMinimap'
 
@@ -295,7 +295,7 @@ export function Reader() {
   const fontSize = useStore((s) => s.fontSize)
   const activeDocId = useStore((s) => s.activeDocId)
   const activeFilePath = useStore((s) => s.activeFilePath)
-  const folderHandle = useStore((s) => s.folderHandle)
+  const folderKey = useStore(folderKeyOf)
   const activeSection = useStore((s) => s.activeSection)
   const dyslexicFont = useStore((s) => s.dyslexicFont)
   const setToc = useStore((s) => s.setToc)
@@ -538,12 +538,11 @@ export function Reader() {
   // keep the previous file's scrollTop because no effect fires on file change.
   const docKey = useMemo(() => {
     if (activeFilePath) {
-      const folderKey = folderHandle?.name ?? '__cache__'
       return `f:${folderKey}:${activeFilePath}`
     }
     if (activeDocId != null) return `${activeDocId}`
     return null
-  }, [activeFilePath, folderHandle, activeDocId])
+  }, [activeFilePath, folderKey, activeDocId])
 
   // Restore scroll position when the active document changes. If no saved
   // position exists (first-time read), reset to top — otherwise the previous
