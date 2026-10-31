@@ -25,6 +25,14 @@ const ASSET_CACHE = `${PREFIX}assets`
 
 const NAV_TIMEOUT_MS = 5000
 
+// Every lookup ignores Vary. Servers commonly send `Vary: Origin` (vite
+// preview does), and Chromium attaches an Origin header to module-script
+// requests but not to the SW's own precache fetches — so a Vary-respecting
+// match misses an entry that is sitting right there, and offline the chunk
+// fails. Hashed assets are immutable and the shell is per-build, so the
+// response never actually varies.
+const MATCH = { ignoreVary: true }
+
 // Resolve a scope-relative path to an absolute URL string. Robust under
 // both `https://x/` and `https://x/themarkdownreader/` scopes.
 const scoped = (rel) => new URL(rel, self.registration.scope).toString()
@@ -46,7 +54,7 @@ self.addEventListener('install', (event) => {
         try {
           const hashed = rel.startsWith('assets/')
           if (hashed) {
-            const existing = await caches.match(url)
+            const existing = await caches.match(url, MATCH)
             if (existing) { await cache.put(url, existing); continue }
           }
           // Hashed files may come from the HTTP cache (the page just loaded
@@ -106,8 +114,8 @@ async function handleNavigation(request, rel) {
     if (res.status === 404) return res
     throw new Error(`HTTP ${res.status}`)
   } catch {
-    const cached = await caches.match(request, { ignoreSearch: true })
-      || await caches.match(SHELL_URL)
+    const cached = await caches.match(request, { ...MATCH, ignoreSearch: true })
+      || await caches.match(SHELL_URL, MATCH)
     return cached || Response.error()
   }
 }
@@ -115,7 +123,7 @@ async function handleNavigation(request, rel) {
 // Cache-first for content-hashed assets (immutable). Anything fetched from the
 // network is kept, so a heavy chunk used once online also works offline.
 async function handleAsset(request) {
-  const cached = await caches.match(request)
+  const cached = await caches.match(request, MATCH)
   if (cached) return cached
   try {
     const res = await fetch(request)
@@ -155,7 +163,7 @@ self.addEventListener('fetch', (event) => {
   // Precached shell files (manifest, favicon, icons): cache-first.
   if (PRECACHE_SET.has(url.origin + url.pathname)) {
     event.respondWith(
-      caches.match(url.origin + url.pathname).then((cached) => cached || fetch(request)).catch(() => Response.error())
+      caches.match(url.origin + url.pathname, MATCH).then((cached) => cached || fetch(request)).catch(() => Response.error())
     )
     return
   }
