@@ -10,6 +10,9 @@ import { useStore, folderKeyOf } from '../store/useStore'
 import { resolveImageBlobUrl } from '../lib/fs-access'
 import ScrollMinimap from './ScrollMinimap'
 
+// Just past scroll-guard's default 2 s hold. If a longer hold is still active
+// when it fires, the synthetic scroll lands in the guarded branch and re-arms.
+const PROGRAMMATIC_SETTLE_MS = 2100
 const MermaidBlock = lazy(() => import('./MermaidBlock').then((m) => ({ default: m.MermaidBlock })))
 import { extractToc, wordCount, estimateDifficulty, slugify } from '../lib/markdown'
 import { useAdapter } from '../provider/hooks'
@@ -352,7 +355,7 @@ export function Reader() {
     if (sectionId) {
       requestAnimationFrame(() => {
         const el = document.getElementById(sectionId)
-        if (el) el.scrollIntoView({ behavior: 'smooth' })
+        if (el) { markProgrammaticScroll(); el.scrollIntoView({ behavior: 'smooth' }) }
       })
     }
   }, [markdown])
@@ -546,16 +549,29 @@ export function Reader() {
     return null
   }, [activeFilePath, folderKey, activeDocId])
 
+  // Identity for the scroll reset below. Docs that aren't saved and aren't in
+  // a folder have no docKey (nothing to persist), but opening one must still
+  // start at the top — keyed by file name, so a live reload of the same file
+  // (CLI watch, editor save) keeps the reader's place.
+  const scrollResetKey = docKey ?? `unsaved:${fileName ?? ''}`
+
   // Restore scroll position when the active document changes. If no saved
   // position exists (first-time read), reset to top — otherwise the previous
   // doc's scrollTop carries over since the Reader element stays mounted.
+  const lastSaveRef = useRef(0)
+  const settleSaveTimerRef = useRef(0)
+  useEffect(() => () => clearTimeout(settleSaveTimerRef.current), [])
   useEffect(() => {
-    if (!docKey || !contentRef.current) return
+    if (!contentRef.current) return
     const el = contentRef.current
+    if (!docKey) { el.scrollTop = 0; return }
     const saved = localStorage.getItem(`md-reader-scroll-${docKey}`)
     const pct = saved ? parseFloat(saved) : 0
     if (saved && pct > 5) {
-      requestAnimationFrame(() => {
+      // Programmatic: the restore (and the hash-section scroll racing it)
+      // must not be saved as the reader's position — see handleScroll.
+      markProgrammaticScroll()
+      const raf = requestAnimationFrame(() => {
         if (!contentRef.current) return
         const target = (contentRef.current.scrollHeight - contentRef.current.clientHeight) * (pct / 100)
         contentRef.current.scrollTo({ top: target })
@@ -574,12 +590,11 @@ export function Reader() {
         setResumeToast({ text: label, scrollTop: target })
         setTimeout(() => setResumeToast(null), 4000)
       })
-    } else {
-      el.scrollTop = 0
+      return () => cancelAnimationFrame(raf)
     }
-  }, [docKey])
+    el.scrollTop = 0
+  }, [docKey, scrollResetKey])
 
-  const lastSaveRef = useRef(0)
   const pendingStorageRef = useRef<Record<string, string>>({})
   const storageRafRef = useRef(0)
 
@@ -705,7 +720,19 @@ export function Reader() {
     lastScrollRef.current = { time: now, top: scrollTop }
 
     // Save scroll position for resume (throttled to 2s, batched via idle callback)
-    if (docKey && now - lastSaveRef.current > 2000) {
+    // Skip programmatic scrolls (resume restore, #section jumps, Jump-to):
+    // their intermediate frames aren't where the reader is — a smooth
+    // scrollIntoView's first frame near the top used to overwrite the saved
+    // position, and the 2 s throttle then kept the settled one from saving.
+    // Once the guard expires, a synthetic scroll re-runs the (then current)
+    // handler so the settled position is still saved under the right key.
+    if (docKey && isProgrammaticScroll()) {
+      clearTimeout(settleSaveTimerRef.current)
+      settleSaveTimerRef.current = window.setTimeout(() => {
+        lastSaveRef.current = 0
+        contentRef.current?.dispatchEvent(new Event('scroll'))
+      }, PROGRAMMATIC_SETTLE_MS)
+    } else if (docKey && now - lastSaveRef.current > 2000) {
       lastSaveRef.current = now
       queueStorageWrite(`md-reader-scroll-${docKey}`, String(progress))
       // Track daily words read — per-doc contribution, summed per day (B13).
