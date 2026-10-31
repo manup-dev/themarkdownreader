@@ -4,12 +4,19 @@ import { Sun, Moon, BookOpen, Minus, Plus, X, BookText, TreePine, GraduationCap,
 import { AiSettings } from './AiSettings'
 import { OPEN_AI_SETTINGS_EVENT } from '../lib/ai-settings-event'
 import { AiLoadingIndicator } from './AiLoadingIndicator'
-import { useStore, folderKeyOf, type Theme, type ViewMode } from '../store/useStore'
+import { useStore, folderKeyOf, type Theme, type ViewMode, type ContentWidth } from '../store/useStore'
 import { useAdapter } from '../provider/hooks'
 import { getActiveBackend } from '../lib/ai'
 import { trackEvent } from '../lib/telemetry'
 import { isViewModeGated } from '../lib/feature-flags'
 import { showToast } from '../lib/toast'
+
+const contentWidthOptions: { value: ContentWidth; label: string; title: string }[] = [
+  { value: 'narrow', label: 'Narrow', title: 'Narrow column (~42rem)' },
+  { value: 'normal', label: 'Normal', title: 'Default reading width (~48rem)' },
+  { value: 'wide', label: 'Wide', title: 'Wide column (~64rem) — roomier for tables and code' },
+  { value: 'full', label: 'Full', title: 'Use the full width of the reading pane' },
+]
 
 const singleDocModes: { value: ViewMode; icon: React.ReactNode; label: string; tooltip: string }[] = [
   { value: 'read', icon: <BookText className="h-3.5 w-3.5" />, label: 'Read', tooltip: 'Distraction-free reading' },
@@ -38,6 +45,8 @@ export function Toolbar() {
   const activeDocId = useStore((s) => s.activeDocId)
   const setTheme = useStore((s) => s.setTheme)
   const setFontSize = useStore((s) => s.setFontSize)
+  const contentWidth = useStore((s) => s.contentWidth)
+  const setContentWidth = useStore((s) => s.setContentWidth)
   const setViewMode = useStore((s) => s.setViewMode)
   const setFileName = useStore((s) => s.setFileName)
   const setActiveDocId = useStore((s) => s.setActiveDocId)
@@ -391,6 +400,28 @@ export function Toolbar() {
                   >
                     <Plus className="h-3.5 w-3.5" />
                   </button>
+                </div>
+
+                {/* Page width — max width of the reading column (tables can
+                    also expand individually from their own toolbar). */}
+                <div className="text-[10px] uppercase tracking-wider text-gray-400 mb-1.5 font-medium">Page Width</div>
+                <div className="grid grid-cols-4 gap-0.5 mb-3 p-0.5 rounded-md bg-gray-100 dark:bg-gray-800" role="radiogroup" aria-label="Page width">
+                  {contentWidthOptions.map((o) => (
+                    <button
+                      key={o.value}
+                      role="radio"
+                      aria-checked={contentWidth === o.value}
+                      onClick={() => setContentWidth(o.value)}
+                      title={o.title}
+                      className={`px-1.5 py-1 rounded text-[11px] font-medium transition-colors ${
+                        contentWidth === o.value
+                          ? 'bg-white dark:bg-gray-900 shadow-sm text-blue-700 dark:text-blue-300'
+                          : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                      }`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
                 </div>
 
                 {/* Dyslexia font */}

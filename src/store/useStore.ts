@@ -324,6 +324,8 @@ export interface DocumentState {
   sidebarWidth: number
   chatWidth: number
   dyslexicFont: boolean
+  /** Max width of the reading column (Typography menu). Persisted. */
+  contentWidth: ContentWidth
   // Auto-hide reader chrome (tab strip + toolbar) on scroll-down to reclaim
   // vertical space. `autoHideHeader` is the persisted user preference;
   // `headerHidden` is ephemeral live state driven by the read-view scroll
@@ -350,6 +352,7 @@ export interface DocumentState {
   setSidebarWidth: (w: number) => void
   setChatWidth: (w: number) => void
   setDyslexicFont: (on: boolean) => void
+  setContentWidth: (w: ContentWidth) => void
   // Cached generated content (survives tab switches)
   podcastScript: PodcastScript | null
   setPodcastScript: (script: PodcastScript | null) => void
@@ -458,6 +461,12 @@ export interface RemoteShareState {
   docId: number | null
 }
 
+export type ContentWidth = 'narrow' | 'normal' | 'wide' | 'full'
+export const CONTENT_WIDTHS: readonly ContentWidth[] = ['narrow', 'normal', 'wide', 'full']
+export function parseContentWidth(v: string | null): ContentWidth {
+  return (CONTENT_WIDTHS as readonly string[]).includes(v ?? '') ? (v as ContentWidth) : 'normal'
+}
+
 // Persist theme/fontSize to localStorage — auto-detect system dark mode on first visit
 const systemDark = typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches
 const savedTheme = (localStorage.getItem('md-reader-theme') as Theme) || (systemDark ? 'dark' : 'light')
@@ -481,6 +490,7 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   sidebarWidth: savedSidebarWidth,
   chatWidth: savedChatWidth,
   dyslexicFont: localStorage.getItem('md-reader-dyslexic') === 'true',
+  contentWidth: parseContentWidth(localStorage.getItem('md-reader-content-width')),
   autoHideHeader: localStorage.getItem('md-reader-autohide-header') === 'true',
   headerHidden: false,
   readScrollTop: 0,
@@ -553,6 +563,7 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   setSidebarWidth: (w) => { localStorage.setItem('md-reader-sidebarW', String(w)); set({ sidebarWidth: w }) },
   setChatWidth: (w) => { localStorage.setItem('md-reader-chatW', String(w)); set({ chatWidth: w }) },
   setDyslexicFont: (on) => { localStorage.setItem('md-reader-dyslexic', String(on)); set({ dyslexicFont: on }) },
+  setContentWidth: (w) => { localStorage.setItem('md-reader-content-width', w); set({ contentWidth: w }) },
   setAutoHideHeader: (on) => {
     localStorage.setItem('md-reader-autohide-header', String(on))
     // Turning the preference off must always restore the chrome, otherwise a

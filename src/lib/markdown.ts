@@ -189,3 +189,26 @@ export function estimateDifficulty(markdown: string): string {
   if (score <= 5) return 'Advanced'
   return 'Expert'
 }
+
+/**
+ * Pick the most "quotable" prose sentence (most bold/italic emphasis) for the
+ * end-of-document card. Only prose lines are considered: table rows, fenced
+ * code and headings are skipped, and blockquote/list markers are stripped —
+ * splitting the raw markdown used to surface table syntax like
+ * `| > | New round | …` as the "quote".
+ */
+export function extractQuotableSentence(markdown: string): { text: string; score: number } | null {
+  const inFence = createFenceTracker()
+  const prose = markdown
+    .split('\n')
+    .filter((line) => !inFence(line))
+    .map((line) => line.replace(/^\s*(>\s*)+/, '').replace(/^\s*([-*+]|\d+[.)])\s+/, ''))
+    .filter((line) => !/^\s*\|/.test(line) && !/^\s*#{1,6}\s/.test(line))
+    .join('\n')
+  const sentences = prose.split(/[.!?]\s+/).filter((s) => s.length > 30 && s.length < 200)
+  const scored = sentences.map((s) => ({
+    text: s.replace(/[#*`[\]()]/g, '').replace(/\s+/g, ' ').trim(),
+    score: (s.match(/\*\*[^*]+\*\*/g) ?? []).length + (s.match(/\*[^*]+\*/g) ?? []).length,
+  })).filter((s) => s.score > 0 && s.text.length > 20)
+  return scored.sort((a, b) => b.score - a.score)[0] ?? null
+}

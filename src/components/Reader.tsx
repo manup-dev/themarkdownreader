@@ -14,10 +14,12 @@ import ScrollMinimap from './ScrollMinimap'
 // when it fires, the synthetic scroll lands in the guarded branch and re-arms.
 const PROGRAMMATIC_SETTLE_MS = 2100
 const MermaidBlock = lazy(() => import('./MermaidBlock').then((m) => ({ default: m.MermaidBlock })))
-import { extractToc, wordCount, estimateDifficulty, slugify } from '../lib/markdown'
+import { extractToc, wordCount, estimateDifficulty, slugify, extractQuotableSentence } from '../lib/markdown'
 import { useAdapter } from '../provider/hooks'
 import type { Comment, Highlight } from '../types/storage-adapter'
 import { markProgrammaticScroll, isProgrammaticScroll } from '../lib/scroll-guard'
+import { MarkdownTable, MarkdownTh } from './MarkdownTable'
+import type { ContentWidth } from '../store/useStore'
 import { trackEvent } from '../lib/telemetry'
 import { shouldShowFirstTimeTip } from '../lib/first-run'
 import { resolveAnchor } from '../lib/anchor'
@@ -263,6 +265,16 @@ const markdownComponents = {
   },
   code: CodeBlockRenderer as never,
   img: ImageRenderer as never,
+  table: MarkdownTable as never,
+  th: MarkdownTh as never,
+}
+
+// Reading-column max width per Typography → Page width setting.
+const CONTENT_WIDTH_CLASS: Record<ContentWidth, string> = {
+  narrow: 'max-w-2xl',
+  normal: 'max-w-3xl',
+  wide: 'max-w-5xl',
+  full: 'max-w-none',
 }
 
 const themeConfig = {
@@ -301,6 +313,8 @@ export function Reader() {
   const folderKey = useStore(folderKeyOf)
   const activeSection = useStore((s) => s.activeSection)
   const dyslexicFont = useStore((s) => s.dyslexicFont)
+  const contentWidth = useStore((s) => s.contentWidth)
+  const widthClass = CONTENT_WIDTH_CLASS[contentWidth]
   const setToc = useStore((s) => s.setToc)
   const setReadingProgress = useStore((s) => s.setReadingProgress)
   const setActiveSection = useStore((s) => s.setActiveSection)
@@ -473,14 +487,7 @@ export function Reader() {
     return 'Narrative'
   }, [markdown])
   const artifactType = useMemo(() => detectArtifactType(fileName, markdown), [fileName, markdown])
-  const quotableSentence = useMemo(() => {
-    const sentences = markdown.split(/[.!?]\s+/).filter((s) => s.length > 30 && s.length < 200)
-    const scored = sentences.map((s) => ({
-      text: s.replace(/[#*`[\]()]/g, '').trim(),
-      score: (s.match(/\*\*[^*]+\*\*/g) ?? []).length + (s.match(/\*[^*]+\*/g) ?? []).length
-    })).filter((s) => s.score > 0 && s.text.length > 20)
-    return scored.sort((a, b) => b.score - a.score)[0] ?? null
-  }, [markdown])
+  const quotableSentence = useMemo(() => extractQuotableSentence(markdown), [markdown])
 
   // Dynamic page title with progress. Must subscribe to `fileName` via
   // the hook (not just read it through getState) AND include it in the
@@ -1415,6 +1422,7 @@ export function Reader() {
   return (
     <div
       ref={contentRef}
+      data-reader-scroll=""
       className={`flex-1 overflow-y-auto ${tc.container} relative`}
       style={{ scrollBehavior: 'smooth' }}
     >
@@ -1555,7 +1563,7 @@ export function Reader() {
         }
         if (crumbs.length <= 1) return null
         return (
-          <div className={`max-w-3xl mx-auto px-8 pt-6 pb-0 text-[11px] ${tc.stats} flex items-center gap-2`}>
+          <div className={`${widthClass} mx-auto px-8 pt-6 pb-0 text-[11px] ${tc.stats} flex items-center gap-2`}>
             <span className="flex items-center gap-0.5 flex-wrap">
               {crumbs.map((c, i) => (
                 <span key={i} className="flex items-center">
@@ -1591,7 +1599,7 @@ export function Reader() {
       })()}
 
       {/* Document stats — collapsed by default, showing only read time */}
-      <div className={`max-w-3xl mx-auto px-8 ${activeSection ? 'pt-2' : 'pt-8'} pb-2 text-xs ${tc.stats}`}>
+      <div className={`${widthClass} mx-auto px-8 ${activeSection ? 'pt-2' : 'pt-8'} pb-2 text-xs ${tc.stats}`}>
         <div className="inline">
           <button
             onClick={() => setStatsExpanded((v) => !v)}
@@ -1676,7 +1684,7 @@ export function Reader() {
 
       {/* Feature 20: "What changed?" badge */}
       {hasChanges && (
-        <div className="max-w-3xl mx-auto px-8 pb-2">
+        <div className={`${widthClass} mx-auto px-8 pb-2`}>
           <button
             onClick={() => {
               setShowDiffHighlight((s) => {
@@ -1719,7 +1727,7 @@ export function Reader() {
       {/* Markdown content */}
       <article
         aria-label="Document content"
-        className={`max-w-3xl mx-auto px-8 pb-32 ${tc.prose} prose-headings:font-semibold prose-code:before:hidden prose-code:after:hidden prose-img:rounded-lg ${dyslexicFont ? 'font-dyslexic' : ''}`}
+        className={`${widthClass} mx-auto px-8 pb-32 ${tc.prose} prose-headings:font-semibold prose-code:before:hidden prose-code:after:hidden prose-img:rounded-lg ${dyslexicFont ? 'font-dyslexic' : ''}`}
         style={{ fontSize: `${fontSize}px`, lineHeight: dyslexicFont ? 2.0 : 1.75, letterSpacing: dyslexicFont ? '0.05em' : undefined, wordSpacing: dyslexicFont ? '0.15em' : undefined }}
       >
         {renderedMarkdown}
@@ -1939,7 +1947,7 @@ export function Reader() {
 
       {/* Key takeaways — auto-extracted from section opening sentences */}
       {toc.filter((t) => t.level === 2).length >= 3 && (
-        <div className="max-w-3xl mx-auto px-8 pb-8">
+        <div className={`${widthClass} mx-auto px-8 pb-8`}>
           <details className="border border-gray-200 dark:border-gray-800 rounded-xl p-4">
             <summary className="text-sm font-semibold text-gray-600 dark:text-gray-400 cursor-pointer hover:text-gray-800 dark:hover:text-gray-200">
               Key Takeaways ({toc.filter((t) => t.level === 2).length} sections)
@@ -1965,7 +1973,7 @@ export function Reader() {
 
       {/* Most quotable sentence */}
       {quotableSentence && (
-        <div className="max-w-3xl mx-auto px-8 pb-4">
+        <div className={`${widthClass} mx-auto px-8 pb-4`}>
           <blockquote
             className="border-l-4 border-blue-400 dark:border-blue-600 pl-4 py-2 italic text-gray-600 dark:text-gray-400 text-sm cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950/20 rounded transition-colors"
             onClick={() => { navigator.clipboard.writeText(quotableSentence.text); const t = document.createElement('div'); t.className = 'toast-notify'; t.textContent = 'Quote copied!'; document.body.appendChild(t); setTimeout(() => t.remove(), 2000) }}

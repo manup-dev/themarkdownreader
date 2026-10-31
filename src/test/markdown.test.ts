@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractToc, chunkMarkdown, estimateReadingTime, wordCount } from '../lib/markdown'
+import { extractToc, chunkMarkdown, estimateReadingTime, wordCount, extractQuotableSentence } from '../lib/markdown'
 
 const sampleMd = `# Title
 
@@ -128,5 +128,29 @@ describe('chunkMarkdown — fenced code blocks (A12)', () => {
     const chunks = chunkMarkdown(md)
     expect(chunks).toHaveLength(1)
     expect(chunks[0].sectionPath).toBe('Top')
+  })
+})
+
+describe('extractQuotableSentence', () => {
+  it('ignores table rows, code fences and blockquote/list markers', () => {
+    const md = [
+      '# Notes',
+      '',
+      '> | Area | Change |',
+      '> |---|---|',
+      '> | New round | **Agentic PR review**: 4 PRs, **Claude Code allowed, TypeScript mandatory**. Single report |',
+      '',
+      '```js',
+      '// **not prose** but long enough to look like a sentence here.',
+      '```',
+      '',
+      '> The **core thesis** is that reading and shipping are two *distinct* problems. More text follows.',
+    ].join('\n')
+    const q = extractQuotableSentence(md)
+    expect(q?.text).toBe('The core thesis is that reading and shipping are two distinct problems')
+  })
+
+  it('returns null when nothing is emphasized', () => {
+    expect(extractQuotableSentence('Just a plain paragraph without any emphasis at all here.')).toBeNull()
   })
 })
