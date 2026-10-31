@@ -22,7 +22,7 @@ jobs:
     # Deploy only when the CI run for this commit succeeded (or on manual dispatch).
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # workflow_run checks out the default-branch tip by default —
           # pin to the exact SHA that passed CI. Empty on workflow_dispatch → falls back.
