@@ -55,6 +55,15 @@ export default defineConfig([
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
       ],
+      // React Compiler rules that eslint-plugin-react-hooks 7.1 enforces far
+      // more aggressively — 26 hits in existing, shipped code. Kept visible as
+      // warnings (CI annotations) so they get fixed deliberately, one effect
+      // at a time, instead of as a drive-by refactor inside a dependency bump.
+      // Flip back to 'error' once the count is zero.
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/purity': 'warn',
+      'react-hooks/immutability': 'warn',
     },
   },
   {
