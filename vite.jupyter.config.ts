@@ -14,6 +14,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { excalidrawAssetsPlugin } from './scripts/build/excalidraw-assets'
 
 // Resolve `posthog-js` to a no-op shim so the iframe bundle doesn't ship
 // 221KB of analytics. We use a virtual module rather than `define`
@@ -56,6 +57,10 @@ export default defineConfig({
     posthogShimPlugin(),
     react(),
     tailwindcss(),
+    // Self-host excalidraw's fonts (no esm.sh). The CJK handwriting font
+    // (Xiaolai, ~12.7 MB in 209 subsets) is left out to keep the wheel small;
+    // CJK text in a diagram falls back to esm.sh for it.
+    excalidrawAssetsPlugin({ skipFamilies: ['Xiaolai'] }),
   ],
   build: {
     outDir: 'dist-jupyter',

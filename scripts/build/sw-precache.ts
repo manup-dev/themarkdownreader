@@ -14,6 +14,9 @@
 //   - every other lazy chunk/CSS/font (reader views, folder/collection view,
 //     mind map, mermaid diagrams, …) unless it is a source map, a .wasm
 //     binary, an optional AI/TTS runtime, or bigger than `maxBytes`
+//   - excalidraw's self-hosted fonts (~0.4 MB) except the CJK Xiaolai
+//     subsets (~12.7 MB, matched by `excludePatterns`), which are only
+//     fetched when a diagram contains CJK text and are runtime-cached
 //   - oversized lazy chunks of local (non-AI) features listed in
 //     `alwaysPrecacheStems` — the excalidraw viewer, so a .excalidraw file
 //     opens offline even if the viewer was never used online
@@ -48,6 +51,9 @@ export interface PrecacheOptions {
   /** File stems (name without `-<hash>.<ext>`) never precached unless the
    *  entry statically needs them. Optional AI/TTS runtimes, multi-MB each. */
   excludeStems?: string[]
+  /** Output paths matching any of these are never precached (unless the
+   *  entry statically needs them). */
+  excludePatterns?: RegExp[]
   /** File stems precached even when bigger than `maxBytes`: lazy chunks of
    *  local features that must work offline without having been used online. */
   alwaysPrecacheStems?: string[]
@@ -74,6 +80,8 @@ export const DEFAULT_EXCLUDE_STEMS = ['webllm', 'transformers', 'tts-worker', 'k
  *  offline. Its hash only changes on a dependency bump, and the SW copies
  *  unchanged hashed files from the previous cache, so this is a one-off cost. */
 export const DEFAULT_ALWAYS_PRECACHE_STEMS = ['excalidraw']
+/** Excalidraw's CJK handwriting font: 209 unicode-range subsets, ~12.7 MB. */
+export const DEFAULT_EXCLUDE_PATTERNS = [/(^|\/)fonts\/Xiaolai\//]
 /** Heavy vendor chunks only lazy features need. */
 export const DEFAULT_BOOT_FORBIDDEN_STEMS = ['excalidraw', 'mermaid', 'markmap']
 /** Shell files copied from public/. Missing ones are skipped. */
@@ -121,6 +129,7 @@ export function selectPrecacheFiles(
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_PRECACHE_BYTES
   const excluded = new Set(opts.excludeStems ?? DEFAULT_EXCLUDE_STEMS)
   const always = new Set(opts.alwaysPrecacheStems ?? DEFAULT_ALWAYS_PRECACHE_STEMS)
+  const excludePatterns = opts.excludePatterns ?? DEFAULT_EXCLUDE_PATTERNS
   const required = staticClosure(entries)
   const precache: string[] = []
   const runtime: string[] = []
@@ -132,6 +141,7 @@ export function selectPrecacheFiles(
     const optionalOk = PRECACHEABLE.test(e.fileName)
       && !NEVER_PRECACHE.test(e.fileName)
       && !excluded.has(stem)
+      && !excludePatterns.some((re) => re.test(e.fileName))
       && (e.size <= maxBytes || always.has(stem))
     ;(isRequired || optionalOk ? precache : runtime).push(e.fileName)
   }

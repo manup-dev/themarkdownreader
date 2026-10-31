@@ -4,6 +4,21 @@ import { extractTextFromExcalidraw } from '../lib/excalidraw-text'
 import { calculateFitZoom, type ExcalidrawEl } from '../lib/excalidraw-converter'
 import '@excalidraw/excalidraw/index.css'
 
+/** Build-time dir (relative to the base URL) holding excalidraw's self-hosted
+ *  fonts, injected by scripts/build/excalidraw-assets.ts; absent in tests. */
+declare const __MDR_EXCALIDRAW_ASSETS__: string | undefined
+
+/** Point excalidraw's font loader at our own copy instead of esm.sh. Must run
+ *  before the package is evaluated. Its normalizeBaseUrl() resolves "/x" and
+ *  "./x" against the origin, not the page, so pass an absolute URL — that
+ *  keeps both '/themarkdownreader/' and the JupyterLab './' base working. */
+function selfHostExcalidrawFonts() {
+  if (typeof __MDR_EXCALIDRAW_ASSETS__ !== 'string') return
+  const w = window as Window & { EXCALIDRAW_ASSET_PATH?: string | string[] }
+  if (w.EXCALIDRAW_ASSET_PATH) return
+  w.EXCALIDRAW_ASSET_PATH = new URL(import.meta.env.BASE_URL + __MDR_EXCALIDRAW_ASSETS__, document.baseURI).href
+}
+
 interface ExcalidrawViewerProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   elements?: any[]
@@ -33,6 +48,7 @@ export function ExcalidrawViewer({ elements: elementsProp, appState, inline, con
   const [ExcalidrawComponent, setExcalidrawComponent] = useState<React.ComponentType<any> | null>(null)
 
   useEffect(() => {
+    selfHostExcalidrawFonts()
     import('@excalidraw/excalidraw').then(mod => {
       setExcalidrawComponent(() => mod.Excalidraw)
     })

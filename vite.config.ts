@@ -4,12 +4,15 @@ import tailwindcss from '@tailwindcss/vite'
 import fs from 'fs'
 import path from 'path'
 import { swPrecachePlugin } from './scripts/build/sw-precache'
+import { excalidrawAssetsPlugin } from './scripts/build/excalidraw-assets'
 
 export default defineConfig({
   base: process.env.GITHUB_ACTIONS ? '/themarkdownreader/' : '/',
   plugins: [
     react(),
     tailwindcss(),
+    // Serves excalidraw's fonts from our own origin instead of esm.sh.
+    excalidrawAssetsPlugin(),
     // Inlines this build's precache manifest into dist/sw.js (offline support).
     swPrecachePlugin(),
     {

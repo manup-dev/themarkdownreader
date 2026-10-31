@@ -32,6 +32,9 @@ const bundle: PrecacheBundleEntry[] = [
   { fileName: 'assets/big-lazy-view-MMMMMMMM.js', size: 4 * MB },
   // Lazy, oversized, but a local feature → precached via alwaysPrecacheStems.
   { fileName: 'assets/excalidraw-NNNNNNNN.js', size: 4.6 * MB },
+  // Self-hosted excalidraw fonts: latin ones precached, CJK subsets on demand.
+  { fileName: 'assets/excalidraw-0a1b2c3d/fonts/Virgil/Virgil-Regular.woff2', size: 56_000 },
+  { fileName: 'assets/excalidraw-0a1b2c3d/fonts/Xiaolai/Xiaolai-Regular-09850c4077f3fffe707905872e0e2460.woff2', size: 60_000 },
 ]
 
 describe('fileStem', () => {
@@ -100,6 +103,13 @@ describe('selectPrecacheFiles', () => {
     expect(none.runtime).toContain('assets/excalidraw-NNNNNNNN.js')
     // Exact stem match only — a different oversized chunk is not swept in.
     expect(precache).not.toContain('assets/big-lazy-view-MMMMMMMM.js')
+  })
+
+  it('precaches latin excalidraw fonts but runtime-caches the CJK Xiaolai subsets', () => {
+    expect(precache).toContain('assets/excalidraw-0a1b2c3d/fonts/Virgil/Virgil-Regular.woff2')
+    const cjk = 'assets/excalidraw-0a1b2c3d/fonts/Xiaolai/Xiaolai-Regular-09850c4077f3fffe707905872e0e2460.woff2'
+    expect(precache).not.toContain(cjk)
+    expect(runtime).toContain(cjk)
   })
 
   it('never lists source maps or non-asset files', () => {
