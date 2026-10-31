@@ -82,7 +82,11 @@ export function ShareDialog({ open, onClose, publicDocUrl }: ShareDialogProps) {
 
   useEffect(() => {
     if (!open || !activeDocId) return
+    // Ignore a build that finishes after the doc/URL changed or the dialog
+    // closed, so a slow stale build can't overwrite the current one.
+    let cancelled = false
     void buildShare(adapter, activeDocId, publicDocUrl).then((r) => {
+      if (cancelled) return
       if (r.ok) {
         setBuilt(r.built)
       } else {
@@ -91,6 +95,7 @@ export function ShareDialog({ open, onClose, publicDocUrl }: ShareDialogProps) {
       }
       setLoading(false)
     })
+    return () => { cancelled = true }
   }, [open, activeDocId, adapter, publicDocUrl])
 
   useEffect(() => {
