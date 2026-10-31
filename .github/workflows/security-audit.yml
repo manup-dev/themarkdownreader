@@ -53,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "npm"
@@ -82,7 +82,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "npm"
@@ -176,5 +176,40 @@ jobs:
                 title,
                 body,
                 labels: ["security", "auto-opened"],
+              })
+            }
+
+  # Counterpart to the job above: once a cron/manual run is fully clean again,
+  # close the tracking issue it opened so a stale alarm doesn't linger.
+  close-issue-when-clean:
+    needs: [npm-audit, pip-audit]
+    if: success() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close tracking issue
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const title = "Weekly security audit failed — new high/critical advisory"
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            const open = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "security,auto-opened",
+            })
+            for (const issue of open.data.filter((i) => i.title === title)) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `Audit clean again — ${runUrl}. Closing automatically.`,
+              })
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: "closed",
+                state_reason: "completed",
               })
             }
