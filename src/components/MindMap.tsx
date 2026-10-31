@@ -2,9 +2,19 @@ import { useEffect, useRef, useCallback, useState, useMemo } from 'react'
 import { Download, Maximize2, Layers, Target, ChevronDown, ChevronUp } from 'lucide-react'
 import { Transformer } from 'markmap-lib'
 import { Markmap } from 'markmap-view'
+import katex from 'katex'
+import hljs from 'highlight.js/lib/common'
 import { useStore } from '../store/useStore'
 import { trackEvent } from '../lib/telemetry'
 
+// markmap-lib's browser build renders math/code by loading katex.min.js and
+// highlight.js from cdn.jsdelivr.net at runtime — a third-party request that
+// fails offline (unhandled rejection) and contradicts "local". Both plugins
+// use `window.katex` / `window.hljs` when present, so hand them the bundled
+// copies (already in the app for the reader) and nothing is fetched.
+const mmWindow = window as unknown as { katex?: typeof katex; hljs?: typeof hljs }
+mmWindow.katex ??= katex
+mmWindow.hljs ??= hljs
 const transformer = new Transformer()
 
 interface MmNode {

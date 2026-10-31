@@ -7,6 +7,7 @@ import { isIFrameMode, getIFrameBridge } from './lib/iframe-bridge'
 import { useStore } from './store/useStore'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { bumpVisitCount } from './lib/first-run'
+import { showToast } from './lib/toast'
 
 // Count this visit before first render so first-run overlays (telemetry
 // banner) gate correctly on the current visit. Standalone only — embedded
@@ -125,6 +126,17 @@ if (typeof window !== 'undefined') {
     })()
   }, { once: true })
 }
+
+// A lazy chunk that isn't cached yet can't load offline (heavy AI/TTS
+// runtimes are runtime-cached on first use, not precached). Vite fires
+// `vite:preloadError` before rethrowing; tell the user why instead of failing
+// silently. The view's ErrorBoundary still renders its own fallback.
+let lastOfflineChunkToast = 0
+window.addEventListener('vite:preloadError', () => {
+  if (navigator.onLine || Date.now() - lastOfflineChunkToast < 4000) return
+  lastOfflineChunkToast = Date.now()
+  showToast("This feature isn't available offline yet — use it once while online to cache it.", { durationMs: 4000 })
+})
 
 // Register service worker for offline support (prod only).
 // Skip when embedded in JupyterLab iframe — SW serving stale cached chunks

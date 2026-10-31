@@ -3,12 +3,15 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import fs from 'fs'
 import path from 'path'
+import { swPrecachePlugin } from './scripts/build/sw-precache'
 
 export default defineConfig({
   base: process.env.GITHUB_ACTIONS ? '/themarkdownreader/' : '/',
   plugins: [
     react(),
     tailwindcss(),
+    // Inlines this build's precache manifest into dist/sw.js (offline support).
+    swPrecachePlugin(),
     {
       name: 'md-reader-file-api',
       configureServer(server) {

@@ -408,9 +408,11 @@ export function Upload() {
           </button>
           <button
             onClick={async () => {
-              const { openDirectory } = await import('../lib/fs-access')
-              const { saveCollectionCache } = await import('../lib/docstore')
               try {
+                // Inside the try: a failed chunk load (e.g. offline) must
+                // surface as an error, not an unhandled rejection.
+                const { openDirectory } = await import('../lib/fs-access')
+                const { saveCollectionCache } = await import('../lib/docstore')
                 const result = await openDirectory()
                 if (!result) return
                 if (result.files.length === 0) {
