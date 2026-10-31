@@ -97,17 +97,20 @@ jobs:
       # We audit the BUILT wheel rather than the editable install so the
       # result is exactly what PyPI users would `pip install`.
       - name: Build iframe SPA + wheel
-        env:
-          # The wheel's hatch-jupyter-builder hook runs `jlpm install` (Yarn
-          # berry). On CI Yarn defaults to immutable installs, and the
-          # committed yarn.lock is a legacy v1 file berry always wants to
-          # rewrite → YN0028 "lockfile would have been modified". This is a
-          # throwaway build, so let it rewrite (never commit the result).
-          YARN_ENABLE_IMMUTABLE_INSTALLS: "false"
+        # Build the labextension from the npm-installed tree, then build the
+        # wheel with the hatch hook's own install skipped. Left alone, the
+        # hook runs `jlpm install`, which (a) fails on CI with YN0028 because
+        # Yarn berry won't migrate the legacy v1 yarn.lock under immutable
+        # installs, and (b) even when allowed, re-resolves root node_modules
+        # from that stale lockfile and mixes in duplicate @lumino/* copies
+        # that break `tsc`. npm is the authoritative package manager here.
         run: |
           npm run build:jupyter
           cd packages/jupyterlab
-          python -m build --wheel
+          for step in clean sync:version build:lib:prod build:labextension bundle:app; do
+            npm run "$step"
+          done
+          HATCH_JUPYTER_BUILDER_SKIP_NPM=1 python -m build --wheel
 
       - name: pip-audit — built wheel's runtime deps
         run: |
