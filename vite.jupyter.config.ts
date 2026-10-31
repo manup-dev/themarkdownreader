@@ -8,13 +8,16 @@
 //   - `define.MDR_TELEMETRY = '0'` to tree-shake PostHog.
 //   - PostHog import becomes a no-op `data:` shim so `import 'posthog-js'`
 //     resolves but contributes nothing to the bundle.
-//   - manualChunks: keep heavy AI/transformer/excalidraw/etc. in separate
-//     chunks so the initial chunk stays lean.
+//   - codeSplitting groups shared with the web build
+//     (scripts/build/chunk-groups.ts) keep heavy AI/excalidraw/mermaid/etc.
+//     chunks off the boot path; bootPathGuardPlugin enforces it.
 
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { excalidrawAssetsPlugin } from './scripts/build/excalidraw-assets'
+import { bootPathGuardPlugin } from './scripts/build/boot-path-guard'
+import { CHUNK_GROUPS } from './scripts/build/chunk-groups'
 
 // Resolve `posthog-js` to a no-op shim so the iframe bundle doesn't ship
 // 221KB of analytics. We use a virtual module rather than `define`
@@ -61,6 +64,8 @@ export default defineConfig({
     // (Xiaolai, ~12.7 MB in 209 subsets) is left out to keep the wheel small;
     // CJK text in a diagram falls back to esm.sh for it.
     excalidrawAssetsPlugin({ skipFamilies: ['Xiaolai'] }),
+    // Fails the build if a lazy-feature chunk lands on the boot path.
+    bootPathGuardPlugin(),
   ],
   build: {
     outDir: 'dist-jupyter',
@@ -69,24 +74,15 @@ export default defineConfig({
     cssCodeSplit: true,
     target: 'es2020',
     chunkSizeWarningLimit: 1024,
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks(id: string) {
-          if (id.includes('node_modules/d3')) return 'd3'
-          if (id.includes('node_modules/markmap')) return 'markmap'
-          if (id.includes('node_modules/graphology')) return 'graphology'
-          if (id.includes('node_modules/@excalidraw')) return 'excalidraw'
-          if (id.includes('node_modules/mermaid') || id.includes('node_modules/@mermaid-js')) return 'mermaid'
-          if (
-            id.includes('node_modules/react-markdown') ||
-            id.includes('node_modules/remark') ||
-            id.includes('node_modules/rehype') ||
-            id.includes('node_modules/unified')
-          ) return 'markdown'
-          if (id.includes('node_modules/@huggingface/transformers')) return 'transformers'
-          if (id.includes('node_modules/@mlc-ai')) return 'webllm'
-          if (id.includes('node_modules/kokoro-js')) return 'kokoro'
-          if (id.includes('node_modules/katex')) return 'katex'
+        // Same vendor layout as the web build (scripts/build/chunk-groups.ts),
+        // plus kokoro-js, which only this build names explicitly.
+        codeSplitting: {
+          groups: [
+            ...CHUNK_GROUPS,
+            { name: 'kokoro', test: /[\\/]node_modules[\\/]kokoro-js[\\/]/, priority: 10 },
+          ],
         },
       },
     },

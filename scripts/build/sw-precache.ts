@@ -22,15 +22,13 @@
 //     opens offline even if the viewer was never used online
 // Everything else under assets/ is runtime-cached by the SW on first use.
 //
-// The plugin also fails the build if a chunk listed in `bootForbiddenStems`
-// becomes part of the entry's static import graph (e.g. a vendor group
-// hoisting React into the excalidraw chunk makes every first visit download
-// it — see build.rolldownOptions.output.codeSplitting in vite.config.ts).
+// The boot-path regression guard lives in ./boot-path-guard.ts (shared with
+// the JupyterLab build, which has no service worker).
 
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Plugin } from 'vite'
+import type { Plugin, Rolldown } from 'vite'
 
 export interface PrecacheBundleEntry {
   /** Output path relative to outDir, e.g. `assets/index-AbC123xY.js`. */
@@ -57,10 +55,6 @@ export interface PrecacheOptions {
   /** File stems precached even when bigger than `maxBytes`: lazy chunks of
    *  local features that must work offline without having been used online. */
   alwaysPrecacheStems?: string[]
-  /** File stems that must never be statically reachable from the entry;
-   *  the build fails if one is. Defaults to the heavy lazy-feature vendor
-   *  chunks plus `excludeStems`. */
-  bootForbiddenStems?: string[]
 }
 
 export interface PrecacheManifest {
@@ -82,8 +76,6 @@ export const DEFAULT_EXCLUDE_STEMS = ['webllm', 'transformers', 'tts-worker', 'k
 export const DEFAULT_ALWAYS_PRECACHE_STEMS = ['excalidraw']
 /** Excalidraw's CJK handwriting font: 209 unicode-range subsets, ~12.7 MB. */
 export const DEFAULT_EXCLUDE_PATTERNS = [/(^|\/)fonts\/Xiaolai\//]
-/** Heavy vendor chunks only lazy features need. */
-export const DEFAULT_BOOT_FORBIDDEN_STEMS = ['excalidraw', 'mermaid', 'markmap']
 /** Shell files copied from public/. Missing ones are skipped. */
 export const SHELL_FILES = ['index.html', 'manifest.json', 'favicon.svg', 'icons.svg']
 
@@ -114,12 +106,6 @@ export function staticClosure(entries: PrecacheBundleEntry[]): Set<string> {
     }
   }
   return out
-}
-
-/** Boot-path files (entry static closure) whose stem is forbidden there. */
-export function bootPathViolations(entries: PrecacheBundleEntry[], forbiddenStems: string[]): string[] {
-  const forbidden = new Set(forbiddenStems)
-  return [...staticClosure(entries)].filter((f) => forbidden.has(fileStem(f))).sort()
 }
 
 export function selectPrecacheFiles(
@@ -169,6 +155,25 @@ export function injectManifest(swSource: string, manifest: PrecacheManifest): st
 
 interface ViteMeta { importedCss?: Set<string>; importedAssets?: Set<string> }
 
+/** Flattens a Rolldown/Vite output bundle into the shape the helpers above use. */
+export function bundleEntries(bundle: Rolldown.OutputBundle): PrecacheBundleEntry[] {
+  return Object.values(bundle).map((item) => {
+    if (item.type === 'chunk') {
+      const meta = (item as unknown as { viteMetadata?: ViteMeta }).viteMetadata
+      return {
+        fileName: item.fileName,
+        size: Buffer.byteLength(item.code),
+        isEntry: item.isEntry,
+        imports: item.imports,
+        importedCss: meta?.importedCss ? [...meta.importedCss] : [],
+        importedAssets: meta?.importedAssets ? [...meta.importedAssets] : [],
+      }
+    }
+    const src = item.source
+    return { fileName: item.fileName, size: typeof src === 'string' ? Buffer.byteLength(src) : src.byteLength }
+  })
+}
+
 /** Vite plugin: after the bundle is written, inline the precache manifest
  *  into `<outDir>/sw.js` (copied there from public/). */
 export function swPrecachePlugin(opts: PrecacheOptions = {}): Plugin {
@@ -183,29 +188,7 @@ export function swPrecachePlugin(opts: PrecacheOptions = {}): Plugin {
     writeBundle(_options, bundle) {
       const swPath = path.join(outDir, 'sw.js')
       if (!fs.existsSync(swPath)) return // build without public/ (lib builds)
-      const entries: PrecacheBundleEntry[] = Object.values(bundle).map((item) => {
-        if (item.type === 'chunk') {
-          const meta = (item as unknown as { viteMetadata?: ViteMeta }).viteMetadata
-          return {
-            fileName: item.fileName,
-            size: Buffer.byteLength(item.code),
-            isEntry: item.isEntry,
-            imports: item.imports,
-            importedCss: meta?.importedCss ? [...meta.importedCss] : [],
-            importedAssets: meta?.importedAssets ? [...meta.importedAssets] : [],
-          }
-        }
-        const src = item.source
-        return { fileName: item.fileName, size: typeof src === 'string' ? Buffer.byteLength(src) : src.byteLength }
-      })
-      const violations = bootPathViolations(
-        entries,
-        opts.bootForbiddenStems ?? [...DEFAULT_BOOT_FORBIDDEN_STEMS, ...(opts.excludeStems ?? DEFAULT_EXCLUDE_STEMS)],
-      )
-      if (violations.length) {
-        this.error(`lazy-feature chunks are statically imported by the entry (boot path): ${violations.join(', ')}. `
-          + 'A codeSplitting group probably captured a shared dependency (e.g. React); see vite.config.ts.')
-      }
+      const entries = bundleEntries(bundle)
       const { precache, runtime } = selectPrecacheFiles(entries, opts)
       const shell = SHELL_FILES.filter((f) => fs.existsSync(path.join(outDir, f)))
       const version = computeVersion(precache, shell.map((f) => fs.readFileSync(path.join(outDir, f))))
