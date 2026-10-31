@@ -82,19 +82,46 @@ export default defineConfig({
   },
   build: {
     sourcemap: 'hidden',
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks(id: string) {
-          if (id.includes('node_modules/d3')) return 'd3'
-          if (id.includes('node_modules/markmap')) return 'markmap'
-          if (id.includes('node_modules/graphology')) return 'graphology'
-          if (id.includes('node_modules/@excalidraw')) return 'excalidraw'
-          if (id.includes('node_modules/mermaid') || id.includes('node_modules/@mermaid-js')) return 'mermaid'
-          if (id.includes('node_modules/react-markdown') || id.includes('node_modules/remark') || id.includes('node_modules/rehype') || id.includes('node_modules/unified')) return 'markdown'
-          if (id.includes('node_modules/@huggingface/transformers')) return 'transformers'
-          if (id.includes('node_modules/@mlc-ai')) return 'webllm'
-          if (id.includes('node_modules/katex')) return 'katex'
-          if (id.includes('node_modules/posthog')) return 'posthog'
+        // Rolldown groups also capture every dependency of the modules they
+        // match (includeDependenciesRecursively defaults to true), so a module
+        // shared by several groups lands in whichever group claims it first.
+        // With the old single manualChunks() function, the excalidraw group
+        // swallowed React, react-dom, Vite's preload helper and mermaid's
+        // core, so the entry (and every mermaid diagram) statically imported
+        // the 4.7 MB excalidraw chunk. Priorities fix the claim order:
+        //   1. react-vendor — shared runtime every chunk needs (boot path)
+        //   2. leaf libraries other groups depend on (katex, d3, mermaid)
+        //   3. feature vendors (excalidraw, markdown, markmap, AI runtimes)
+        // @excalidraw/mermaid-to-excalidraw is left to automatic chunking:
+        // excalidraw only import()s it from its text-to-diagram dialog, and
+        // capturing it would turn that lazy edge into a static
+        // excalidraw -> mermaid import.
+        // Chunk names are load-bearing: scripts/build/sw-precache.ts matches
+        // on them.
+        codeSplitting: {
+          groups: [
+            {
+              name: 'react-vendor',
+              test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]|^\0vite[\\/]preload-helper/,
+              priority: 30,
+            },
+            { name: 'katex', test: /[\\/]node_modules[\\/]katex[\\/]/, priority: 20 },
+            { name: 'd3', test: /[\\/]node_modules[\\/]d3/, priority: 20 },
+            { name: 'mermaid', test: /[\\/]node_modules[\\/](mermaid|@mermaid-js)[\\/]/, priority: 15 },
+            {
+              name: 'excalidraw',
+              test: (id) => /[\\/]node_modules[\\/]@excalidraw[\\/]/.test(id) && !/[\\/]@excalidraw[\\/]mermaid-to-excalidraw[\\/]/.test(id),
+              priority: 10,
+            },
+            { name: 'markmap', test: /[\\/]node_modules[\\/]markmap/, priority: 10 },
+            { name: 'graphology', test: /[\\/]node_modules[\\/]graphology/, priority: 10 },
+            { name: 'markdown', test: /[\\/]node_modules[\\/](react-markdown|remark|rehype|unified)/, priority: 10 },
+            { name: 'transformers', test: /[\\/]node_modules[\\/]@huggingface[\\/]transformers[\\/]/, priority: 10 },
+            { name: 'webllm', test: /[\\/]node_modules[\\/]@mlc-ai[\\/]/, priority: 10 },
+            { name: 'posthog', test: /[\\/]node_modules[\\/]posthog/, priority: 10 },
+          ],
         },
       },
     },

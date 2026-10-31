@@ -5,6 +5,7 @@ import {
   fileStem,
   staticClosure,
   selectPrecacheFiles,
+  bootPathViolations,
   computeVersion,
   injectManifest,
   type PrecacheBundleEntry,
@@ -28,7 +29,9 @@ const bundle: PrecacheBundleEntry[] = [
   { fileName: 'assets/kokoro-tts-JJJJJJJJ.js', size: 5_600 },
   { fileName: 'assets/tts-worker-KKKKKKKK.js', size: 2.2 * MB },
   { fileName: 'assets/ort-wasm-simd-threaded.jsep-LLLLLLLL.wasm', size: 21 * MB },
-  { fileName: 'assets/excalidraw-viewer-MMMMMMMM.js', size: 4 * MB },
+  { fileName: 'assets/big-lazy-view-MMMMMMMM.js', size: 4 * MB },
+  // Lazy, oversized, but a local feature → precached via alwaysPrecacheStems.
+  { fileName: 'assets/excalidraw-NNNNNNNN.js', size: 4.6 * MB },
 ]
 
 describe('fileStem', () => {
@@ -83,11 +86,20 @@ describe('selectPrecacheFiles', () => {
       'assets/kokoro-IIIIIIII.js',
       'assets/tts-worker-KKKKKKKK.js',
       'assets/ort-wasm-simd-threaded.jsep-LLLLLLLL.wasm',
-      'assets/excalidraw-viewer-MMMMMMMM.js',
+      'assets/big-lazy-view-MMMMMMMM.js',
     ]) {
       expect(precache).not.toContain(f)
       expect(runtime).toContain(f)
     }
+  })
+
+  it('precaches oversized local-feature chunks listed in alwaysPrecacheStems', () => {
+    expect(precache).toContain('assets/excalidraw-NNNNNNNN.js') // default list
+    const none = selectPrecacheFiles(bundle, { alwaysPrecacheStems: [] })
+    expect(none.precache).not.toContain('assets/excalidraw-NNNNNNNN.js')
+    expect(none.runtime).toContain('assets/excalidraw-NNNNNNNN.js')
+    // Exact stem match only — a different oversized chunk is not swept in.
+    expect(precache).not.toContain('assets/big-lazy-view-MMMMMMMM.js')
   })
 
   it('never lists source maps or non-asset files', () => {
@@ -99,6 +111,23 @@ describe('selectPrecacheFiles', () => {
     const small = selectPrecacheFiles(bundle, { maxBytes: 1 * MB })
     expect(small.precache).not.toContain('assets/mermaid-EEEEEEEE.js')
     expect(small.precache).toContain('assets/vendor-BBBBBBBB.js') // still required
+  })
+})
+
+describe('bootPathViolations', () => {
+  it('is empty when forbidden chunks are only lazily reachable', () => {
+    expect(bootPathViolations(bundle, ['excalidraw', 'mermaid', 'webllm'])).toEqual([])
+  })
+
+  it('reports a forbidden chunk the entry statically imports', () => {
+    const hoisted: PrecacheBundleEntry[] = [
+      { fileName: 'assets/index-AAAAAAAA.js', size: 1, isEntry: true, imports: ['assets/markdown-BBBBBBBB.js'] },
+      // e.g. React hoisted into the excalidraw vendor chunk
+      { fileName: 'assets/markdown-BBBBBBBB.js', size: 1, imports: ['assets/excalidraw-CCCCCCCC.js'] },
+      { fileName: 'assets/excalidraw-CCCCCCCC.js', size: 4.6 * MB, imports: [] },
+      { fileName: 'assets/mermaid-DDDDDDDD.js', size: 3 * MB, imports: ['assets/excalidraw-CCCCCCCC.js'] },
+    ]
+    expect(bootPathViolations(hoisted, ['excalidraw', 'mermaid'])).toEqual(['assets/excalidraw-CCCCCCCC.js'])
   })
 })
 

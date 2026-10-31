@@ -10,12 +10,19 @@
 // What gets precached (downloaded in the background on first visit):
 //   - the app shell: index.html, manifest.json, favicon/icons
 //   - every chunk/CSS/asset statically reachable from the entry (required for
-//     the app to boot at all — currently includes the excalidraw vendor chunk
-//     because rolldown hoists React into it)
+//     the app to boot at all)
 //   - every other lazy chunk/CSS/font (reader views, folder/collection view,
 //     mind map, mermaid diagrams, …) unless it is a source map, a .wasm
 //     binary, an optional AI/TTS runtime, or bigger than `maxBytes`
+//   - oversized lazy chunks of local (non-AI) features listed in
+//     `alwaysPrecacheStems` — the excalidraw viewer, so a .excalidraw file
+//     opens offline even if the viewer was never used online
 // Everything else under assets/ is runtime-cached by the SW on first use.
+//
+// The plugin also fails the build if a chunk listed in `bootForbiddenStems`
+// becomes part of the entry's static import graph (e.g. a vendor group
+// hoisting React into the excalidraw chunk makes every first visit download
+// it — see build.rolldownOptions.output.codeSplitting in vite.config.ts).
 
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
@@ -41,6 +48,13 @@ export interface PrecacheOptions {
   /** File stems (name without `-<hash>.<ext>`) never precached unless the
    *  entry statically needs them. Optional AI/TTS runtimes, multi-MB each. */
   excludeStems?: string[]
+  /** File stems precached even when bigger than `maxBytes`: lazy chunks of
+   *  local features that must work offline without having been used online. */
+  alwaysPrecacheStems?: string[]
+  /** File stems that must never be statically reachable from the entry;
+   *  the build fails if one is. Defaults to the heavy lazy-feature vendor
+   *  chunks plus `excludeStems`. */
+  bootForbiddenStems?: string[]
 }
 
 export interface PrecacheManifest {
@@ -55,6 +69,13 @@ export interface PrecacheManifest {
 
 export const DEFAULT_MAX_PRECACHE_BYTES = 3_000_000
 export const DEFAULT_EXCLUDE_STEMS = ['webllm', 'transformers', 'tts-worker', 'kokoro']
+/** Excalidraw (~4 MB) is a local feature (.excalidraw files, diagrams), not an
+ *  optional AI runtime: download it in the background at install so it works
+ *  offline. Its hash only changes on a dependency bump, and the SW copies
+ *  unchanged hashed files from the previous cache, so this is a one-off cost. */
+export const DEFAULT_ALWAYS_PRECACHE_STEMS = ['excalidraw']
+/** Heavy vendor chunks only lazy features need. */
+export const DEFAULT_BOOT_FORBIDDEN_STEMS = ['excalidraw', 'mermaid', 'markmap']
 /** Shell files copied from public/. Missing ones are skipped. */
 export const SHELL_FILES = ['index.html', 'manifest.json', 'favicon.svg', 'icons.svg']
 
@@ -87,12 +108,19 @@ export function staticClosure(entries: PrecacheBundleEntry[]): Set<string> {
   return out
 }
 
+/** Boot-path files (entry static closure) whose stem is forbidden there. */
+export function bootPathViolations(entries: PrecacheBundleEntry[], forbiddenStems: string[]): string[] {
+  const forbidden = new Set(forbiddenStems)
+  return [...staticClosure(entries)].filter((f) => forbidden.has(fileStem(f))).sort()
+}
+
 export function selectPrecacheFiles(
   entries: PrecacheBundleEntry[],
   opts: PrecacheOptions = {},
 ): { precache: string[]; runtime: string[] } {
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_PRECACHE_BYTES
   const excluded = new Set(opts.excludeStems ?? DEFAULT_EXCLUDE_STEMS)
+  const always = new Set(opts.alwaysPrecacheStems ?? DEFAULT_ALWAYS_PRECACHE_STEMS)
   const required = staticClosure(entries)
   const precache: string[] = []
   const runtime: string[] = []
@@ -100,10 +128,11 @@ export function selectPrecacheFiles(
     if (!e.fileName.startsWith('assets/')) continue // html/public files handled as shell
     if (/\.map$/i.test(e.fileName)) continue // never served to users
     const isRequired = required.has(e.fileName)
+    const stem = fileStem(e.fileName)
     const optionalOk = PRECACHEABLE.test(e.fileName)
       && !NEVER_PRECACHE.test(e.fileName)
-      && !excluded.has(fileStem(e.fileName))
-      && e.size <= maxBytes
+      && !excluded.has(stem)
+      && (e.size <= maxBytes || always.has(stem))
     ;(isRequired || optionalOk ? precache : runtime).push(e.fileName)
   }
   precache.sort()
@@ -159,6 +188,14 @@ export function swPrecachePlugin(opts: PrecacheOptions = {}): Plugin {
         const src = item.source
         return { fileName: item.fileName, size: typeof src === 'string' ? Buffer.byteLength(src) : src.byteLength }
       })
+      const violations = bootPathViolations(
+        entries,
+        opts.bootForbiddenStems ?? [...DEFAULT_BOOT_FORBIDDEN_STEMS, ...(opts.excludeStems ?? DEFAULT_EXCLUDE_STEMS)],
+      )
+      if (violations.length) {
+        this.error(`lazy-feature chunks are statically imported by the entry (boot path): ${violations.join(', ')}. `
+          + 'A codeSplitting group probably captured a shared dependency (e.g. React); see vite.config.ts.')
+      }
       const { precache, runtime } = selectPrecacheFiles(entries, opts)
       const shell = SHELL_FILES.filter((f) => fs.existsSync(path.join(outDir, f)))
       const version = computeVersion(precache, shell.map((f) => fs.readFileSync(path.join(outDir, f))))
