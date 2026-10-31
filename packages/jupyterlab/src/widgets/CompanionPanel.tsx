@@ -76,19 +76,33 @@ function CompanionView(props: {
   onJumpTo: (anchor: string) => void
   trans?: ReturnType<ITranslator['load']> | null
 }) {
-  // Lazy initializer — captures the latest state when React first renders.
-  // Subsequent updates flow through the signal.
-  const [state, setState] = React.useState<CompanionState>(() => props.getState())
-  React.useEffect(() => {
-    // Resync once on mount in case the active doc changed during the
-    // microtask between widget creation and React commit.
-    setState(props.getState())
-    const slot = (_sender: unknown, s: CompanionState) => setState(s)
-    props.signal.connect(slot)
-    return () => {
-      props.signal.disconnect(slot)
-    }
-  }, [props.signal])
+  // The panel's state is an external store: read it with
+  // useSyncExternalStore, which also re-checks the snapshot after
+  // subscribing, so a doc change between widget creation and React commit
+  // isn't missed.
+  const { signal, getState } = props
+  const subscribe = React.useCallback(
+    (onChange: () => void) => {
+      signal.connect(onChange)
+      return () => {
+        signal.disconnect(onChange)
+      }
+    },
+    [signal],
+  )
+  const external = React.useSyncExternalStore(subscribe, getState)
+  // Tab clicks are local. As before, any new state from the panel (outline
+  // or doc change) replaces them with the panel's own activeTab.
+  const [tabPick, setTabPick] = React.useState<{
+    base: CompanionState
+    tab: CompanionState['activeTab']
+  } | null>(null)
+  const state: CompanionState =
+    tabPick && tabPick.base === external
+      ? { ...external, activeTab: tabPick.tab }
+      : external
+  const setActiveTab = (tab: CompanionState['activeTab']) =>
+    setTabPick({ base: external, tab })
 
   const t = (en: string) => (props.trans ? props.trans.__(en) : en)
 
@@ -99,7 +113,7 @@ function CompanionView(props: {
           role="tab"
           aria-selected={state.activeTab === 'outline'}
           className={`mdr-companion-tab ${state.activeTab === 'outline' ? 'is-active' : ''}`}
-          onClick={() => setState(s => ({ ...s, activeTab: 'outline' }))}
+          onClick={() => setActiveTab('outline')}
         >
           {t('Outline')}
         </button>
@@ -107,7 +121,7 @@ function CompanionView(props: {
           role="tab"
           aria-selected={state.activeTab === 'chat'}
           className={`mdr-companion-tab ${state.activeTab === 'chat' ? 'is-active' : ''}`}
-          onClick={() => setState(s => ({ ...s, activeTab: 'chat' }))}
+          onClick={() => setActiveTab('chat')}
         >
           {t('Chat')}
         </button>

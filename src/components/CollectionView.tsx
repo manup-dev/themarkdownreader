@@ -60,12 +60,15 @@ export function CollectionView() {
   }, [orderedFiles, folderFileContents])
 
   // Collection completion: based on md-reader-viewed-files:<folderName>
-  const viewedMap = useMemo(() => {
+  // Re-read whenever the file list changes (it doubles as the refresh
+  // trigger), and count against that same list.
+  const { viewedMap, viewedCount } = useMemo(() => {
     const key = `md-reader-viewed-files:${folderKey}`
-    try { return JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, boolean> }
-    catch { return {} }
+    let map: Record<string, boolean>
+    try { map = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, boolean> }
+    catch { map = {} }
+    return { viewedMap: map, viewedCount: folderFiles?.filter(f => map[f.path]).length ?? 0 }
   }, [folderKey, folderFiles])
-  const viewedCount = folderFiles?.filter(f => viewedMap[f.path]).length ?? 0
   const totalCount = folderFiles?.length ?? 0
   const allViewed = totalCount > 0 && viewedCount === totalCount
 

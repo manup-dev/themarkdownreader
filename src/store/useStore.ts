@@ -1181,11 +1181,8 @@ export const useStore = create<DocumentState>()(devtools(persist((set, get) => (
   // post messages without passing the origin pin first.
   storage: (typeof window !== 'undefined' && window.parent !== window)
     ? {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       getItem: async (_name) => null,
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       setItem: async (_name, _value) => { /* noop in iframe mode */ },
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       removeItem: async (_name) => { /* noop in iframe mode */ },
     }
     : {

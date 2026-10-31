@@ -37,6 +37,10 @@ export function CoachView() {
     return saved ? JSON.parse(saved) : {}
   })
 
+  // Clock for "due for review" (reviews are scheduled days out), read once
+  // when the Coach opens rather than impurely on every render.
+  const [openedAt] = useState(() => Date.now())
+
   const chunks = useMemo(() => chunkMarkdown(markdown), [markdown])
   const abortRef = useRef<AbortController | null>(null)
 
@@ -44,8 +48,11 @@ export function CoachView() {
     detectBestBackend().then((b) => setAiReady(b !== 'none'))
   }, [])
 
-  // Reset state when section changes; auto-explain short sections
-  useEffect(() => {
+  // Reset per-section state during render when the section changes (auto-
+  // explain of short sections is handled by the effect further down).
+  const [prevSectionIndex, setPrevSectionIndex] = useState(sectionIndex)
+  if (sectionIndex !== prevSectionIndex) {
+    setPrevSectionIndex(sectionIndex)
     setCoaching(null)
     setQuiz([])
     setSelectedAnswers({})
@@ -55,7 +62,7 @@ export function CoachView() {
     setSimplified(null)
     setTeachBack({input: '', feedback: null, loading: false})
     setShowMoreActions(false)
-  }, [sectionIndex])
+  }
 
   const currentChunk = chunks[sectionIndex]
 
@@ -196,7 +203,7 @@ export function CoachView() {
               {(() => {
                 const reviews = JSON.parse(localStorage.getItem('md-reader-coach-reviews') ?? '{}')
                 const reviewTime = reviews[sectionIndex]
-                if (reviewTime && Date.now() > reviewTime) {
+                if (reviewTime && openedAt > reviewTime) {
                   return <span className="ml-2 text-purple-500 text-[10px]">due for review</span>
                 }
                 return null

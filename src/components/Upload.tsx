@@ -9,6 +9,18 @@ import { wordsReadToday } from '../lib/reading-metrics'
 
 type Mode = 'home' | 'editor'
 
+/** Read-only: the streak value after this visit, plus the date to persist
+ *  (null = nothing to write). Upload persists it from an effect. */
+function computeStreakUpdate(): { value: number; persistDate: string | null } {
+  const prev = parseInt(localStorage.getItem('md-reader-streak') ?? '0')
+  const today = new Date().toDateString()
+  const lastDate = localStorage.getItem('md-reader-streak-date')
+  if (lastDate === today) return { value: prev, persistDate: null }      // already counted today
+  if (wordsReadToday() === 0) return { value: prev, persistDate: null }  // nothing actually read today
+  const yesterday = new Date(Date.now() - 86400000).toDateString()
+  return { value: lastDate === yesterday ? prev + 1 : 1, persistDate: today }
+}
+
 export function Upload() {
   const setMarkdown = useStore((s) => s.setMarkdown)
   const setWorkspaceMode = useStore((s) => s.setWorkspaceMode)
@@ -39,23 +51,19 @@ export function Upload() {
   const [starDismissed, setStarDismissed] = useState(() => !!localStorage.getItem('md-reader-star-dismissed'))
   const fileRef = useRef<HTMLInputElement>(null)
 
-  // Reading streak (B12): computed in an effect, never during render (the
-  // old code wrote localStorage inside a JSX IIFE), and only bumped when the
-  // user actually read words today — a mere visit no longer extends it.
+  // Reading streak (B12): the next value is computed once (read-only) in the
+  // state initializer and persisted from an effect, never written during
+  // render (the old code wrote localStorage inside a JSX IIFE). It's only
+  // bumped when the user actually read words today — a mere visit no longer
+  // extends it.
   const [docsReadCount] = useState(() => parseInt(localStorage.getItem('md-reader-docs-read') ?? '0'))
-  const [streak, setStreak] = useState(() => parseInt(localStorage.getItem('md-reader-streak') ?? '0'))
+  const [streakUpdate] = useState(computeStreakUpdate)
+  const streak = streakUpdate.value
   useEffect(() => {
-    const today = new Date().toDateString()
-    const lastDate = localStorage.getItem('md-reader-streak-date')
-    if (lastDate === today) return          // already counted today
-    if (wordsReadToday() === 0) return      // nothing actually read today
-    const yesterday = new Date(Date.now() - 86400000).toDateString()
-    const prev = parseInt(localStorage.getItem('md-reader-streak') ?? '0')
-    const next = lastDate === yesterday ? prev + 1 : 1
-    localStorage.setItem('md-reader-streak', String(next))
-    localStorage.setItem('md-reader-streak-date', today)
-    setStreak(next)
-  }, [])
+    if (!streakUpdate.persistDate) return
+    localStorage.setItem('md-reader-streak', String(streakUpdate.value))
+    localStorage.setItem('md-reader-streak-date', streakUpdate.persistDate)
+  }, [streakUpdate])
 
   const loadFile = useCallback(
     (file: File) => {
@@ -179,7 +187,7 @@ export function Upload() {
     }
     setWorkspaceMode(true)
     setViewMode('workspace')
-  }, [setWorkspaceMode, setViewMode])
+  }, [adapter, setWorkspaceMode, setViewMode])
 
   const loadSample = () => {
     setMarkdown(SAMPLE_MARKDOWN, 'welcome.md')

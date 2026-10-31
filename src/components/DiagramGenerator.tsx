@@ -64,7 +64,7 @@ export function DiagramGenerator() {
     } finally {
       setGenerating(false)
     }
-  }, [markdown, diagramType, dsl])
+  }, [markdown, diagramType, dsl, setDsl])
 
   const handleExcalidrawExport = useCallback(() => {
     if (!dsl) return

@@ -63,9 +63,16 @@ export function Chat() {
   const inputRef = useRef<HTMLInputElement>(null)
   // B4: programmatic prefill from SelectionMenu ("Chat" on a selection).
   const pendingChatInput = useStore((s) => s.pendingChatInput)
+  // Copy the prefill into the input during render when it changes; the
+  // effect below then consumes it from the store (back to null, so the same
+  // text can be prefilled again later) and focuses the input.
+  const [prevPendingChatInput, setPrevPendingChatInput] = useState<string | null>(null)
+  if (pendingChatInput !== prevPendingChatInput) {
+    setPrevPendingChatInput(pendingChatInput)
+    if (pendingChatInput !== null && pendingChatInput.length > 0) setInput(pendingChatInput)
+  }
   useEffect(() => {
     if (pendingChatInput !== null && pendingChatInput.length > 0) {
-      setInput(pendingChatInput)
       useStore.getState().setPendingChatInput(null)
       inputRef.current?.focus()
     }
@@ -182,7 +189,7 @@ export function Chat() {
       setLoading(false)
       setBackend(getActiveBackend())
     }
-  }, [loading, markdown])
+  }, [loading, markdown, setMessages])
 
   const sendDirect = useCallback(async (question: string) => {
     sendQuestion(question)

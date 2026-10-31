@@ -4,11 +4,34 @@ import { useStore } from '../store/useStore'
 import { useAdapter } from '../provider/hooks'
 import { buildShareForDocument, downloadSidecar, type BuiltShare } from '../lib/share-builder'
 import { showToast } from '../lib/toast'
-import type { StoredDocument } from '../types/storage-adapter'
+import type { StorageAdapter, StoredDocument } from '../types/storage-adapter'
 
 // Localize numbers so "1,234 highlights" reads better than "1234 highlights"
 // once a doc has been heavily annotated. Uses the browser locale.
 const fmt = (n: number): string => n.toLocaleString()
+
+type BuildResult =
+  | { ok: true; built: BuiltShare }
+  | { ok: false; error: string; clearBuilt: boolean }
+
+async function buildShare(
+  adapter: StorageAdapter,
+  docId: number,
+  publicDocUrl: string | undefined,
+): Promise<BuildResult> {
+  try {
+    const doc: StoredDocument | undefined = await adapter.getDocument(docId)
+    if (!doc) return { ok: false, error: 'Document not found in the library.', clearBuilt: true }
+    const built = await buildShareForDocument({
+      doc,
+      origin: typeof window !== 'undefined' ? window.location.origin : '',
+      publicDocUrl,
+    })
+    return { ok: true, built }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || 'Failed to build share', clearBuilt: false }
+  }
+}
 
 interface ShareDialogProps {
   open: boolean
@@ -38,37 +61,37 @@ export function ShareDialog({ open, onClose, publicDocUrl }: ShareDialogProps) {
   const [copied, setCopied] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  const rebuild = useCallback(async () => {
-    if (!activeDocId) {
-      setError('Save the document to the library first (no local id yet).')
-      setBuilt(null)
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      const doc: StoredDocument | undefined = await adapter.getDocument(activeDocId)
-      if (!doc) {
-        setError('Document not found in the library.')
+  // (Re)build whenever the dialog opens or the doc / public URL changes
+  // while open. The synchronous part (reset or "no id" error) happens during
+  // render; the async build runs in the effect and settles state in its
+  // promise callback.
+  const buildKey = open ? JSON.stringify([activeDocId, publicDocUrl ?? null]) : null
+  const [prevBuildKey, setPrevBuildKey] = useState<string | null>(null)
+  if (buildKey !== prevBuildKey) {
+    setPrevBuildKey(buildKey)
+    if (buildKey !== null) {
+      if (!activeDocId) {
+        setError('Save the document to the library first (no local id yet).')
         setBuilt(null)
-        return
+      } else {
+        setLoading(true)
+        setError(null)
       }
-      const result = await buildShareForDocument({
-        doc,
-        origin: typeof window !== 'undefined' ? window.location.origin : '',
-        publicDocUrl,
-      })
-      setBuilt(result)
-    } catch (e) {
-      setError((e as Error).message || 'Failed to build share')
-    } finally {
-      setLoading(false)
     }
-  }, [activeDocId, adapter, publicDocUrl])
+  }
 
   useEffect(() => {
-    if (open) void rebuild()
-  }, [open, rebuild])
+    if (!open || !activeDocId) return
+    void buildShare(adapter, activeDocId, publicDocUrl).then((r) => {
+      if (r.ok) {
+        setBuilt(r.built)
+      } else {
+        setError(r.error)
+        if (r.clearBuilt) setBuilt(null)
+      }
+      setLoading(false)
+    })
+  }, [open, activeDocId, adapter, publicDocUrl])
 
   useEffect(() => {
     if (!copied) return

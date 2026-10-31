@@ -15,10 +15,22 @@ export function SimilarityMap() {
   const [error, setError] = useState<string | null>(null)
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null)
 
-  const render = useCallback(async () => {
-    if (!svgRef.current) return
+  // A theme change triggers a redraw — reset the loading/error state during
+  // render (instead of synchronously inside the redraw effect).
+  const [prevTheme, setPrevTheme] = useState(theme)
+  if (prevTheme !== theme) {
+    setPrevTheme(theme)
     setLoading(true)
     setError(null)
+  }
+
+  // Async draw: touches only the SVG and resolves to the error message (null
+  // on success), or `undefined` when there's no SVG to draw into. The
+  // loading/error state is settled by `redraw` in a promise callback, so it's
+  // safe to kick off from an effect. On-demand redraws reset loading/error
+  // first (see `refresh`).
+  const draw = useCallback(async (): Promise<string | null | undefined> => {
+    if (!svgRef.current) return undefined
 
     try {
       // Compute communities first, then UMAP
@@ -26,9 +38,7 @@ export function SimilarityMap() {
       const points = await adapter.computeUmapProjection()
 
       if (points.length < 3) {
-        setError('Need at least 3 documents for a similarity map.')
-        setLoading(false)
-        return
+        return 'Need at least 3 documents for a similarity map.'
       }
 
       const svg = d3.select(svgRef.current)
@@ -116,13 +126,26 @@ export function SimilarityMap() {
         .style('pointer-events', 'none')
 
     } catch (e) {
-      setError('Failed to compute similarity map.')
       console.error(e)
+      return 'Failed to compute similarity map.'
     }
-    setLoading(false)
-  }, [theme, openDocument])
+    return null
+  }, [adapter, theme, openDocument])
 
-  useEffect(() => { render() }, [render])
+  const redraw = useCallback(() => draw().then((err) => {
+    if (err === undefined) return
+    if (err !== null) setError(err)
+    setLoading(false)
+  }), [draw])
+
+  useEffect(() => { void redraw() }, [redraw])
+
+  const refresh = () => {
+    if (!svgRef.current) return
+    setLoading(true)
+    setError(null)
+    void redraw()
+  }
 
   return (
     <div className="flex-1 overflow-hidden relative">
@@ -131,7 +154,7 @@ export function SimilarityMap() {
           UMAP similarity map. Colors = topic clusters (Louvain). Double-click to open.
         </span>
         <button
-          onClick={render}
+          onClick={refresh}
           disabled={loading}
           className="text-xs bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm px-2 py-1 rounded text-gray-500 hover:text-gray-700"
         >

@@ -148,7 +148,7 @@ export function Toolbar() {
     setActiveDocId(result.docId)
     setSaved(true)
     setTimeout(() => setSaved(false), 3500)
-  }, [markdown, fileName, setActiveDocId])
+  }, [adapter, markdown, fileName, setActiveDocId])
 
   const doClose = useCallback(() => {
     setShowCloseConfirm(false)
@@ -226,7 +226,7 @@ export function Toolbar() {
     await adapter.addDocument(fileName, markdown)
     setShowCloseConfirm(false)
     doClose()
-  }, [markdown, fileName, doClose])
+  }, [adapter, markdown, fileName, doClose])
 
   return (
     <div className="border-b border-gray-200 dark:border-gray-800 sepia:border-sepia-200 bg-white/80 dark:bg-gray-900/80 sepia:bg-sepia-50/80 backdrop-blur-sm sticky top-0 z-40">

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useCallback, useState, useMemo } from 'react'
+import { lazy, Suspense, useEffect, useEffectEvent, useRef, useCallback, useState, useMemo } from 'react'
 import { ArrowUp } from 'lucide-react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -308,24 +308,21 @@ export function Reader() {
   const adapter = useAdapter()
   const contentRef = useRef<HTMLDivElement>(null)
   const sectionsReadCache = useRef(new Set<string>())
-  const [prevDocId, setPrevDocId] = useState<number | null>(null)
-  if (prevDocId !== activeDocId) {
-    setPrevDocId(activeDocId)
+  // Reload the read-sections cache per doc. Declared before the
+  // IntersectionObserver effect (the only reader/writer), so it's in place
+  // before that effect re-subscribes for the new doc.
+  useEffect(() => {
     if (activeDocId) {
       try { sectionsReadCache.current = new Set(JSON.parse(localStorage.getItem(`md-reader-sections-read-${activeDocId}`) ?? '[]')) } catch { sectionsReadCache.current = new Set() }
     } else {
       sectionsReadCache.current = new Set()
     }
-  }
+  }, [activeDocId])
 
   // Feature 17: URL fragment sharing state
   const [linkCopied, setLinkCopied] = useState(false)
 
-  // Feature 18: Ambient background hue
-  const [ambientHue, setAmbientHue] = useState(0)
-
   // Feature 20: Diff viewer state
-  const prevMarkdownRef = useRef<string | null>(null)
   const [diffChanges, setDiffChanges] = useState<Set<number>>(new Set())
   const [showDiffHighlight, setShowDiffHighlight] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
@@ -374,12 +371,10 @@ export function Reader() {
     }
   }, [activeSection])
 
-  // Feature 18: Ambient hue shift based on top-level section index
-  useEffect(() => {
-    if (!activeSection || theme === 'dark' || theme === 'high-contrast') {
-      setAmbientHue(0)
-      return
-    }
+  // Feature 18: Ambient hue shift based on top-level section index — derived
+  // during render from the active section, TOC and theme.
+  const ambientHue = useMemo(() => {
+    if (!activeSection || theme === 'dark' || theme === 'high-contrast') return 0
     const topLevelSections = toc.filter((t) => t.level <= 2)
     // Find which top-level section the active section belongs to
     const activeIdx = toc.findIndex((t) => t.id === activeSection)
@@ -390,14 +385,16 @@ export function Reader() {
         break
       }
     }
-    setAmbientHue(topIdx * 30)
+    return topIdx * 30
   }, [activeSection, toc, theme])
 
-  // Feature 20: Detect changes when markdown updates for same fileName
-  useEffect(() => {
-    if (!fileName) return
-    const storageKey = `md-reader-prev-content-${fileName}`
-    const prevContent = sessionStorage.getItem(storageKey)
+  // Feature 20: Detect changes when markdown updates for same fileName.
+  // Compared during render when markdown/fileName change (read-only); the
+  // effect below stores the current content for the next comparison.
+  const [prevDiffInput, setPrevDiffInput] = useState<{ markdown: string; fileName: string | null } | null>(null)
+  if (!prevDiffInput || prevDiffInput.markdown !== markdown || prevDiffInput.fileName !== fileName) {
+    setPrevDiffInput({ markdown, fileName })
+    const prevContent = fileName ? sessionStorage.getItem(`md-reader-prev-content-${fileName}`) : null
 
     if (prevContent && prevContent !== markdown) {
       const changedIndices = new Set<number>()
@@ -415,12 +412,13 @@ export function Reader() {
       if (changedIndices.size > 0) {
         setDiffChanges(changedIndices)
         setHasChanges(true)
-        prevMarkdownRef.current = prevContent
       }
     }
-
+  }
+  useEffect(() => {
+    if (!fileName) return
     // Store current content for next comparison
-    sessionStorage.setItem(storageKey, markdown)
+    sessionStorage.setItem(`md-reader-prev-content-${fileName}`, markdown)
   }, [markdown, fileName])
 
   const words = useMemo(() => wordCount(markdown), [markdown])
@@ -499,8 +497,11 @@ export function Reader() {
   }, [readingProgress, readTime, fileName])
 
   // Dynamic favicon showing reading progress
+  // Redrawn only when the 5% bucket changes, but painted with the exact
+  // current progress — an effect event reads the latest value without making
+  // it a reactive dependency.
   const progressBucket = Math.round(readingProgress / 5) * 5
-  useEffect(() => {
+  const paintProgressFavicon = useEffectEvent(() => {
     if (readingProgress < 1) return
     const canvas = document.createElement('canvas')
     canvas.width = 32
@@ -530,7 +531,8 @@ export function Reader() {
     return () => {
       if (link) link.href = '/favicon.svg'
     }
-  }, [progressBucket]) // Update every 5%
+  })
+  useEffect(() => paintProgressFavicon(), [progressBucket]) // Update every 5%
 
   // Stable per-document key used to scope scroll position storage. Folder-mode
   // files don't get an `activeDocId`, so they need their own key derived from
@@ -646,6 +648,15 @@ export function Reader() {
     return () => observer.disconnect()
   }, [toc, setActiveSection, activeDocId, queueStorageWrite])
 
+  // Reading speed calibration — track actual WPM. The scroll baseline's
+  // timestamp is taken at mount (in an effect, not during render).
+  const [liveWpm, setLiveWpm] = useState<number | null>(null)
+  const lastScrollRef = useRef({ time: 0, top: 0 })
+  useEffect(() => { lastScrollRef.current = { time: Date.now(), top: 0 } }, [])
+  // Wall-clock minute for the "~N min left (finish time)" label. Refreshed on
+  // scroll and on the session tick; it only re-renders when the minute flips.
+  const [clockMinute, setClockMinute] = useState(() => Math.floor(Date.now() / 60000))
+
   const handleScroll = useCallback(() => {
     const el = contentRef.current
     if (!el) return
@@ -661,6 +672,7 @@ export function Reader() {
 
     // Live WPM calculation
     const now = Date.now()
+    setClockMinute(Math.floor(now / 60000))
     const elapsed = (now - lastScrollRef.current.time) / 1000
     if (elapsed > 2 && elapsed < 30) {
       const progressDelta = progress - (lastScrollRef.current.top / Math.max(1, scrollHeight)) * 100
@@ -718,7 +730,7 @@ export function Reader() {
   useEffect(() => () => flushStorage(), [flushStorage])
 
   // Track time per section for analytics (batched via idle callback)
-  const sectionTimerRef = useRef<{ section: string | null; start: number }>({ section: null, start: Date.now() })
+  const sectionTimerRef = useRef<{ section: string | null; start: number }>({ section: null, start: 0 })  // start only matters once the effect below has recorded a section
   const sectionTimesCache = useRef<Record<string, number>>({})
   // Load cached section times once per doc
   useEffect(() => {
@@ -736,54 +748,26 @@ export function Reader() {
       }
     }
     sectionTimerRef.current = { section: activeSection, start: Date.now() }
-  }, [activeSection, activeDocId])
+  }, [activeSection, activeDocId, queueStorageWrite])
 
   const [sessionMinutes, setSessionMinutes] = useState(0)
-  useEffect(() => {
-    localStorage.setItem('md-reader-session-start', String(Date.now()))
-    const start = Date.now()
-    const interval = setInterval(() => {
-      setSessionMinutes(Math.floor((Date.now() - start) / 60000))
-    }, 60000)
-    return () => {
-      clearInterval(interval)
-      const elapsed = Math.floor((Date.now() - start) / 60000)
-      if (elapsed > 0) {
-        const total = parseInt(localStorage.getItem('md-reader-total-reading-mins') ?? '0')
-        localStorage.setItem('md-reader-total-reading-mins', String(total + elapsed))
-      }
-    }
-  }, [markdown])
+  const [showReport, setShowReport] = useState(false)
 
-  // Reading speed calibration — track actual WPM
-  const [liveWpm, setLiveWpm] = useState<number | null>(null)
-  const lastScrollRef = useRef({ time: Date.now(), top: 0 })
-  const [calibrationToast, setCalibrationToast] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (readingProgress < 20 || readingProgress > 95) return
-    const elapsed = sessionMinutes
-    if (elapsed >= 2) {
-      const wordsRead = Math.round(words * (readingProgress / 100))
-      const actualWpm = Math.round(wordsRead / elapsed)
-      if (actualWpm > 50 && actualWpm < 600) {
-        localStorage.setItem('md-reader-wpm', String(actualWpm))
-      }
-      // Delight #12: One-time calibration prompt after 2 min of reading
-      if (!localStorage.getItem('md-reader-wpm-calibrated') && actualWpm >= 100 && actualWpm <= 500) {
-        setCalibrationToast(actualWpm)
-      }
-    }
-  }, [sessionMinutes, readingProgress, words])
-
-  const tc = themeConfig[theme]
-  const [milestone, setMilestone] = useState<string | null>(null)
-
+  // Delight #4 (progress) + time-based milestones. Evaluated from the
+  // callbacks that change their inputs — the store subscription for
+  // readingProgress and the session-minute tick below — rather than from
+  // effects that set state synchronously. The one mount-time case (opening at
+  // exactly 25/50/75%) seeds the initial state and is completed by the mount
+  // effect further down.
+  const [mountMilestonePct] = useState(() => {
+    const pct = Math.round(readingProgress)
+    return pct === 25 || pct === 50 || pct === 75 ? pct : null
+  })
+  const [milestone, setMilestone] = useState<string | null>(mountMilestonePct !== null ? `${mountMilestonePct}%` : null)
   const shownMilestones = useRef(new Set<string>())
 
-  // Delight #4: Progress milestones
-  useEffect(() => {
-    const pct = Math.round(readingProgress)
+  const checkProgressMilestones = (progress: number, minutes: number) => {
+    const pct = Math.round(progress)
     if ((pct === 25 || pct === 50 || pct === 75) && !shownMilestones.current.has(`${pct}`)) {
       shownMilestones.current.add(`${pct}`)
       setMilestone(`${pct}%`)
@@ -793,7 +777,7 @@ export function Reader() {
       // CommentsPanel "Jump to" or "Back to top") or has only been on the
       // page for a few seconds — a fast scroll-through is not a reading
       // completion, and firing a full-screen modal mid-navigation is hostile.
-      if (isProgrammaticScroll() || sessionMinutes < 1) return
+      if (isProgrammaticScroll() || minutes < 1) return
       shownMilestones.current.add('done')
       setMilestone('Done!')
       setTimeout(() => setMilestone(null), 2500)
@@ -805,20 +789,83 @@ export function Reader() {
       // Show reading report card after confetti settles
       setTimeout(() => setShowReport(true), 2000)
     }
-  }, [readingProgress, sessionMinutes])
+  }
 
   // Time-based reading milestones
-  useEffect(() => {
-    if (sessionMinutes === 5 && !shownMilestones.current.has('5min')) {
+  const checkTimeMilestones = (minutes: number) => {
+    if (minutes === 5 && !shownMilestones.current.has('5min')) {
       shownMilestones.current.add('5min')
       setMilestone('5 min focused!')
       setTimeout(() => setMilestone(null), 1500)
-    } else if (sessionMinutes === 15 && !shownMilestones.current.has('15min')) {
+    } else if (minutes === 15 && !shownMilestones.current.has('15min')) {
       shownMilestones.current.add('15min')
       setMilestone('15 min deep read!')
       setTimeout(() => setMilestone(null), 1500)
     }
-  }, [sessionMinutes])
+  }
+
+  // Progress changes (scroll, tab switch, reset) arrive via the store.
+  const onReadingProgressChange = useEffectEvent((progress: number) => {
+    checkProgressMilestones(progress, sessionMinutes)
+  })
+  // A new session minute re-checks both, progress first (the old effect order).
+  const onSessionMinuteTick = useEffectEvent((minutes: number) => {
+    setClockMinute(Math.floor(Date.now() / 60000))
+    if (minutes === sessionMinutes) return
+    setSessionMinutes(minutes)
+    checkProgressMilestones(useStore.getState().readingProgress, minutes)
+    checkTimeMilestones(minutes)
+  })
+
+  useEffect(() => {
+    if (mountMilestonePct === null) return
+    shownMilestones.current.add(`${mountMilestonePct}`)
+    setTimeout(() => setMilestone(null), 1500)
+  }, [mountMilestonePct])
+
+  useEffect(() => useStore.subscribe((s, prev) => {
+    if (s.readingProgress !== prev.readingProgress) onReadingProgressChange(s.readingProgress)
+  }), [])
+
+  useEffect(() => {
+    localStorage.setItem('md-reader-session-start', String(Date.now()))
+    const start = Date.now()
+    const interval = setInterval(() => {
+      onSessionMinuteTick(Math.floor((Date.now() - start) / 60000))
+    }, 60000)
+    return () => {
+      clearInterval(interval)
+      const elapsed = Math.floor((Date.now() - start) / 60000)
+      if (elapsed > 0) {
+        const total = parseInt(localStorage.getItem('md-reader-total-reading-mins') ?? '0')
+        localStorage.setItem('md-reader-total-reading-mins', String(total + elapsed))
+      }
+    }
+  }, [markdown])
+
+  // Reading speed calibration — compare actual WPM once 2+ minutes in.
+  const calibrationWpm = readingProgress < 20 || readingProgress > 95 || sessionMinutes < 2
+    ? null
+    : Math.round(Math.round(words * (readingProgress / 100)) / sessionMinutes)
+  useEffect(() => {
+    if (calibrationWpm !== null && calibrationWpm > 50 && calibrationWpm < 600) {
+      localStorage.setItem('md-reader-wpm', String(calibrationWpm))
+    }
+  }, [sessionMinutes, readingProgress, words, calibrationWpm])
+  // Delight #12: One-time calibration prompt after 2 min of reading. Offered
+  // during render whenever the inputs change; it stays up until saved or
+  // dismissed (both set the calibrated flag).
+  const [calibrationToast, setCalibrationToast] = useState<number | null>(null)
+  const [prevCalibrationInput, setPrevCalibrationInput] = useState<{ sessionMinutes: number; readingProgress: number; words: number } | null>(null)
+  if (!prevCalibrationInput || prevCalibrationInput.sessionMinutes !== sessionMinutes
+    || prevCalibrationInput.readingProgress !== readingProgress || prevCalibrationInput.words !== words) {
+    setPrevCalibrationInput({ sessionMinutes, readingProgress, words })
+    if (calibrationWpm !== null && calibrationWpm >= 100 && calibrationWpm <= 500 && !localStorage.getItem('md-reader-wpm-calibrated')) {
+      setCalibrationToast(calibrationWpm)
+    }
+  }
+
+  const tc = themeConfig[theme]
 
   const scrollToTop = () => { markProgrammaticScroll(); contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' }) }
   const [showScrollHint, setShowScrollHint] = useState(true)
@@ -829,7 +876,6 @@ export function Reader() {
     el.addEventListener('scroll', hide, { once: true, passive: true })
     return () => el.removeEventListener('scroll', hide)
   }, [markdown])
-  const [showReport, setShowReport] = useState(false)
   const [zoomedImage, setZoomedImage] = useState<string | null>(null)
 
   // Click handler for images — open in lightbox
@@ -851,10 +897,23 @@ export function Reader() {
   const [commentPopover, setCommentPopover] = useState<{ comment: Comment; x: number; y: number } | null>(null)
   const [editingCommentText, setEditingCommentText] = useState<string | null>(null)
   const appliedCommentIdsRef = useRef<Set<number>>(new Set())
+  // Inline highlights (persistent) — declared here so the doc-change reset
+  // below can clear both lists.
+  const [inlineHighlights, setInlineHighlights] = useState<Highlight[]>([])
+  // With no saved doc there are no comments/highlights: reset during render
+  // when the doc id changes (the effects below clean up the DOM side).
+  const [prevAnnotationDocId, setPrevAnnotationDocId] = useState(activeDocId)
+  if (activeDocId !== prevAnnotationDocId) {
+    setPrevAnnotationDocId(activeDocId)
+    if (!activeDocId) {
+      setInlineComments([])
+      setInlineHighlights([])
+    }
+  }
 
   // Fetch comments when doc changes or when a comment is added/modified
   useEffect(() => {
-    if (!activeDocId) { setInlineComments([]); appliedCommentIdsRef.current.clear(); return }
+    if (!activeDocId) { appliedCommentIdsRef.current.clear(); return }
     const refresh = () => adapter.getComments(activeDocId).then(setInlineComments)
     refresh()
     // Listen for immediate refresh after comment save/edit/delete
@@ -863,7 +922,7 @@ export function Reader() {
     return () => {
       window.removeEventListener('md-reader-comment-changed', onCommentChanged)
     }
-  }, [activeDocId])
+  }, [activeDocId, adapter])
 
   // Apply inline highlights — only for newly added comments
   useEffect(() => {
@@ -1076,16 +1135,15 @@ export function Reader() {
   }, [commentPopover])
 
   // ─── Inline highlights (persistent, reflect add/remove/color change) ───
-  const [inlineHighlights, setInlineHighlights] = useState<Highlight[]>([])
+  // (`inlineHighlights` state is declared with the inline comments above.)
   const inlineHighlightsRef = useRef<Highlight[]>([])  // latest value for event delegation
-  inlineHighlightsRef.current = inlineHighlights
+  useEffect(() => { inlineHighlightsRef.current = inlineHighlights }, [inlineHighlights])
   const [highlightPopover, setHighlightPopover] = useState<{ highlight: Highlight; x: number; y: number } | null>(null)
   const [noteSaved, setNoteSaved] = useState(false)  // "Saved ✓" flash after note blur
   const appliedHighlightIdsRef = useRef<Set<number>>(new Set())
 
   useEffect(() => {
     if (!activeDocId) {
-      setInlineHighlights([])
       appliedHighlightIdsRef.current.clear()
       // Unwrap any stale spans from previous doc
       document.querySelectorAll('[data-highlight-id]').forEach((el) => {
@@ -1102,7 +1160,7 @@ export function Reader() {
     const onHighlightChanged = () => refresh()
     window.addEventListener('md-reader-highlight-changed', onHighlightChanged)
     return () => window.removeEventListener('md-reader-highlight-changed', onHighlightChanged)
-  }, [activeDocId])
+  }, [activeDocId, adapter])
 
   // Apply inline highlight spans — always reconcile from scratch so that
   // color edits, note edits, and deletions reliably reflect in the DOM.
@@ -1205,7 +1263,7 @@ export function Reader() {
   // inline highlights and comments, reading the latest data from refs so
   // there are no stale-closure risks from per-span listeners.
   const inlineCommentsRef = useRef<Comment[]>([])
-  inlineCommentsRef.current = inlineComments
+  useEffect(() => { inlineCommentsRef.current = inlineComments }, [inlineComments])
   useEffect(() => {
     const el = contentRef.current
     if (!el) return
@@ -1517,7 +1575,7 @@ export function Reader() {
               {readingProgress > 5
                 ? (() => {
                     const minsLeft = Math.max(1, Math.ceil(readTime * (1 - readingProgress / 100)))
-                    const finishTime = new Date(Date.now() + minsLeft * 60000)
+                    const finishTime = new Date((clockMinute + minsLeft) * 60000)
                     return `~${minsLeft} min left (${finishTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})`
                   })()
                 : `${readTime} min read`}

@@ -140,13 +140,16 @@ function AppContent() {
   // B4: open the chat panel when a prefill arrives (SelectionMenu "Chat").
   // Replaces the old data-chat-fab click hack, which toggled the FAB menu
   // rather than the chat panel. Chat itself consumes and clears the field.
+  // Adjusted during render when the prefill changes (no effect round-trip).
   const pendingChatInput = useStore((s) => s.pendingChatInput)
-  useEffect(() => {
+  const [prevPendingChatInput, setPrevPendingChatInput] = useState<string | null>(null)
+  if (pendingChatInput !== prevPendingChatInput) {
+    setPrevPendingChatInput(pendingChatInput)
     if (pendingChatInput) {
       setChatOpen(true)
       setCommentsOpen(false)
     }
-  }, [pendingChatInput])
+  }
   const [commentCount, setCommentCount] = useState(0)
   const [focusMode, setFocusMode] = useState(false)
   const [fabMenuOpen, setFabMenuOpen] = useState(false)
@@ -395,6 +398,8 @@ function AppContent() {
   if (viewMode !== prevViewMode) {
     // React pattern: update state during render for derived state (no extra re-render)
     setPrevViewMode(viewMode)
+    // Close mobile TOC when view changes
+    setMobileTocOpen(false)
   }
   const viewDirection = (() => {
     const views: ViewMode[] = ['read', 'summary-cards', 'mindmap', 'treemap', 'knowledge-graph', 'coach', 'plan']
@@ -402,9 +407,6 @@ function AppContent() {
     const curr = views.indexOf(viewMode)
     return curr > prev ? 'right' : curr < prev ? 'left' : 'none'
   })()
-
-  // Close mobile TOC when view changes
-  useEffect(() => { setMobileTocOpen(false) }, [viewMode]) // Intentional: reset on view switch
 
   // ─── Browser history integration ────────────────────────────────────
   // Push to history when view OR active folder file changes so back/forward
@@ -485,12 +487,15 @@ function AppContent() {
     if (theme === 'high-contrast') root.classList.add('high-contrast')
   }, [theme])
 
-  // Refresh comment count periodically and on doc change
+  // Refresh comment count periodically and on doc change. With no saved doc
+  // the count resets to 0 — adjusted during render when the doc id changes.
+  const [prevCommentDocId, setPrevCommentDocId] = useState(activeDocId)
+  if (activeDocId !== prevCommentDocId) {
+    setPrevCommentDocId(activeDocId)
+    if (!activeDocId) setCommentCount(0)
+  }
   useEffect(() => {
-    if (!activeDocId) {
-      setCommentCount(0)
-      return undefined  // explicit return for cleanup consistency
-    }
+    if (!activeDocId) return undefined  // explicit return for cleanup consistency
     let cancelled = false
     const fetchCount = () => {
       if (cancelled) return
@@ -499,7 +504,7 @@ function AppContent() {
     fetchCount()
     const interval = setInterval(fetchCount, 3000)
     return () => { cancelled = true; clearInterval(interval) }
-  }, [activeDocId])
+  }, [activeDocId, adapter])
 
   // Keyboard shortcuts: Escape closes chat/focus, Ctrl+Shift+F toggles focus mode,
   // Cmd/Ctrl+\ toggles the sidebar.
