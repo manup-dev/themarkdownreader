@@ -37,7 +37,7 @@
     "@md-reader/core": "*"
   },
   "devDependencies": {
-    "postcss-prefix-selector": "^2.1.0"
+    "postcss-prefix-selector": "^2.2.1"
   },
   "engines": {
     "node": ">=20"
